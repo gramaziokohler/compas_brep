@@ -1,0 +1,78 @@
+"""Smoke tests for new Brep constructors and operations."""
+
+import math
+
+from compas.datastructures import Mesh
+from compas.geometry import Box, Cylinder, Plane, Point, Sphere, Vector
+
+from compas_brep import Brep
+
+
+def test_from_mesh():
+    mesh = Mesh.from_polyhedron(6)
+    brep = Brep.from_mesh(mesh)
+    assert len(brep.faces) > 0
+    print("from_mesh:", len(brep.faces), "faces")
+
+
+def test_from_cylinder():
+    cyl = Cylinder(0.5, 2.0)
+    brep = Brep.from_cylinder(cyl)
+    assert len(brep.faces) == 34  # 32 sides + 2 caps
+    vol = brep.volume
+    expected = math.pi * 0.5**2 * 2.0
+    print("from_cylinder:", len(brep.faces), "faces, vol:", round(vol, 2))
+    assert abs(vol - expected) < 0.1
+
+
+def test_from_sphere():
+    sph = Sphere(1.0)
+    brep = Brep.from_sphere(sph)
+    assert len(brep.faces) > 0
+    vol = brep.volume
+    expected = (4.0 / 3.0) * math.pi
+    print("from_sphere:", len(brep.faces), "faces, vol:", round(vol, 2))
+    assert abs(vol - expected) < 0.3
+
+
+def test_from_plane():
+    brep = Brep.from_plane(Plane.worldXY(), domain_u=(-5, 5), domain_v=(-5, 5))
+    assert len(brep.faces) == 1
+    print("from_plane:", len(brep.faces), "faces")
+
+
+def test_from_extrusion():
+    box = Box(1, 1, 0.01)
+    face_brep = Brep.from_box(box)
+    ext = Brep.from_extrusion(face_brep.faces[0], Vector(0, 0, 2))
+    assert len(ext.faces) >= 4
+    print("from_extrusion:", len(ext.faces), "faces")
+
+
+def test_split():
+    box_brep = Brep.from_box(Box(2, 2, 2))
+    plane = Plane(Point(0, 0, 0), Vector(1, 0, 0))
+    halves = box_brep.split(Brep.from_plane(plane, domain_u=(-5, 5), domain_v=(-5, 5)))
+    assert len(halves) == 2
+    print("split:", len(halves), "parts")
+    for i, h in enumerate(halves):
+        print(f"  part {i}: {len(h.faces)} faces, vol={round(h.volume, 2)}")
+        assert h.volume > 0
+
+
+def test_slice():
+    box_brep = Brep.from_box(Box(2, 2, 2))
+    plane = Plane(Point(0, 0, 0), Vector(1, 0, 0))
+    slices = box_brep.slice(plane)
+    assert len(slices) > 0
+    print("slice:", len(slices), "polylines")
+
+
+def test_trimmed():
+    box_brep = Brep.from_box(Box(2, 2, 2))
+    plane = Plane(Point(0, 0, 0), Vector(1, 0, 0))
+    half = box_brep.trimmed(plane)
+    assert len(half.faces) > 0
+    print("trimmed:", len(half.faces), "faces, vol:", round(half.volume, 2))
+    # Should be approximately half the box volume
+    assert abs(half.volume - 4.0) < 0.1
