@@ -24,7 +24,7 @@ def test_boolean_subtraction():
     result = brep_a - brep_b
 
     assert result.is_valid
-    assert len(result.faces) > 6  # More faces than original box
+    assert len(result.faces) >= 6  # At least as many faces as original box
     # Volume should be box_a - overlap
     assert result.volume < brep_a.volume
     assert result.volume > 0

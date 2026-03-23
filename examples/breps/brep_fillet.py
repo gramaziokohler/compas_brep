@@ -2,13 +2,13 @@ from pathlib import Path
 
 from compas_viewer import Viewer
 
-from compas_occ.brep import OCCBrep
+from compas_brep import Brep
 
 # Load the brep from a STEP file
 # and extract the individual letters.
 
 filepath = Path(__file__).parent / "FCA.stp"
-brep = OCCBrep.from_step(filepath)
+brep = Brep.from_step(filepath)
 letters = list(brep.solids)
 
 # Make sure the letters are valid solids.

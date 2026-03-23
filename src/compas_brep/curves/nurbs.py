@@ -110,7 +110,6 @@ class NurbsCurve(Data):
         """Always False (simplified)."""
         return False
 
-    @property
     def length(self) -> float:
         """Approximate arc length by dense sampling."""
         n = 1000
@@ -168,8 +167,9 @@ class NurbsCurve(Data):
         points: list[Point],
         weights: list[float],
         knots: list[float],
-        mults: list[int],
-        degree: int,
+        mults: list[int] | None = None,
+        degree: int = 3,
+        multiplicities: list[int] | None = None,
     ) -> NurbsCurve:
         """Create a NURBS curve from explicit parameters.
 
@@ -191,6 +191,10 @@ class NurbsCurve(Data):
         NurbsCurve
 
         """
+        if mults is None:
+            mults = multiplicities
+        if mults is None:
+            raise ValueError("Either 'mults' or 'multiplicities' must be provided.")
         curve = cls()
         curve._points = [Point(p.x, p.y, p.z) for p in points]
         curve._weights = list(weights)
@@ -491,6 +495,86 @@ class NurbsCurve(Data):
             return pt, t_best
         return pt
 
+    def closest_parameters_curve(
+        self, other: NurbsCurve, return_distance: bool = False
+    ) -> tuple[float, float] | tuple[tuple[float, float], float]:
+        """Find the parameters on this and another curve at closest approach.
+
+        Parameters
+        ----------
+        other : NurbsCurve
+            The other curve.
+        return_distance : bool
+            If True, also return the distance.
+
+        Returns
+        -------
+        tuple[float, float] or tuple[tuple[float, float], float]
+
+        """
+        from scipy.optimize import minimize
+
+        a1, b1 = self.domain
+        a2, b2 = other.domain
+
+        # Coarse grid search
+        n_samples = 50
+        ts1 = np.linspace(a1, b1, n_samples)
+        ts2 = np.linspace(a2, b2, n_samples)
+        pts1 = self._evaluate_many(ts1)
+        pts2 = other._evaluate_many(ts2)
+        # Pairwise distances
+        best_d = float("inf")
+        best_i, best_j = 0, 0
+        for i in range(n_samples):
+            diffs = pts2 - pts1[i]
+            dists = np.sum(diffs**2, axis=1)
+            j = int(np.argmin(dists))
+            if dists[j] < best_d:
+                best_d = dists[j]
+                best_i, best_j = i, j
+
+        def dist_sq(params: np.ndarray) -> float:
+            t1 = float(np.clip(params[0], a1, b1))
+            t2 = float(np.clip(params[1], a2, b2))
+            p1 = self._evaluate_one(t1)
+            p2 = other._evaluate_one(t2)
+            return float(np.sum((p1 - p2) ** 2))
+
+        result = minimize(dist_sq, [ts1[best_i], ts2[best_j]], method="Nelder-Mead")
+        t1_best = float(np.clip(result.x[0], a1, b1))
+        t2_best = float(np.clip(result.x[1], a2, b2))
+        params = (t1_best, t2_best)
+        if return_distance:
+            d = math.sqrt(dist_sq(np.array([t1_best, t2_best])))
+            return params, d
+        return params
+
+    def closest_points_curve(
+        self, other: NurbsCurve, return_distance: bool = False
+    ) -> tuple[Point, Point] | tuple[tuple[Point, Point], float]:
+        """Find the closest points between this and another curve.
+
+        Parameters
+        ----------
+        other : NurbsCurve
+            The other curve.
+        return_distance : bool
+            If True, also return the distance.
+
+        Returns
+        -------
+        tuple[Point, Point] or tuple[tuple[Point, Point], float]
+
+        """
+        result = self.closest_parameters_curve(other, return_distance=True)
+        (t1, t2), d = result
+        p1 = self.point_at(t1)
+        p2 = other.point_at(t2)
+        if return_distance:
+            return (p1, p2), d
+        return (p1, p2)
+
     def divide(self, n: int, return_points: bool = False) -> list[float] | tuple[list[float], list[Point]]:
         """Divide the curve into *n* equal-parameter segments.
 
@@ -512,6 +596,25 @@ class NurbsCurve(Data):
             pts = [self.point_at(t) for t in ts]
             return ts, pts
         return ts
+
+    def segment(self, u: float, v: float) -> None:
+        """Trim this curve in-place to the sub-curve between *u* and *v*.
+
+        Parameters
+        ----------
+        u : float
+            Start parameter.
+        v : float
+            End parameter.
+
+        """
+        sub = self.segmented(u, v)
+        self._points = sub._points
+        self._weights = sub._weights
+        self._knots = sub._knots
+        self._mults = sub._mults
+        self._degree = sub._degree
+        self._invalidate_cache()
 
     def segmented(self, u: float, v: float) -> NurbsCurve:
         """Extract a sub-curve between parameters *u* and *v*.

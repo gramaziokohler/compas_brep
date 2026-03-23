@@ -1,30 +1,25 @@
+"""Create a polygonal face with polygonal holes using boolean subtraction."""
+
+from compas.geometry import Cylinder, Frame, Point, Polygon, Vector
 from compas_viewer.viewer import Viewer
 
-from compas.geometry import Brep
-from compas.geometry import Circle
-from compas.geometry import Frame
-from compas.geometry import Polygon
-from compas_occ.brep import OCCBrepFace
-from compas_occ.brep import OCCBrepLoop
+from compas_brep import Brep
 
-circle1 = Circle(1.0, frame=Frame([2, 2, 0]))
-circle2 = Circle(2.0, frame=Frame([-2, -2, 0]))
-circle3 = Circle(0.5, frame=Frame([2, -2, 0]))
-
-loop1 = OCCBrepLoop.from_polygon(circle1.to_polygon(32))
-loop2 = OCCBrepLoop.from_polygon(circle2.to_polygon(8))
-loop3 = OCCBrepLoop.from_polygon(circle3.to_polygon(4))
-
+# Create a pentagonal face
 polygon = Polygon.from_sides_and_radius_xy(5, 10.0)
-face = OCCBrepFace.from_polygon(polygon)
-face.add_loops([loop1, loop2, loop3], reverse=False)
+face = Brep.from_polygons([polygon])
 
-brep = Brep.from_brepfaces([face])
+# Create cylinders for the holes (approximated by n-gon cross sections)
+c1 = Brep.from_cylinder(Cylinder(1.0, 2.0, frame=Frame(Point(2, 2, -1), Vector(0, 0, 1), Vector(1, 0, 0))))
+c2 = Brep.from_cylinder(Cylinder(2.0, 2.0, frame=Frame(Point(-2, -2, -1), Vector(0, 0, 1), Vector(1, 0, 0))))
+c3 = Brep.from_cylinder(Cylinder(0.5, 2.0, frame=Frame(Point(2, -2, -1), Vector(0, 0, 1), Vector(1, 0, 0))))
+
+brep = face - c1 - c2 - c3
 
 # =============================================================================
 # Visualization
 # =============================================================================
 
 viewer = Viewer()
-viewer.scene.add(brep, linewidth=2, show_point=False)
+viewer.scene.add(brep, linewidth=2, show_points=False)
 viewer.show()

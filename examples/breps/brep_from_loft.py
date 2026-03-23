@@ -1,10 +1,8 @@
+from compas.geometry import Circle, Frame
+from compas.tolerance import TOL
 from compas_viewer import Viewer
 
-from compas.geometry import Circle
-from compas.geometry import Frame
-from compas.tolerance import TOL
-from compas_occ.brep import OCCBrep
-from compas_occ.geometry import OCCNurbsCurve
+from compas_brep import Brep, NurbsCurve
 
 frame = Frame.worldYZ()
 c1 = Circle(1.0, frame=frame)
@@ -22,13 +20,13 @@ frame.point = [9, 0, 0]
 c4 = Circle(3.0, frame=frame)
 
 curves = [
-    OCCNurbsCurve.from_circle(c1),
-    OCCNurbsCurve.from_circle(c2),
-    OCCNurbsCurve.from_circle(c3),
-    OCCNurbsCurve.from_circle(c4),
+    NurbsCurve.from_circle(c1),
+    NurbsCurve.from_circle(c2),
+    NurbsCurve.from_circle(c3),
+    NurbsCurve.from_circle(c4),
 ]
 
-brep = OCCBrep.from_loft(curves)  # type: ignore
+brep = Brep.from_loft(curves)  # type: ignore
 
 TOL.lineardeflection = 1
 

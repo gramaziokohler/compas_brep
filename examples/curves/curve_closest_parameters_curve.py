@@ -1,8 +1,8 @@
+from compas.colors import Color
+from compas.geometry import Point
 from compas_viewer import Viewer
 
-from compas.colors import Color
-from compas.geometry import NurbsCurve
-from compas.geometry import Point
+from compas_brep import NurbsCurve
 
 curve0: NurbsCurve
 curve1: NurbsCurve

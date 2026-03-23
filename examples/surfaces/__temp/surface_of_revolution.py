@@ -1,10 +1,7 @@
-from compas_viewer import Viewer
-
 from compas.colors import Color
-from compas.geometry import NurbsCurve
-from compas.geometry import Point
-from compas.geometry import Vector
+from compas.geometry import NurbsCurve, Point, Vector
 from compas_occ.geometry import OCCRevolutionSurface
+from compas_viewer import Viewer
 
 points = [Point(0, 0, 0), Point(0, -6, 3), Point(0, 2, 6), Point(0, -2, 9)]
 curve = NurbsCurve.from_points(points)

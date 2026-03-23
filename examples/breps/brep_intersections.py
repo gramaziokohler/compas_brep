@@ -1,10 +1,7 @@
-# type: ignore
+from compas.geometry import Point, Sphere
 from compas_viewer import Viewer
 
-from compas.geometry import NurbsSurface
-from compas.geometry import Point
-from compas.geometry import Sphere
-from compas_occ.brep import OCCBrep
+from compas_brep import Brep, NurbsSurface
 
 points = [
     [Point(0, 0, 0), Point(1, 0, 0), Point(2, 0, 0), Point(3, 0, 0)],
@@ -13,11 +10,11 @@ points = [
     [Point(0, 3, 0), Point(1, 3, 0), Point(2, 3, 0), Point(3, 3, 0)],
 ]
 
-surface = OCCBrep.from_surface(NurbsSurface.from_points(points=points))
-sphere = OCCBrep.from_sphere(Sphere(radius=1))
+surface = Brep.from_surface(NurbsSurface.from_points(points=points))
+sphere = Brep.from_sphere(Sphere(radius=1))
 
-x = surface.intersect(sphere)
-assert x, "..."
+# Boolean intersection gives the overlapping volume
+x = Brep.from_boolean_intersection(surface, sphere)
 
 curves = []
 for edge in x.edges:
@@ -30,5 +27,6 @@ for edge in x.edges:
 viewer = Viewer()
 viewer.scene.add(surface, linewidth=2, show_points=False, opacity=0.5)
 viewer.scene.add(sphere, linewidth=2, show_points=False, opacity=0.5)
-viewer.scene.add(curves, linewidth=2)
+for curve in curves:
+    viewer.scene.add(curve, linewidth=2)
 viewer.show()

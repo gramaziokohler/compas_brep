@@ -1,16 +1,15 @@
+from compas.geometry import Circle, Polygon, Vector
 from compas_viewer.viewer import Viewer
 
-from compas.geometry import Circle
-from compas.geometry import Vector
-from compas_occ.brep import OCCBrep
-from compas_occ.brep import OCCBrepEdge
-from compas_occ.geometry import OCCNurbsCurve
+from compas_brep import Brep
 
+# Approximate circle as a polygon profile
 circle = Circle(radius=0.3)
-curve = OCCNurbsCurve.from_circle(circle)
-edge = OCCBrepEdge.from_curve(curve)
+n = 32
+points = [circle.point_at(i / n) for i in range(n)]
+profile = Polygon(points)
 
-brep = OCCBrep.from_extrusion(edge, Vector(0, 0, 10))
+brep = Brep.from_extrusion(profile, Vector(0, 0, 10))
 
 viewer = Viewer()
 viewer.scene.add(brep)

@@ -1,11 +1,11 @@
+from compas.colors import Color
+from compas.geometry import Cylinder, Torus
 from compas_viewer import Viewer
 
-from compas.colors import Color
-from compas.geometry import Cylinder
-from compas.geometry import Torus
+from compas_brep import Brep
 
-cylinder = Cylinder(radius=1.0, height=2.0).to_brep()
-torus = Torus(radius_axis=1.5, radius_pipe=0.3).to_brep()
+cylinder = Brep.from_cylinder(Cylinder(radius=1.0, height=2.0))
+torus = Brep.from_torus(Torus(radius_axis=1.5, radius_pipe=0.3))
 
 # =============================================================================
 # Visualization

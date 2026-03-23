@@ -1,16 +1,14 @@
+from compas.colors import Color
+from compas.geometry import Box, Frame, Point, Vector
 from compas_viewer import Viewer
 
-from compas.colors import Color
-from compas.geometry import Box
-from compas.geometry import Brep
+from compas_brep import Brep
 
-A = Box(1).to_brep()
+A = Brep.from_box(Box(1))
+B = Brep.from_box(Box(1, frame=Frame(Point(0.5, 0.3, 0.25), Vector(1, 0, 0), Vector(0, 1, 0))))
 
-box = Box(1)
-box.translate([1, 0.3, 0.5])
-B = Brep.from_box(box)
-
-FA, FB = A.overlap(B)  # type: ignore
+# overlap returns the boolean intersection (common volume)
+overlap = A.overlap(B)
 
 # =============================================================================
 # Visualization
@@ -18,28 +16,16 @@ FA, FB = A.overlap(B)  # type: ignore
 
 viewer = Viewer()
 
-viewer.renderer.camera.target = [-1, 2, 0]
+viewer.renderer.camera.target = [0, 0, 0]
 viewer.renderer.camera.position = [3, -3, 1]
 
-viewer.scene.add(A, opacity=0.5, linewidth=3)
-viewer.scene.add(B, opacity=0.5, linewidth=3)
-
-for face in FA[:1]:
-    brep = Brep.from_brepfaces([face])
-    viewer.scene.add(
-        brep,
-        surfacecolor=Color.red().lightened(50),
-        linewidth=3,
-        linecolor=Color.red(),
-    )
-
-for face in FB[:1]:
-    brep = Brep.from_brepfaces([face])
-    viewer.scene.add(
-        brep,
-        surfacecolor=Color.blue().lightened(50),
-        linewidth=3,
-        linecolor=Color.blue(),
-    )
+viewer.scene.add(A, opacity=0.3, linewidth=2)
+viewer.scene.add(B, opacity=0.3, linewidth=2)
+viewer.scene.add(
+    overlap,
+    surfacecolor=Color.red().lightened(50),
+    linewidth=3,
+    linecolor=Color.red(),
+)
 
 viewer.show()

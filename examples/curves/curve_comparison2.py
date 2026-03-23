@@ -1,17 +1,15 @@
+from compas.colors import Color
+from compas.geometry import Bezier, Point, Polyline
 from compas_viewer import Viewer
 
-from compas.colors import Color
-from compas.geometry import Bezier
-from compas.geometry import Point
-from compas.geometry import Polyline
-from compas_occ.geometry import OCCNurbsCurve
+from compas_brep import NurbsCurve
 
 points = [Point(0, 0, 0), Point(1, 2, 0), Point(2, -2, 0), Point(3, 0, 0)]
 bezier = Bezier(points)
 
 points = [Point(4, 0, 0), Point(5, 2, 0), Point(6, -2, 0), Point(7, 0, 0)]
 
-curve1 = OCCNurbsCurve.from_parameters(
+curve1 = NurbsCurve.from_parameters(
     points=points,
     weights=[1.0, 1.0, 1.0, 1.0],
     knots=[0.0, 1.0],
@@ -19,7 +17,7 @@ curve1 = OCCNurbsCurve.from_parameters(
     degree=3,
 )
 
-curve2 = OCCNurbsCurve.from_parameters(
+curve2 = NurbsCurve.from_parameters(
     points=points,
     weights=[1.0, 2.0, 2.0, 1.0],
     knots=[0.0, 1.0],
@@ -27,7 +25,7 @@ curve2 = OCCNurbsCurve.from_parameters(
     degree=3,
 )
 
-curve3 = OCCNurbsCurve.from_parameters(
+curve3 = NurbsCurve.from_parameters(
     points=points,
     weights=[1.0, 1.0, 1.0, 1.0],
     knots=[0.0, 1 / 3, 2 / 3, 1.0],
@@ -35,7 +33,7 @@ curve3 = OCCNurbsCurve.from_parameters(
     degree=3,
 )
 
-curve4 = OCCNurbsCurve.from_parameters(
+curve4 = NurbsCurve.from_parameters(
     points=points,
     weights=[1.0, 1.0, 1.0, 1.0],
     knots=[0.0, 1 / 5, 2 / 5, 3 / 5, 4 / 5, 1.0],
@@ -43,7 +41,7 @@ curve4 = OCCNurbsCurve.from_parameters(
     degree=3,
 )
 
-curve5 = OCCNurbsCurve.from_parameters(
+curve5 = NurbsCurve.from_parameters(
     points=points,
     weights=[1.0, 1.0, 1.0, 1.0],
     knots=[0.0, 1 / 7, 2 / 7, 3 / 7, 4 / 7, 5 / 7, 6 / 7, 1.0],
@@ -51,7 +49,7 @@ curve5 = OCCNurbsCurve.from_parameters(
     degree=3,
 )
 
-curve6 = OCCNurbsCurve.from_parameters(
+curve6 = NurbsCurve.from_parameters(
     points=points,
     weights=[1.0, 1.0, 1.0, 1.0],
     knots=[0.0, 0.5, 1.0],

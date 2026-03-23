@@ -1,8 +1,8 @@
-from compas_viewer import Viewer
-
 import compas
 from compas.datastructures import Mesh
-from compas.geometry import Brep
+from compas_viewer import Viewer
+
+from compas_brep import Brep
 
 # Construct a mesh from an OBJ file
 # and convert to a brep

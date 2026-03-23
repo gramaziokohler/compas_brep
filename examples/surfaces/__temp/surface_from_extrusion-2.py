@@ -1,9 +1,5 @@
+from compas.geometry import NurbsCurve, NurbsSurface, Point, Vector
 from compas_viewer import Viewer
-
-from compas.geometry import NurbsCurve
-from compas.geometry import NurbsSurface
-from compas.geometry import Point
-from compas.geometry import Vector
 
 points = [Point(0, 0, 0), Point(0, -6, 3), Point(0, 2, 6), Point(0, -2, 9)]
 curve = NurbsCurve.from_points(points)

@@ -1,10 +1,8 @@
+from compas.colors import Color
+from compas.geometry import Bezier, Point, Polyline
 from compas_viewer import Viewer
 
-from compas.colors import Color
-from compas.geometry import Bezier
-from compas.geometry import NurbsCurve
-from compas.geometry import Point
-from compas.geometry import Polyline
+from compas_brep import NurbsCurve
 
 points = [Point(0, 0, 0), Point(1, 3, 0), Point(2, 0, 0)]
 bezier = Bezier(points)

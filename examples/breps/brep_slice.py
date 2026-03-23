@@ -1,12 +1,11 @@
 from math import radians
 
+from compas.geometry import Box, Plane, Rotation
 from compas_viewer import Viewer
 
-from compas.geometry import Box
-from compas.geometry import Plane
-from compas.geometry import Rotation
+from compas_brep import Brep
 
-box = Box(1).to_brep()
+box = Brep.from_box(Box(1))
 
 plane = Plane.worldXY()
 R = Rotation.from_axis_and_angle([0, 1, 0], radians(30))

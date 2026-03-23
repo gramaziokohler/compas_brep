@@ -1,10 +1,10 @@
-from compas_viewer import Viewer
-
 from compas.colors import Color
 from compas.geometry import Box
-from compas_occ.brep import OCCBrep
+from compas_viewer import Viewer
 
-box = OCCBrep.from_box(Box(1))
+from compas_brep import Brep
+
+box = Brep.from_box(Box(1))
 
 vertex = box.vertices[0]
 vertices = box.vertex_neighbors(vertex)
@@ -29,7 +29,7 @@ for edge in edges:
     viewer.scene.add(edge.to_line(), linewidth=5, linecolor=Color(0.2, 0.2, 0.2))
 
 for face in faces:
-    brep = OCCBrep.from_brepfaces([face])
+    brep = Brep.from_brepfaces([face])
     viewer.scene.add(brep, opacity=0.5)
 
 viewer.scene.add(box, linewidth=2, linecolor=Color(0.2, 0.2, 0.2), show_faces=False, show_points=False)

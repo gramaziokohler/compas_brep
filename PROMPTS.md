@@ -54,27 +54,12 @@ Rolling log of prompts given to Claude during the development of this project.
 >
 > Finally, please also document the prompts I give you in a rolling prompt log file in the repository. GO!
 
-**Result:** (in progress)
+**Result:** Implemented pure-Python NurbsCurve and NurbsSurface with full scipy-based evaluation. Added NURBS surface/curve scene objects for viewer. Converted example scripts.
 
-# Next prompts:
+## Future Work
 
-## Convert OCC example scripts to compas_brep examples
-
-## serialization and deserialization of Breps to/from JSON
-
-## documentation
-zensical
-API reference
-Developer guide:
-
-    imagine I'm a developer who vibe-coded this whole thing in a couple hours and now has to maintain it for the next couple years. I have a basic understanding of Breps but I don't know much about the implementation details. I want to be able to understand the codebase and make changes to it without breaking things. I also want to be able to add new features and functionality as needed. I want to be able to debug issues that come up and fix them quickly. I want to be able to write tests for new features and bug fixes. I want to be able to understand the architecture of the codebase and how the different components interact with each other. 
-
-## dev tools
-
-Add bump-my-version, pre-commit hooks, CI with github actions, code coverage, etc.
-
-## Performance benchmarking and optimization 
-
-Evaluate the performance of the current implementation on a variety of test cases (use compas occ as the baseline). Identify bottlenecks and optimize critical sections of the code using numpy, scipy.
-
-Where this could be highly beneficial, consider further optimizations such as extracting some algorithms into c-extensions with nanobind or use just-in-time compilation with numba.
+- Convert remaining OCC example scripts to compas_brep examples
+- Serialization and deserialization of Breps to/from JSON
+- Documentation: API reference and developer guide covering architecture, component interactions, testing, and debugging
+- Dev tools: bump-my-version, pre-commit hooks, CI with GitHub Actions, code coverage
+- Performance benchmarking and optimization against compas_occ baseline; identify bottlenecks and optimize with numpy/scipy; consider c-extensions via nanobind or JIT compilation with numba for critical paths

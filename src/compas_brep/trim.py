@@ -4,19 +4,44 @@ from compas_brep.vertex import BrepVertex
 
 
 class BrepTrim:
-    """Pure Python implementation of a Brep trim.
+    """A Brep trim representing a portion of an edge on a face boundary.
 
-    For the initial planar-face implementation, trims are simplified -
-    they correspond directly to edges in 2D parameter space.
+    A trim has optional 2D and 3D curve representations:
+    - curve_2d: parametric curve in the face's UV space
+    - curve_3d: 3D curve in world space (Line or NurbsCurve)
     """
 
-    def __init__(self, start_vertex: BrepVertex, end_vertex: BrepVertex):
+    def __init__(
+        self,
+        start_vertex: BrepVertex,
+        end_vertex: BrepVertex,
+        curve_2d=None,
+        curve_3d=None,
+        is_reversed: bool = False,
+    ):
         self._start = start_vertex
         self._end = end_vertex
+        self._curve_2d = curve_2d  # NurbsCurve in UV space, or None
+        self._curve_3d = curve_3d  # Line | NurbsCurve in 3D, or None
+        self._is_reversed = is_reversed
 
     @property
     def curve(self):
-        return None  # 2D trim curves not yet implemented
+        """The 2D parametric curve in the face's UV space."""
+        return self._curve_2d
+
+    @curve.setter
+    def curve(self, value):
+        self._curve_2d = value
+
+    @property
+    def curve_3d(self):
+        """The 3D curve in world space."""
+        return self._curve_3d
+
+    @curve_3d.setter
+    def curve_3d(self, value):
+        self._curve_3d = value
 
     @property
     def iso_status(self):
@@ -24,7 +49,7 @@ class BrepTrim:
 
     @property
     def is_reversed(self) -> bool:
-        return False
+        return self._is_reversed
 
     @property
     def start_vertex(self) -> BrepVertex:
