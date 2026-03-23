@@ -311,13 +311,6 @@ class TestOperations:
         for face, orig in zip(brep.faces, original_reversed):
             assert face._is_reversed is orig
 
-    def test_merge_coplanar_faces_box(self):
-        brep = _unit_box_brep()
-        merged = brep.merge_coplanar_faces()
-        assert isinstance(merged, Brep)
-        # A box has no coplanar adjacent faces, so count should stay the same
-        assert len(merged.faces) == 6
-
     def test_to_polygons_count(self):
         brep = _unit_box_brep()
         polygons = brep.to_polygons()

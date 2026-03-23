@@ -538,6 +538,125 @@ class NurbsSurface(Data):
             return Point(0.0, 0.0, 0.0)
         return Point(float(result[0] / w), float(result[1] / w), float(result[2] / w))
 
+    def closest_parameters(self, point, n_samples: int = 32) -> tuple[float, float]:
+        """Find the (u, v) parameters closest to a 3D point on the surface.
+
+        Uses a coarse grid search over the parametric domain.
+
+        Parameters
+        ----------
+        point : :class:`compas.geometry.Point` or list[float]
+            The 3D point to invert.
+        n_samples : int, optional
+            Number of samples along each parametric direction for the grid search.
+
+        Returns
+        -------
+        tuple[float, float]
+            The (u, v) parameters of the closest surface point.
+
+        """
+        du = self.domain_u
+        dv = self.domain_v
+        px, py, pz = float(point[0]), float(point[1]), float(point[2])
+
+        best_u, best_v = du[0], dv[0]
+        best_dist = float("inf")
+
+        for i in range(n_samples + 1):
+            u = du[0] + (du[1] - du[0]) * i / n_samples
+            for j in range(n_samples + 1):
+                v = dv[0] + (dv[1] - dv[0]) * j / n_samples
+                pt = self.point_at(u, v)
+                d = (pt.x - px) ** 2 + (pt.y - py) ** 2 + (pt.z - pz) ** 2
+                if d < best_dist:
+                    best_dist = d
+                    best_u, best_v = u, v
+
+        return best_u, best_v
+
+    def _wrap_param(self, u: float, v: float) -> tuple[float, float]:
+        """Clamp UV parameters into the surface domain.
+
+        Non-periodic surfaces (which is all surfaces after OCC conversion with
+        ``SetU/VNotPeriodic()``) need clamping rather than wrapping, since
+        modular wrapping produces incorrect results at domain boundaries
+        (e.g. v=v_max wraps to v=v_min on a cylinder).
+
+        For the Newton UV-tracking path (``uv_step``), the caller accumulates
+        unwrapped parameters for continuity, and this method maps them back
+        into the valid evaluation range.
+        """
+        du = self.domain_u
+        dv = self.domain_v
+        u = max(du[0], min(du[1], u))
+        v = max(dv[0], min(dv[1], v))
+        return u, v
+
+    def uv_step(self, u: float, v: float, target) -> tuple[float, float]:
+        """Compute (Δu, Δv) to step from S(u,v) toward a 3D target point.
+
+        Uses the surface Jacobian (∂S/∂u, ∂S/∂v) to solve for the parametric
+        increment that moves the surface point toward the target. This is one
+        Newton step for surface point inversion.
+
+        Parameters are wrapped into the domain for evaluation but the returned
+        parameters preserve the unwrapped accumulation for path continuity
+        (important for periodic surfaces like cylinders).
+
+        Parameters
+        ----------
+        u : float
+            Current U parameter (may be outside the domain for continuity).
+        v : float
+            Current V parameter.
+        target : list[float] or :class:`compas.geometry.Point`
+            The target 3D point.
+
+        Returns
+        -------
+        tuple[float, float]
+            The new (u, v) parameters after one Newton step.
+
+        """
+        eps = 1e-7
+        # Wrap for surface evaluation
+        uw, vw = self._wrap_param(u, v)
+        pt = self.point_at(uw, vw)
+        rx, ry, rz = pt.x - float(target[0]), pt.y - float(target[1]), pt.z - float(target[2])
+
+        # Surface partial derivatives via central finite differences (wrapped)
+        u0w, _ = self._wrap_param(uw - eps, vw)
+        u1w, _ = self._wrap_param(uw + eps, vw)
+        _, v0w = self._wrap_param(uw, vw - eps)
+        _, v1w = self._wrap_param(uw, vw + eps)
+
+        pu0 = self.point_at(u0w, vw)
+        pu1 = self.point_at(u1w, vw)
+        pv0 = self.point_at(uw, v0w)
+        pv1 = self.point_at(uw, v1w)
+
+        # Jacobian columns: ∂S/∂u, ∂S/∂v
+        su = ((pu1.x - pu0.x) / (2 * eps), (pu1.y - pu0.y) / (2 * eps), (pu1.z - pu0.z) / (2 * eps))
+        sv = ((pv1.x - pv0.x) / (2 * eps), (pv1.y - pv0.y) / (2 * eps), (pv1.z - pv0.z) / (2 * eps))
+
+        # J^T J and J^T r (2×2 normal equations)
+        a11 = su[0] * su[0] + su[1] * su[1] + su[2] * su[2]
+        a12 = su[0] * sv[0] + su[1] * sv[1] + su[2] * sv[2]
+        a22 = sv[0] * sv[0] + sv[1] * sv[1] + sv[2] * sv[2]
+        b1 = -(su[0] * rx + su[1] * ry + su[2] * rz)
+        b2 = -(sv[0] * rx + sv[1] * ry + sv[2] * rz)
+
+        det = a11 * a22 - a12 * a12
+        if abs(det) < 1e-20:
+            return u, v
+
+        delta_u = (a22 * b1 - a12 * b2) / det
+        delta_v = (a11 * b2 - a12 * b1) / det
+
+        # Return unwrapped parameters (caller accumulates for path continuity)
+        return u + delta_u, v + delta_v
+
     def normal_at(self, u: float, v: float) -> Vector:
         """Surface normal at (u, v) via finite differences.
 

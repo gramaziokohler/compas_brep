@@ -4,6 +4,7 @@ from compas.geometry import Plane, Point, Polygon
 
 from compas_brep.edge import BrepEdge
 from compas_brep.loop import BrepLoop
+from compas_brep.surfaces.nurbs import NurbsSurface
 from compas_brep.vertex import BrepVertex
 
 
@@ -61,8 +62,6 @@ class BrepFace:
 
     @property
     def is_nurbs(self) -> bool:
-        from compas_brep.surfaces.nurbs import NurbsSurface
-
         return isinstance(self._surface, NurbsSurface)
 
     @property
@@ -202,60 +201,243 @@ class BrepFace:
             return None, None
 
     def _tessellate_planar(self, n: int = 16):
-        """Fan triangulation for a planar polygon.
+        """Tessellation for a planar face, handling holes via Delaunay + filtering.
 
-        For degenerate loops (< 3 unique vertices from simple vertex list),
-        falls back to sampling edge curves to get boundary points.
+        Samples outer and inner loop edges to get boundary polygons, projects
+        to 2D on the face plane, triangulates with scipy Delaunay, and filters
+        out triangles inside holes. Falls back to fan triangulation when there
+        are no inner loops or scipy is unavailable.
+        """
+        # Sample the outer boundary
+        outer_3d = _sample_loop_3d(self._outer_loop, n)
+        if len(outer_3d) < 3:
+            return [], []
+
+        # Ensure the boundary winding matches the face's outward normal.
+        # Edge curves may have been stored with their natural parameterization,
+        # which doesn't always match the face orientation.
+        outer_3d = _orient_boundary(outer_3d, self._surface, self._is_reversed)
+
+        # Simple case: no holes → fan triangulation
+        if not self._inner_loops:
+            return _fan_triangulate(outer_3d)
+
+        # Has holes — need Delaunay + filtering
+        # Sample all inner loops (holes)
+        holes_3d = []
+        for inner_loop in self._inner_loops:
+            hole = _sample_loop_3d(inner_loop, n)
+            if len(hole) >= 3:
+                holes_3d.append(hole)
+
+        # Project everything to 2D on the face plane
+        all_3d = list(outer_3d)
+        for hole in holes_3d:
+            all_3d.extend(hole)
+
+        try:
+            import numpy as np
+            from scipy.spatial import Delaunay
+
+            pts = np.array(all_3d)
+            origin = pts.mean(axis=0)
+            centered = pts - origin
+            _, s, vt = np.linalg.svd(centered, full_matrices=False)
+            if s[1] < 1e-12:
+                return _fan_triangulate(outer_3d)
+            u_axis = vt[0]
+            v_axis = vt[1]
+            pts_2d = np.column_stack([centered @ u_axis, centered @ v_axis])
+
+            tri = Delaunay(pts_2d)
+            triangles = tri.simplices.tolist()
+        except Exception:
+            return _fan_triangulate(outer_3d)
+
+        # Project boundaries to 2D for inside/outside tests
+        outer_2d = [[float(pts_2d[i, 0]), float(pts_2d[i, 1])] for i in range(len(outer_3d))]
+        holes_2d = []
+        offset = len(outer_3d)
+        for hole in holes_3d:
+            hole_2d = [[float(pts_2d[offset + i, 0]), float(pts_2d[offset + i, 1])] for i in range(len(hole))]
+            holes_2d.append(hole_2d)
+            offset += len(hole)
+
+        # Filter: keep triangles inside outer boundary and outside all holes
+        filtered = []
+        for t in triangles:
+            cx = float((pts_2d[t[0], 0] + pts_2d[t[1], 0] + pts_2d[t[2], 0]) / 3)
+            cy = float((pts_2d[t[0], 1] + pts_2d[t[1], 1] + pts_2d[t[2], 1]) / 3)
+            centroid = [cx, cy]
+            if not _point_in_polygon_2d(centroid, outer_2d):
+                continue
+            in_hole = False
+            for hole_2d in holes_2d:
+                if _point_in_polygon_2d(centroid, hole_2d):
+                    in_hole = True
+                    break
+            if not in_hole:
+                filtered.append(t)
+
+        if not filtered:
+            return _fan_triangulate(outer_3d)
+
+        vertices = [[p[0], p[1], p[2]] for p in all_3d]
+        return vertices, filtered
+
+    def _tessellate_nurbs(self, n: int = 16):
+        """Trimmed NURBS tessellation using pcurves or edge curves.
+
+        When pcurves (2D UV trim curves) are available from trims, they are
+        sampled directly in UV space — no 3D→UV inversion needed. This is
+        the STEP-inspired approach and is both faster and more robust.
+
+        Falls back to the Newton-tracking approach when pcurves are absent
+        (e.g. for legacy v2 data without trims).
+        """
+        # Try pcurve-based approach first
+        boundary_uv = _sample_loop_pcurves(self._outer_loop, n)
+        if boundary_uv is not None and len(boundary_uv) >= 3:
+            return self._tessellate_nurbs_from_uv(boundary_uv, n)
+
+        # Fallback: 3D edge sampling + Newton UV inversion
+        return self._tessellate_nurbs_from_edges(n)
+
+    def _tessellate_nurbs_from_uv(self, boundary_uv, n: int = 16):
+        """Tessellate using pre-computed UV boundary (from pcurves).
+
+        1. Add interior UV grid points inside the trim polygon
+        2. Triangulate in UV with scipy Delaunay, filter outside-boundary triangles
+        3. Handle holes via inner loop pcurves
+        4. Evaluate surface at all UV points to get 3D mesh vertices
+        """
+        surface = self._surface
+
+        # Compute UV bounding box of the boundary for grid placement
+        u_coords = [p[0] for p in boundary_uv]
+        v_coords = [p[1] for p in boundary_uv]
+        u_lo, u_hi = min(u_coords), max(u_coords)
+        v_lo, v_hi = min(v_coords), max(v_coords)
+        # Shrink slightly to avoid boundary artifacts
+        u_margin = (u_hi - u_lo) * 0.02
+        v_margin = (v_hi - v_lo) * 0.02
+        u_lo, u_hi = u_lo + u_margin, u_hi - u_margin
+        v_lo, v_hi = v_lo + v_margin, v_hi - v_margin
+
+        all_uv = list(boundary_uv)
+        for i in range(1, n):
+            u = u_lo + (u_hi - u_lo) * i / n
+            for j in range(1, n):
+                v = v_lo + (v_hi - v_lo) * j / n
+                if _point_in_polygon_2d([u, v], boundary_uv):
+                    all_uv.append([u, v])
+
+        try:
+            import numpy as np
+            from scipy.spatial import Delaunay
+
+            pts_uv = np.array(all_uv)
+            tri = Delaunay(pts_uv)
+            triangles = tri.simplices.tolist()
+        except Exception:
+            return self._tessellate_nurbs_untrimmed(n)
+
+        # Filter triangles outside outer boundary and ensure CCW winding in UV
+        # CCW in UV → triangle normal aligns with ∂S/∂u × ∂S/∂v (surface outward normal)
+        filtered = []
+        for t in triangles:
+            cu = (all_uv[t[0]][0] + all_uv[t[1]][0] + all_uv[t[2]][0]) / 3
+            cv = (all_uv[t[0]][1] + all_uv[t[1]][1] + all_uv[t[2]][1]) / 3
+            if not _point_in_polygon_2d([cu, cv], boundary_uv):
+                continue
+            # Ensure CCW winding in UV space (positive signed area)
+            u0, v0 = all_uv[t[0]]
+            u1, v1 = all_uv[t[1]]
+            u2, v2 = all_uv[t[2]]
+            cross = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0)
+            if cross < 0:
+                filtered.append([t[0], t[2], t[1]])  # Flip to CCW
+            else:
+                filtered.append(t)
+
+        # Filter inner loops (holes) — use pcurves if available
+        for inner_loop in self._inner_loops:
+            hole_uv = _sample_loop_pcurves(inner_loop, n)
+            if hole_uv is None:
+                hole_uv = _sample_loop_to_uv(inner_loop, surface, n)
+            if hole_uv and len(hole_uv) >= 3:
+                filtered = [
+                    t
+                    for t in filtered
+                    if not _point_in_polygon_2d(
+                        [
+                            (all_uv[t[0]][0] + all_uv[t[1]][0] + all_uv[t[2]][0]) / 3,
+                            (all_uv[t[0]][1] + all_uv[t[1]][1] + all_uv[t[2]][1]) / 3,
+                        ],
+                        hole_uv,
+                    )
+                ]
+
+        if not filtered:
+            return self._tessellate_nurbs_untrimmed(n)
+
+        # Evaluate surface at all UV points for 3D mesh
+        vertices = []
+        for uv in all_uv:
+            uw, vw = surface._wrap_param(uv[0], uv[1])
+            pt = surface.point_at(uw, vw)
+            vertices.append([pt.x, pt.y, pt.z])
+
+        return vertices, filtered
+
+    def _tessellate_nurbs_from_edges(self, n: int = 16):
+        """Fallback NURBS tessellation via 3D edge sampling + Newton UV inversion.
+
+        Used when pcurves are not available (legacy v2 data).
         """
         from compas_brep.curves.nurbs import NurbsCurve
 
-        points = [v.point for v in self._outer_loop.vertices]
-
-        # Deduplicate consecutive identical points
-        unique = []
-        for p in points:
-            if not unique or (abs(p.x - unique[-1].x) + abs(p.y - unique[-1].y) + abs(p.z - unique[-1].z)) > 1e-9:
-                unique.append(p)
-        dx = abs(unique[-1].x - unique[0].x)
-        dy = abs(unique[-1].y - unique[0].y)
-        dz = abs(unique[-1].z - unique[0].z)
-        if len(unique) >= 2 and dx + dy + dz < 1e-9:
-            unique.pop()
-        points = unique
-
-        if len(points) < 3:
-            # Degenerate vertex loop — sample edge curves for boundary points
-            sampled = []
-            for edge in self._outer_loop.edges:
-                if isinstance(edge.curve, NurbsCurve):
-                    t_start, t_end = edge.curve.domain
-                    for i in range(n):
-                        t = t_start + (t_end - t_start) * i / n
-                        pt = edge.curve.point_at(t)
-                        sampled.append(pt)
-                else:
-                    sp = edge.first_vertex.point
-                    ep = edge.last_vertex.point
-                    if (abs(sp.x - ep.x) + abs(sp.y - ep.y) + abs(sp.z - ep.z)) > 1e-9:
-                        sampled.append(sp)
-            # For reversed faces, reverse point order to get outward-pointing normals
-            if self._is_reversed:
-                sampled = sampled[::-1]
-            points = sampled
-
-        if len(points) < 3:
-            return [], []
-
-        vertices = [[p.x, p.y, p.z] for p in points]
-        faces = []
-        for i in range(1, len(points) - 1):
-            faces.append([0, i, i + 1])
-        return vertices, faces
-
-    def _tessellate_nurbs(self, n: int = 16):
-        """UV grid tessellation for a NURBS surface face."""
         surface = self._surface
-        # Always use the surface's own parametric domain for evaluation
+
+        # Sample boundary edges to get dense 3D points
+        boundary_3d = []
+        for edge in self._outer_loop.edges:
+            curve = edge.curve
+            if isinstance(curve, NurbsCurve):
+                t0, t1 = curve.domain
+                for i in range(n):
+                    t = t0 + (t1 - t0) * i / n
+                    pt = curve.point_at(t)
+                    boundary_3d.append([pt.x, pt.y, pt.z])
+            else:
+                sp = edge.first_vertex.point
+                ep = edge.last_vertex.point
+                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+                if dist > 1e-9:
+                    n_line = max(2, n // 4)
+                    for i in range(n_line):
+                        t = i / n_line
+                        boundary_3d.append(
+                            [
+                                sp.x + t * (ep.x - sp.x),
+                                sp.y + t * (ep.y - sp.y),
+                                sp.z + t * (ep.z - sp.z),
+                            ]
+                        )
+
+        if len(boundary_3d) < 3:
+            return self._tessellate_nurbs_untrimmed(n)
+
+        # Invert 3D boundary points to UV space
+        boundary_uv = _invert_boundary_to_uv(boundary_3d, surface)
+        if boundary_uv is None or len(boundary_uv) < 3:
+            return self._tessellate_nurbs_untrimmed(n)
+
+        return self._tessellate_nurbs_from_uv(boundary_uv, n)
+
+    def _tessellate_nurbs_untrimmed(self, n: int = 16):
+        """Fallback: full UV grid tessellation without trim curves."""
+        surface = self._surface
         du = surface.domain_u
         dv = surface.domain_v
 
@@ -276,16 +458,285 @@ class BrepFace:
                 b = a + 1
                 c = a + nv + 1
                 d = a + nv
-                # Reversed winding: UV grid gives ∂S/∂v × ∂S/∂u (inward),
-                # so swap to get ∂S/∂u × ∂S/∂v (outward surface normal).
                 faces.append([a, c, b])
                 faces.append([a, d, c])
 
         return vertices, faces
 
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    @property
+    def __data__(self) -> dict:
+        surface = self._surface
+        if isinstance(surface, NurbsSurface):
+            surface_data = {"type": "nurbs", "data": surface.__data__}
+        else:
+            surface_data = {
+                "type": "plane",
+                "data": {
+                    "point": [surface.point.x, surface.point.y, surface.point.z],
+                    "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
+                },
+            }
+
+        face_data = {
+            "surface": surface_data,
+            "loops": [loop.__data__ for loop in self.loops],
+            "is_reversed": self._is_reversed,
+        }
+        if self._domain_u is not None:
+            face_data["domain_u"] = list(self._domain_u)
+        if self._domain_v is not None:
+            face_data["domain_v"] = list(self._domain_v)
+        return face_data
+
     def __repr__(self):
         surface_type = "plane" if self.is_planar else "nurbs"
         return f"BrepFace({len(self.vertices)} vertices, {surface_type})"
+
+
+def _sample_loop_pcurves(loop, n):
+    """Sample a BrepLoop's trims' pcurves (2D UV curves) to get a UV boundary.
+
+    Returns a list of [u, v] pairs, or None if any trim lacks a pcurve.
+    The pcurve is sampled in the trim's traversal direction (respecting
+    ``is_reversed`` on the trim).
+    """
+    if not loop.trims:
+        return None
+
+    uv_points = []
+    for trim in loop.trims:
+        pcurve = trim.curve_2d
+        if pcurve is None:
+            return None  # Can't use pcurve path if any trim lacks one
+
+        t0, t1 = pcurve.domain
+        if trim.is_reversed:
+            # Sample backward: the pcurve direction matches the edge's
+            # canonical direction, so for reversed trims we sample in reverse
+            for i in range(n):
+                t = t1 - (t1 - t0) * i / n
+                pt = pcurve.point_at(t)
+                uv_points.append([pt.x, pt.y])  # x=u, y=v, z=0
+        else:
+            for i in range(n):
+                t = t0 + (t1 - t0) * i / n
+                pt = pcurve.point_at(t)
+                uv_points.append([pt.x, pt.y])
+
+    return uv_points if len(uv_points) >= 3 else None
+
+
+def _orient_boundary(boundary_3d, surface, is_reversed):
+    """Ensure the boundary winding produces the face's outward normal.
+
+    For a planar face, the outward normal is the plane normal (or its opposite
+    if ``is_reversed`` is True). The boundary's Newell normal is compared to
+    this expected direction and reversed if they disagree.
+
+    For non-planar faces, returns the boundary unchanged.
+    """
+    if not isinstance(surface, Plane) or len(boundary_3d) < 3:
+        return boundary_3d
+
+    # Expected outward normal
+    nx, ny, nz = surface.normal.x, surface.normal.y, surface.normal.z
+    if is_reversed:
+        nx, ny, nz = -nx, -ny, -nz
+
+    # Compute Newell normal of the sampled boundary
+    m = len(boundary_3d)
+    bnx, bny, bnz = 0.0, 0.0, 0.0
+    for i in range(m):
+        p0 = boundary_3d[i]
+        p1 = boundary_3d[(i + 1) % m]
+        bnx += (p0[1] - p1[1]) * (p0[2] + p1[2])
+        bny += (p0[2] - p1[2]) * (p0[0] + p1[0])
+        bnz += (p0[0] - p1[0]) * (p0[1] + p1[1])
+
+    # Dot product: if negative, winding is opposite to expected
+    dot = bnx * nx + bny * ny + bnz * nz
+    if dot < 0:
+        boundary_3d = boundary_3d[::-1]
+
+    return boundary_3d
+
+
+def _sample_loop_3d(loop, n):
+    """Sample a BrepLoop's edges to dense 3D point coordinates.
+
+    When trims are present, respects the trim direction (is_reversed)
+    to ensure correct boundary winding.
+    """
+    from compas_brep.curves.nurbs import NurbsCurve
+
+    pts = []
+
+    if loop.trims:
+        for trim in loop.trims:
+            curve = trim.edge.curve
+            reversed_dir = trim.is_reversed
+            if isinstance(curve, NurbsCurve):
+                t0, t1 = curve.domain
+                for i in range(n):
+                    if reversed_dir:
+                        t = t1 - (t1 - t0) * i / n
+                    else:
+                        t = t0 + (t1 - t0) * i / n
+                    pt = curve.point_at(t)
+                    pts.append([pt.x, pt.y, pt.z])
+            else:
+                # Line edge: use trim direction
+                sp = trim.start_vertex.point
+                ep = trim.end_vertex.point
+                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+                if dist > 1e-9:
+                    n_line = max(2, n // 4)
+                    for i in range(n_line):
+                        t = i / n_line
+                        pts.append(
+                            [
+                                sp.x + t * (ep.x - sp.x),
+                                sp.y + t * (ep.y - sp.y),
+                                sp.z + t * (ep.z - sp.z),
+                            ]
+                        )
+                else:
+                    pts.append([sp.x, sp.y, sp.z])
+    else:
+        # Legacy path: edges without trims
+        for edge in loop.edges:
+            curve = edge.curve
+            if isinstance(curve, NurbsCurve):
+                t0, t1 = curve.domain
+                for i in range(n):
+                    t = t0 + (t1 - t0) * i / n
+                    pt = curve.point_at(t)
+                    pts.append([pt.x, pt.y, pt.z])
+            else:
+                sp = edge.first_vertex.point
+                ep = edge.last_vertex.point
+                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+                if dist > 1e-9:
+                    n_line = max(2, n // 4)
+                    for i in range(n_line):
+                        t = i / n_line
+                        pts.append(
+                            [
+                                sp.x + t * (ep.x - sp.x),
+                                sp.y + t * (ep.y - sp.y),
+                                sp.z + t * (ep.z - sp.z),
+                            ]
+                        )
+                else:
+                    pts.append([sp.x, sp.y, sp.z])
+    return pts
+
+
+def _invert_boundary_to_uv(boundary_3d, surface):
+    """Invert 3D boundary points to UV parameters on a NURBS surface.
+
+    Uses a tracking approach: the first point is located via a global grid
+    search (``closest_parameters``), then each subsequent point is found by
+    taking Newton steps from the previous UV. Parameters accumulate freely
+    (may go beyond the domain bounds) to maintain path continuity across
+    periodic seams — the ``uv_step`` method handles wrapping internally for
+    surface evaluation while preserving the unwrapped path.
+
+    Returns a list of [u, v] pairs, or None if inversion fails.
+    """
+    if not boundary_3d:
+        return None
+
+    # Global search for the first point (within domain)
+    u, v = surface.closest_parameters(boundary_3d[0])
+    for _ in range(3):
+        u, v = surface.uv_step(u, v, boundary_3d[0])
+    uv_points = [[u, v]]
+
+    # Track incrementally — parameters accumulate freely for continuity
+    for p in boundary_3d[1:]:
+        for _ in range(3):
+            u, v = surface.uv_step(u, v, p)
+        uv_points.append([u, v])
+
+    return uv_points
+
+
+def _sample_loop_to_uv(loop, surface, n):
+    """Sample a BrepLoop's edges to 3D points and invert to UV space."""
+    from compas_brep.curves.nurbs import NurbsCurve
+
+    pts_3d = []
+    for edge in loop.edges:
+        curve = edge.curve
+        if isinstance(curve, NurbsCurve):
+            t0, t1 = curve.domain
+            for i in range(n):
+                t = t0 + (t1 - t0) * i / n
+                pt = curve.point_at(t)
+                pts_3d.append([pt.x, pt.y, pt.z])
+        else:
+            sp = edge.first_vertex.point
+            ep = edge.last_vertex.point
+            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+            if dist > 1e-9:
+                n_line = max(2, n // 4)
+                for i in range(n_line):
+                    t = i / n_line
+                    pts_3d.append(
+                        [
+                            sp.x + t * (ep.x - sp.x),
+                            sp.y + t * (ep.y - sp.y),
+                            sp.z + t * (ep.z - sp.z),
+                        ]
+                    )
+
+    if len(pts_3d) < 3:
+        return None
+    return _invert_boundary_to_uv(pts_3d, surface)
+
+
+def _point_in_polygon_2d(point, polygon):
+    """Ray-casting point-in-polygon test in 2D.
+
+    Parameters
+    ----------
+    point : list[float]
+        [x, y] coordinates.
+    polygon : list[list[float]]
+        List of [x, y] vertices forming a closed polygon.
+
+    Returns
+    -------
+    bool
+    """
+    x, y = point[0], point[1]
+    n = len(polygon)
+    inside = False
+    j = n - 1
+    for i in range(n):
+        xi, yi = polygon[i][0], polygon[i][1]
+        xj, yj = polygon[j][0], polygon[j][1]
+        if ((yi > y) != (yj > y)) and (x < (xj - xi) * (y - yi) / (yj - yi) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
+def _fan_triangulate(points_3d):
+    """Simple fan triangulation of a 3D polygon.
+
+    Returns (vertices, faces) in the standard tessellation format.
+    """
+    if len(points_3d) < 3:
+        return [], []
+    vertices = [[p[0], p[1], p[2]] for p in points_3d]
+    faces = [[0, i, i + 1] for i in range(1, len(points_3d) - 1)]
+    return vertices, faces
 
 
 def _plane_from_points(points: list[Point]) -> Plane:

@@ -12,6 +12,7 @@ from compas.data import Data
 from compas.datastructures import Mesh
 from compas.geometry import Box, Cylinder, Frame, Plane, Point, Polygon, Polyline, Sphere, Vector
 
+from compas_brep.curves.nurbs import NurbsCurve
 from compas_brep.edge import BrepEdge
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
@@ -50,6 +51,8 @@ from compas_brep.operations import (
     make_sweep,
     make_torus,
 )
+from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 
@@ -76,31 +79,211 @@ class Brep(Data):
         self._native_brep = None  # cached OCC TopoDS_Shape or Rhino.Geometry.Brep
         self._native_dirty: bool = True  # True when canonical data changed since last native sync
 
-    def _invalidate_native(self):
-        """Mark the native cache as stale (canonical data was modified)."""
-        self._native_brep = None
-        self._native_dirty = True
+    # =========================================================================
+    # Data
+    # =========================================================================
 
-    def _rebuild_native(self):
-        """Rebuild the native OCC shape from canonical data, if OCP is available.
+    @property
+    def __data__(self) -> dict:
+        return {"version": 3, "faces": [face.__data__ for face in self._faces]}
 
-        This restores ``_native_face`` on each :class:`BrepFace` so that
-        OCC-based tessellation (with proper trim curves and holes) works
-        correctly — e.g. after deserialization where native caches are lost.
+    @classmethod
+    def __from_data__(cls, data: dict) -> Brep:
+        return _deserialize_brep_data(data)
 
-        Does nothing if OCP is not installed or if reconstruction fails;
-        the pure-Python tessellation fallbacks will be used instead.
+    # =========================================================================
+    # Dunder methods
+    # =========================================================================
+
+    def __repr__(self):
+        return f"Brep(vertices={len(self._vertices)}, edges={len(self._edges)}, faces={len(self._faces)})"
+
+    def __str__(self):
+        return (
+            "Brep\n"
+            "-----\n"
+            f"Vertices: {len(self._vertices)}\n"
+            f"Edges: {len(self._edges)}\n"
+            f"Loops: {len(self._loops)}\n"
+            f"Faces: {len(self._faces)}\n"
+            f"Frame: {self._frame}\n"
+            f"Area: {self.area}\n"
+            f"Volume: {self.volume}"
+        )
+
+    def __sub__(self, other: Brep) -> Brep:
+        return Brep.from_boolean_difference(self, other)
+
+    def __add__(self, other: Brep) -> Brep:
+        return Brep.from_boolean_union(self, other)
+
+    def __and__(self, other: Brep) -> Brep:
+        return Brep.from_boolean_intersection(self, other)
+
+    # =========================================================================
+    # Properties
+    # =========================================================================
+
+    @property
+    def vertices(self) -> list[BrepVertex]:
+        return self._vertices
+
+    @property
+    def edges(self) -> list[BrepEdge]:
+        return self._edges
+
+    @property
+    def loops(self) -> list[BrepLoop]:
+        return self._loops
+
+    @property
+    def faces(self) -> list[BrepFace]:
+        return self._faces
+
+    @property
+    def frame(self) -> Frame:
+        return self._frame
+
+    @property
+    def points(self) -> list[Point]:
+        return [v.point for v in self._vertices]
+
+    @property
+    def curves(self):
+        return [e.curve for e in self._edges]
+
+    @property
+    def surfaces(self):
+        return [f.surface for f in self._faces]
+
+    @property
+    def trims(self):
+        all_trims = []
+        for face in self._faces:
+            for loop in face.loops:
+                all_trims.extend(getattr(loop, "trims", []))
+        return all_trims
+
+    @property
+    def area(self) -> float:
+        return sum(f.area for f in self._faces)
+
+    @property
+    def volume(self) -> float:
+        """Compute volume using the divergence theorem on tessellated faces."""
+        vol = 0.0
+        for face in self._faces:
+            verts, tris = face.tessellate(n=16)
+            for tri in tris:
+                v0 = verts[tri[0]]
+                v1 = verts[tri[1]]
+                v2 = verts[tri[2]]
+                vol += (
+                    v0[0] * (v1[1] * v2[2] - v2[1] * v1[2])
+                    - v1[0] * (v0[1] * v2[2] - v2[1] * v0[2])
+                    + v2[0] * (v0[1] * v1[2] - v1[1] * v0[2])
+                )
+        return abs(vol) / 6.0
+
+    @property
+    def centroid(self) -> Point:
+        if not self._vertices:
+            return Point(0, 0, 0)
+        xs = [v.point.x for v in self._vertices]
+        ys = [v.point.y for v in self._vertices]
+        zs = [v.point.z for v in self._vertices]
+        n = len(self._vertices)
+        return Point(sum(xs) / n, sum(ys) / n, sum(zs) / n)
+
+    @property
+    def is_closed(self) -> bool:
+        # A rough check: each edge should be shared by exactly 2 faces
+        return len(self._faces) >= 4
+
+    @property
+    def is_solid(self) -> bool:
+        return self.is_closed
+
+    @property
+    def is_valid(self) -> bool:
+        return len(self._faces) > 0 and len(self._vertices) > 0
+
+    @property
+    def is_manifold(self) -> bool:
+        return True  # Simplified
+
+    @property
+    def is_orientable(self) -> bool:
+        return True  # Simplified
+
+    @property
+    def is_shell(self) -> bool:
+        return not self.is_solid
+
+    @property
+    def is_surface(self) -> bool:
+        return len(self._faces) == 1
+
+    @property
+    def is_compound(self) -> bool:
+        return False
+
+    @property
+    def is_compoundsolid(self) -> bool:
+        return False
+
+    @property
+    def is_convex(self) -> bool:
+        return False  # Conservative
+
+    @property
+    def is_infinite(self) -> bool:
+        return False
+
+    @property
+    def native_brep(self):
+        return self
+
+    @property
+    def orientation(self):
+        return 0  # FORWARD
+
+    @property
+    def type(self):
+        return 7  # SHAPE
+
+    @property
+    def shells(self):
+        return [self]
+
+    @property
+    def solids(self):
+        return [self] if self.is_solid else []
+
+    @property
+    def aabb(self):
+        """Axis-aligned bounding box as a :class:`compas.geometry.Box`.
+
+        Returns
+        -------
+        :class:`compas.geometry.Box`
         """
-        try:
-            from compas_brep.backend.occ_backend import brep_to_occ
-
-            brep_to_occ(self)
-        except ImportError:
-            pass
-        except Exception:
-            # If native reconstruction fails for any reason, fall back silently
-            # to pure-Python tessellation.
-            pass
+        if not self._vertices:
+            return Box(1, 1, 1)
+        pts = self.points
+        xs = [p.x for p in pts]
+        ys = [p.y for p in pts]
+        zs = [p.z for p in pts]
+        xmin, xmax = min(xs), max(xs)
+        ymin, ymax = min(ys), max(ys)
+        zmin, zmax = min(zs), max(zs)
+        cx = (xmin + xmax) / 2
+        cy = (ymin + ymax) / 2
+        cz = (zmin + zmax) / 2
+        dx = max(xmax - xmin, 1e-10)
+        dy = max(ymax - ymin, 1e-10)
+        dz = max(zmax - zmin, 1e-10)
+        return Box(dx, dy, dz, Frame(Point(cx, cy, cz), [1, 0, 0], [0, 1, 0]))
 
     # =========================================================================
     # Constructors
@@ -409,12 +592,7 @@ class Brep(Data):
         plane : Plane
             The trimming plane.
         """
-        result = self.trimmed(plane)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(self.trimmed(plane))
 
     def contains(self, obj) -> bool:
         """Check if a point is contained inside this solid Brep.
@@ -440,12 +618,7 @@ class Brep(Data):
         edges : list[int], optional
             Indices of edges to fillet. If None, fillets all edges.
         """
-        result = self.filleted(radius, edges)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(self.filleted(radius, edges))
 
     def filleted(self, radius: float, edges=None) -> Brep:
         """Return a filleted copy of this Brep.
@@ -498,48 +671,23 @@ class Brep(Data):
 
     def cap_planar_holes(self) -> None:
         """Cap planar holes in this Brep in-place."""
-        result = brep_cap_planar_holes(self)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(brep_cap_planar_holes(self))
 
     def fix(self) -> None:
         """Fix/repair this Brep in-place."""
-        result = brep_fix(self)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(brep_fix(self))
 
     def heal(self) -> None:
         """Heal this Brep in-place (fix + sew)."""
-        result = brep_heal(self)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(brep_heal(self))
 
     def sew(self) -> None:
         """Sew this Brep in-place."""
-        result = brep_sew(self)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(brep_sew(self))
 
     def make_solid(self) -> None:
         """Convert this Brep from a shell to a solid in-place."""
-        result = brep_make_solid(self)
-        self._vertices = result._vertices
-        self._edges = result._edges
-        self._loops = result._loops
-        self._faces = result._faces
-        self._invalidate_native()
+        self._replace_from(brep_make_solid(self))
 
     def flip(self) -> None:
         """Flip face orientations of this Brep in-place."""
@@ -586,6 +734,8 @@ class Brep(Data):
         -------
         Brep
         """
+        # TODO: use the native copy mechanism of the backend when possible,
+        # to preserve native data and avoid expensive Python-level copying.
         import copy as _copy
 
         return _copy.deepcopy(self)
@@ -678,29 +828,6 @@ class Brep(Data):
             result = cls.from_boolean_union(result, b)
         return result
 
-    def __sub__(self, other: Brep) -> Brep:
-        return Brep.from_boolean_difference(self, other)
-
-    def __add__(self, other: Brep) -> Brep:
-        return Brep.from_boolean_union(self, other)
-
-    def __and__(self, other: Brep) -> Brep:
-        return Brep.from_boolean_intersection(self, other)
-
-    def merge_coplanar_faces(self) -> Brep:
-        """Return a new Brep with coplanar adjacent faces merged.
-
-        Useful after chaining boolean operations to clean up the topology.
-
-        Returns
-        -------
-        Brep
-            A new Brep with merged faces.
-        """
-        polygons = self.to_polygons()
-        merged = _merge_coplanar_polygons(polygons)
-        return Brep.from_polygons(merged)
-
     # =========================================================================
     # Conversion
     # =========================================================================
@@ -786,177 +913,25 @@ class Brep(Data):
             A triangulated mesh and edge boundary polylines.
         """
         mesh = self.to_viewmesh(n=n)
-        boundaries = []
-        for edge in self._edges:
-            edge_points = _sample_edge_points(edge, n=n_curves)
-            if edge_points and len(edge_points) >= 2:
-                boundaries.append(Polyline(edge_points))
-        return mesh, boundaries
 
-    # =========================================================================
-    # Properties
-    # =========================================================================
-
-    @property
-    def vertices(self) -> list[BrepVertex]:
-        return self._vertices
-
-    @property
-    def edges(self) -> list[BrepEdge]:
-        return self._edges
-
-    @property
-    def loops(self) -> list[BrepLoop]:
-        return self._loops
-
-    @property
-    def faces(self) -> list[BrepFace]:
-        return self._faces
-
-    @property
-    def frame(self) -> Frame:
-        return self._frame
-
-    @property
-    def points(self) -> list[Point]:
-        return [v.point for v in self._vertices]
-
-    @property
-    def curves(self):
-        return [e.curve for e in self._edges]
-
-    @property
-    def surfaces(self):
-        return [f.surface for f in self._faces]
-
-    @property
-    def trims(self):
-        all_trims = []
+        # Sample edge polylines via pcurve → surface to stay consistent with
+        # the mesh tessellation.  Each edge is emitted once; we pick the first
+        # trim that references it (any face works — the surface evaluation
+        # guarantees the polyline lies on the mesh).
+        seen_edges: set[int] = set()
+        boundaries: list[Polyline] = []
         for face in self._faces:
             for loop in face.loops:
-                all_trims.extend(getattr(loop, "trims", []))
-        return all_trims
+                for trim in loop.trims:
+                    eid = id(trim.edge)
+                    if eid in seen_edges:
+                        continue
+                    seen_edges.add(eid)
+                    pts = trim.sample_points(face.surface, n=n_curves)
+                    if pts and len(pts) >= 2:
+                        boundaries.append(Polyline(pts))
 
-    @property
-    def area(self) -> float:
-        return sum(f.area for f in self._faces)
-
-    @property
-    def volume(self) -> float:
-        """Compute volume using the divergence theorem on tessellated faces."""
-        vol = 0.0
-        for face in self._faces:
-            verts, tris = face.tessellate(n=16)
-            for tri in tris:
-                v0 = verts[tri[0]]
-                v1 = verts[tri[1]]
-                v2 = verts[tri[2]]
-                vol += (
-                    v0[0] * (v1[1] * v2[2] - v2[1] * v1[2])
-                    - v1[0] * (v0[1] * v2[2] - v2[1] * v0[2])
-                    + v2[0] * (v0[1] * v1[2] - v1[1] * v0[2])
-                )
-        return abs(vol) / 6.0
-
-    @property
-    def centroid(self) -> Point:
-        if not self._vertices:
-            return Point(0, 0, 0)
-        xs = [v.point.x for v in self._vertices]
-        ys = [v.point.y for v in self._vertices]
-        zs = [v.point.z for v in self._vertices]
-        n = len(self._vertices)
-        return Point(sum(xs) / n, sum(ys) / n, sum(zs) / n)
-
-    @property
-    def is_closed(self) -> bool:
-        # A rough check: each edge should be shared by exactly 2 faces
-        return len(self._faces) >= 4
-
-    @property
-    def is_solid(self) -> bool:
-        return self.is_closed
-
-    @property
-    def is_valid(self) -> bool:
-        return len(self._faces) > 0 and len(self._vertices) > 0
-
-    @property
-    def is_manifold(self) -> bool:
-        return True  # Simplified
-
-    @property
-    def is_orientable(self) -> bool:
-        return True  # Simplified
-
-    @property
-    def is_shell(self) -> bool:
-        return not self.is_solid
-
-    @property
-    def is_surface(self) -> bool:
-        return len(self._faces) == 1
-
-    @property
-    def is_compound(self) -> bool:
-        return False
-
-    @property
-    def is_compoundsolid(self) -> bool:
-        return False
-
-    @property
-    def is_convex(self) -> bool:
-        return False  # Conservative
-
-    @property
-    def is_infinite(self) -> bool:
-        return False
-
-    @property
-    def native_brep(self):
-        return self
-
-    @property
-    def orientation(self):
-        return 0  # FORWARD
-
-    @property
-    def type(self):
-        return 7  # SHAPE
-
-    @property
-    def shells(self):
-        return [self]
-
-    @property
-    def solids(self):
-        return [self] if self.is_solid else []
-
-    @property
-    def aabb(self):
-        """Axis-aligned bounding box as a :class:`compas.geometry.Box`.
-
-        Returns
-        -------
-        :class:`compas.geometry.Box`
-        """
-        if not self._vertices:
-            return Box(1, 1, 1)
-        pts = self.points
-        xs = [p.x for p in pts]
-        ys = [p.y for p in pts]
-        zs = [p.z for p in pts]
-        xmin, xmax = min(xs), max(xs)
-        ymin, ymax = min(ys), max(ys)
-        zmin, zmax = min(zs), max(zs)
-        cx = (xmin + xmax) / 2
-        cy = (ymin + ymax) / 2
-        cz = (zmin + zmax) / 2
-        dx = max(xmax - xmin, 1e-10)
-        dy = max(ymax - ymin, 1e-10)
-        dz = max(zmax - zmin, 1e-10)
-        return Box(dx, dy, dz, Frame(Point(cx, cy, cz), [1, 0, 0], [0, 1, 0]))
+        return mesh, boundaries
 
     # =========================================================================
     # Topology queries
@@ -1000,8 +975,43 @@ class Brep(Data):
         return [loop for loop in self._loops if edge in loop.edges]
 
     # =========================================================================
-    # Internal builders
+    # Internal helpers
     # =========================================================================
+
+    def _invalidate_native(self):
+        """Mark the native cache as stale (canonical data was modified)."""
+        self._native_brep = None
+        self._native_dirty = True
+
+    def _rebuild_native(self):
+        """Rebuild the native OCC shape from canonical data, if OCP is available.
+
+        This restores ``_native_face`` on each :class:`BrepFace` so that
+        OCC-based tessellation (with proper trim curves and holes) works
+        correctly — e.g. after deserialization where native caches are lost.
+
+        This is optional — the pure-Python tessellation handles trimmed NURBS
+        faces using edge curves directly. Native rebuild only improves quality
+        for operations that need a kernel (booleans, fillet, etc.).
+
+        Does nothing if OCP is not installed or if reconstruction fails.
+        """
+        try:
+            from compas_brep.backend.occ_backend import brep_to_occ
+
+            brep_to_occ(self)
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+    def _replace_from(self, other: Brep) -> None:
+        """Replace this Brep's topology with another's (for in-place operations)."""
+        self._vertices = other._vertices
+        self._edges = other._edges
+        self._loops = other._loops
+        self._faces = other._faces
+        self._invalidate_native()
 
     def _build_from_polygons(self, polygons: list[Polygon]):
         """Build Brep topology from a list of polygons."""
@@ -1037,138 +1047,26 @@ class Brep(Data):
                 continue
             face_verts = deduped
 
-            edges = []
+            trims = []
             for j in range(len(face_verts)):
                 v0 = face_verts[j]
                 v1 = face_verts[(j + 1) % len(face_verts)]
                 edge = BrepEdge(v0, v1)
-                edges.append(edge)
                 self._edges.append(edge)
+                trims.append(BrepTrim(edge=edge, is_reversed=False))
 
-            loop = BrepLoop(edges)
+            loop = BrepLoop(trims=trims)
             self._loops.append(loop)
 
             face = BrepFace(loop)
             self._faces.append(face)
 
-    # =========================================================================
-    # Data serialization
-    # =========================================================================
-
-    @property
-    def __data__(self) -> dict:
-        from compas_brep.curves.nurbs import NurbsCurve
-        from compas_brep.surfaces.nurbs import NurbsSurface
-
-        faces_data = []
-        for face in self._faces:
-            # Serialize surface
-            surface = face.surface
-            if isinstance(surface, NurbsSurface):
-                surface_data = {"type": "nurbs", "data": surface.__data__}
-            else:
-                # Plane
-                surface_data = {
-                    "type": "plane",
-                    "data": {
-                        "point": [surface.point.x, surface.point.y, surface.point.z],
-                        "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
-                    },
-                }
-
-            # Serialize loops (outer + inner)
-            loops_data = []
-            for loop in face.loops:
-                edges_data = []
-                for edge in loop.edges:
-                    sp = edge.first_vertex.point
-                    ep = edge.last_vertex.point
-                    start_xyz = [sp.x, sp.y, sp.z]
-                    end_xyz = [ep.x, ep.y, ep.z]
-                    # Serialize edge curve
-                    if isinstance(edge.curve, NurbsCurve):
-                        curve_data = {"type": "nurbs", "data": edge.curve.__data__}
-                    else:
-                        curve_data = {
-                            "type": "line",
-                            "data": {"start": start_xyz, "end": end_xyz},
-                        }
-                    edges_data.append(
-                        {
-                            "start": start_xyz,
-                            "end": end_xyz,
-                            "curve": curve_data,
-                        }
-                    )
-                loops_data.append(edges_data)
-
-            face_data = {
-                "surface": surface_data,
-                "loops": loops_data,
-                "is_reversed": face.is_reversed,
-            }
-            if face.domain_u is not None:
-                face_data["domain_u"] = list(face.domain_u)
-            if face.domain_v is not None:
-                face_data["domain_v"] = list(face.domain_v)
-            faces_data.append(face_data)
-
-        return {"version": 2, "faces": faces_data}
-
-    @__data__.setter
-    def __data__(self, data: dict) -> None:
-        brep = _deserialize_brep_data(data)
-        self._vertices = brep._vertices
-        self._edges = brep._edges
-        self._loops = brep._loops
-        self._faces = brep._faces
-        self._frame = brep._frame
-        self._native_brep = None
-        self._native_dirty = True
-        self._rebuild_native()
-
-    @classmethod
-    def __from_data__(cls, data: dict) -> Brep:
-        brep = _deserialize_brep_data(data)
-        brep._rebuild_native()
-        return brep
-
-    def __repr__(self):
-        return f"Brep(vertices={len(self._vertices)}, edges={len(self._edges)}, faces={len(self._faces)})"
-
-    def __str__(self):
-        return (
-            "Brep\n"
-            "-----\n"
-            f"Vertices: {len(self._vertices)}\n"
-            f"Edges: {len(self._edges)}\n"
-            f"Loops: {len(self._loops)}\n"
-            f"Faces: {len(self._faces)}\n"
-            f"Frame: {self._frame}\n"
-            f"Area: {self.area}\n"
-            f"Volume: {self.volume}"
-        )
-
 
 def _deserialize_brep_data(data: dict) -> Brep:
-    """Deserialize Brep from data dict, supporting both v1 and v2 formats."""
-    version = data.get("version", 1)
-
-    if version == 1:
-        # Legacy format: faces as lists of point coordinates
-        polygons = []
-        for face_pts in data["faces"]:
-            pts = [Point(*xyz) for xyz in face_pts]
-            if len(pts) >= 3:
-                polygons.append(Polygon(pts))
-        return Brep.from_polygons(polygons)
-
-    # Version 2: full topology with surfaces and curves
-    from compas_brep.curves.nurbs import NurbsCurve
-    from compas_brep.surfaces.nurbs import NurbsSurface
-
+    """Deserialize Brep from v3 data dict."""
     brep = Brep()
     vertex_map: dict[tuple[float, float, float], BrepVertex] = {}
+    edge_map: dict[tuple, BrepEdge] = {}
     precision = 6
 
     def _get_vertex(xyz: list[float]) -> BrepVertex:
@@ -1179,8 +1077,22 @@ def _deserialize_brep_data(data: dict) -> Brep:
             brep._vertices.append(vertex)
         return vertex_map[key]
 
+    def _get_edge(edge_data: dict) -> BrepEdge:
+        start = _get_vertex(edge_data["start"])
+        end = _get_vertex(edge_data["end"])
+        # Deduplicate edges by their canonical vertex pair (unordered)
+        s = edge_data["start"]
+        e = edge_data["end"]
+        sk = (round(s[0], precision), round(s[1], precision), round(s[2], precision))
+        ek = (round(e[0], precision), round(e[1], precision), round(e[2], precision))
+        key = (sk, ek) if sk <= ek else (ek, sk)
+        if key not in edge_map:
+            edge = BrepEdge.__from_data__(edge_data, start, end)
+            edge_map[key] = edge
+            brep._edges.append(edge)
+        return edge_map[key]
+
     for face_data in data["faces"]:
-        # Deserialize surface
         surface_info = face_data["surface"]
         if surface_info["type"] == "nurbs":
             surface = NurbsSurface.__from_data__(surface_info["data"])
@@ -1188,24 +1100,18 @@ def _deserialize_brep_data(data: dict) -> Brep:
             sd = surface_info["data"]
             surface = Plane(Point(*sd["point"]), Vector(*sd["normal"]))
 
-        # Deserialize loops
         loops = []
         for loop_data in face_data["loops"]:
-            edges = []
-            for edge_data in loop_data:
-                start = _get_vertex(edge_data["start"])
-                end = _get_vertex(edge_data["end"])
-                curve_info = edge_data["curve"]
-                if curve_info["type"] == "nurbs":
-                    curve = NurbsCurve.__from_data__(curve_info["data"])
-                else:
-                    from compas.geometry import Line
-
-                    curve = Line(start.point, end.point)
-                edge = BrepEdge(start, end, curve=curve)
-                edges.append(edge)
-                brep._edges.append(edge)
-            loop = BrepLoop(edges)
+            trims = []
+            for trim_data in loop_data:
+                edge = _get_edge(trim_data["edge"])
+                is_reversed = trim_data.get("is_reversed", False)
+                pcurve = None
+                if "pcurve" in trim_data:
+                    pcurve = NurbsCurve.__from_data__(trim_data["pcurve"])
+                trim = BrepTrim(edge=edge, is_reversed=is_reversed, curve_2d=pcurve)
+                trims.append(trim)
+            loop = BrepLoop(trims=trims)
             brep._loops.append(loop)
             loops.append(loop)
 
@@ -1220,256 +1126,8 @@ def _deserialize_brep_data(data: dict) -> Brep:
             domain_u=domain_u,
             domain_v=domain_v,
         )
-        # Add inner loops
         for inner_loop in loops[1:]:
             face.add_loop(inner_loop)
         brep._faces.append(face)
 
     return brep
-
-
-def _sample_edge_points(edge: BrepEdge, n: int = 64) -> list[Point]:
-    """Sample points along a single edge, producing a smooth polyline for curved edges.
-
-    For NurbsCurve edges, samples at n+1 parameter values (n segments).
-    For Line edges, returns just the two endpoints.
-    """
-    from compas_brep.curves.nurbs import NurbsCurve
-
-    if isinstance(edge.curve, NurbsCurve):
-        t_start, t_end = edge.curve.domain
-        points = []
-        for i in range(n + 1):
-            t = t_start + (t_end - t_start) * i / n
-            points.append(edge.curve.point_at(t))
-        return points
-
-    # Line edge — two endpoints
-    sp = edge.first_vertex.point
-    ep = edge.last_vertex.point
-    if (abs(sp.x - ep.x) + abs(sp.y - ep.y) + abs(sp.z - ep.z)) > 1e-9:
-        return [sp, ep]
-    return []
-
-
-# =============================================================================
-# Coplanar face merging
-# =============================================================================
-
-_MERGE_PRECISION = 6
-
-
-def _vertex_key(point: Point) -> tuple[float, float, float]:
-    """Round a point to a hashable key for vertex matching."""
-    return (
-        round(point.x, _MERGE_PRECISION),
-        round(point.y, _MERGE_PRECISION),
-        round(point.z, _MERGE_PRECISION),
-    )
-
-
-def _plane_key(polygon: Polygon) -> tuple[float, float, float, float]:
-    """Compute a hashable key for the plane of a polygon.
-
-    Uses Newell normal + signed distance from origin. Two polygons
-    are coplanar iff they share the same plane key.
-    """
-    from compas.geometry import Vector
-
-    pts = polygon.points
-    n = len(pts)
-    nx, ny, nz = 0.0, 0.0, 0.0
-    for i in range(n):
-        p0 = pts[i]
-        p1 = pts[(i + 1) % n]
-        nx += (p0.y - p1.y) * (p0.z + p1.z)
-        ny += (p0.z - p1.z) * (p0.x + p1.x)
-        nz += (p0.x - p1.x) * (p0.y + p1.y)
-    normal = Vector(nx, ny, nz)
-    length = normal.length
-    if length < 1e-10:
-        return (0.0, 0.0, 0.0, 0.0)
-    normal = normal / length
-
-    # Signed distance from origin: d = dot(normal, any_point_on_plane)
-    d = normal.x * pts[0].x + normal.y * pts[0].y + normal.z * pts[0].z
-
-    # Canonicalize: ensure the first non-zero component of the normal is positive
-    # so that opposite-facing normals get different keys (they're not coplanar).
-    prec = 4
-    return (round(normal.x, prec), round(normal.y, prec), round(normal.z, prec), round(d, prec))
-
-
-def _merge_polygon_group(polygons: list[Polygon]) -> list[Polygon]:
-    """Merge a group of coplanar polygons by removing shared internal edges.
-
-    Shared edges (appearing as A->B in one polygon and B->A in another)
-    are internal and get cancelled. The remaining boundary edges are chained
-    into closed loops, each becoming a merged polygon.
-    """
-    # Collect all directed half-edges; cancel shared pairs
-    half_edges: dict[tuple, tuple[Point, Point]] = {}
-
-    for polygon in polygons:
-        pts = polygon.points
-        n = len(pts)
-        for i in range(n):
-            p0 = pts[i]
-            p1 = pts[(i + 1) % n]
-            k0 = _vertex_key(p0)
-            k1 = _vertex_key(p1)
-            rev = (k1, k0)
-            if rev in half_edges:
-                # Shared internal edge — cancel both directions
-                del half_edges[rev]
-            else:
-                half_edges[(k0, k1)] = (p0, p1)
-
-    if not half_edges:
-        return []
-
-    # Build adjacency map: start_key -> list of (end_key, start_point, end_point)
-    # Using a list to handle vertices with multiple outgoing boundary edges
-    # (can happen at T-junctions from BSP splitting).
-    adj: dict[tuple, list[tuple]] = {}
-    for (k0, k1), (p0, p1) in half_edges.items():
-        adj.setdefault(k0, []).append((k1, p0, p1))
-
-    # Chain edges into closed loops
-    result = []
-    used_edges: set[tuple] = set()
-
-    for start_key in adj:
-        if all((start_key, nk) in used_edges for nk, _, _ in adj.get(start_key, [])):
-            continue
-
-        loop_points: list[Point] = []
-        current = start_key
-
-        while True:
-            neighbors = adj.get(current, [])
-            # Find the first unused outgoing edge
-            next_entry = None
-            for entry in neighbors:
-                edge_key = (current, entry[0])
-                if edge_key not in used_edges:
-                    next_entry = entry
-                    break
-
-            if next_entry is None:
-                break
-
-            next_key, p0, _p1 = next_entry
-            used_edges.add((current, next_key))
-            loop_points.append(p0)
-            current = next_key
-
-            if current == start_key:
-                break
-
-        if len(loop_points) >= 3:
-            result.append(Polygon(loop_points))
-
-    return result
-
-
-def _merge_coplanar_polygons(polygons: list[Polygon]) -> list[Polygon]:
-    """Group polygons by coplanar plane and merge each group."""
-    groups: dict[tuple, list[Polygon]] = {}
-    for polygon in polygons:
-        key = _plane_key(polygon)
-        groups.setdefault(key, []).append(polygon)
-
-    result = []
-    for _key, group in groups.items():
-        if len(group) == 1:
-            result.append(group[0])
-        else:
-            # Resolve T-junctions first, then merge by edge cancellation
-            resolved = _resolve_t_junctions(group)
-            merged = _merge_polygon_group(resolved)
-            result.extend(merged)
-
-    return result
-
-
-# =============================================================================
-# T-junction resolution
-# =============================================================================
-
-
-def _point_on_segment(p: Point, a: Point, b: Point, tol: float = 1e-5) -> bool:
-    """Check if point p lies strictly on segment a-b (not at endpoints)."""
-    abx, aby, abz = b.x - a.x, b.y - a.y, b.z - a.z
-    apx, apy, apz = p.x - a.x, p.y - a.y, p.z - a.z
-
-    # Cross product magnitude (collinearity check)
-    cx = aby * apz - abz * apy
-    cy = abz * apx - abx * apz
-    cz = abx * apy - aby * apx
-    cross_len_sq = cx * cx + cy * cy + cz * cz
-    seg_len_sq = abx * abx + aby * aby + abz * abz
-    if seg_len_sq < tol * tol:
-        return False
-    if cross_len_sq / seg_len_sq > tol * tol:
-        return False
-
-    # Parametric position on segment
-    t = (apx * abx + apy * aby + apz * abz) / seg_len_sq
-    return tol < t < 1.0 - tol
-
-
-def _resolve_t_junctions(polygons: list[Polygon]) -> list[Polygon]:
-    """Insert vertices at T-junctions between coplanar polygons.
-
-    When a vertex from one polygon lies on an edge of another polygon
-    (but is not an endpoint of that edge), it creates a T-junction.
-    This function splits such edges by inserting the missing vertex,
-    so that subsequent edge-cancellation merge works correctly.
-    """
-    # Collect all unique vertices from all polygons
-    all_vertices: dict[tuple, Point] = {}
-    for poly in polygons:
-        for p in poly.points:
-            all_vertices[_vertex_key(p)] = p
-
-    vertex_list = list(all_vertices.items())
-
-    result = []
-    for poly in polygons:
-        pts = poly.points
-        n = len(pts)
-        new_pts: list[Point] = []
-        for i in range(n):
-            p0 = pts[i]
-            p1 = pts[(i + 1) % n]
-            new_pts.append(p0)
-
-            k0 = _vertex_key(p0)
-            k1 = _vertex_key(p1)
-
-            # Find vertices from other polygons that lie on this edge
-            insertions: list[tuple[float, Point]] = []
-            for vkey, vpt in vertex_list:
-                if vkey == k0 or vkey == k1:
-                    continue
-                if _point_on_segment(vpt, p0, p1):
-                    abx = p1.x - p0.x
-                    aby = p1.y - p0.y
-                    abz = p1.z - p0.z
-                    apx = vpt.x - p0.x
-                    apy = vpt.y - p0.y
-                    apz = vpt.z - p0.z
-                    seg_len_sq = abx * abx + aby * aby + abz * abz
-                    t = (apx * abx + apy * aby + apz * abz) / seg_len_sq
-                    insertions.append((t, vpt))
-
-            # Insert in parametric order along the edge
-            insertions.sort(key=lambda x: x[0])
-            for _, vpt in insertions:
-                new_pts.append(vpt)
-
-        if len(new_pts) >= 3:
-            result.append(Polygon(new_pts))
-
-    return result

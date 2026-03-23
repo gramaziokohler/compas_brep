@@ -31,6 +31,7 @@ from OCP.BRepPrimAPI import (  # noqa: E402
 )
 from OCP.BRepTools import BRepTools, BRepTools_WireExplorer  # noqa: E402
 from OCP.Geom import Geom_BSplineCurve, Geom_BSplineSurface, Geom_RectangularTrimmedSurface  # noqa: E402
+from OCP.Geom2dConvert import Geom2dConvert  # noqa: E402
 from OCP.GeomAbs import GeomAbs_Line, GeomAbs_Plane  # noqa: E402
 from OCP.GeomConvert import GeomConvert  # noqa: E402
 from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Vec  # noqa: E402
@@ -38,7 +39,7 @@ from OCP.ShapeConstruct import ShapeConstruct_Curve  # noqa: E402
 from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array2OfPnt  # noqa: E402
 from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal, TColStd_Array2OfReal  # noqa: E402
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE  # noqa: E402
-from OCP.TopExp import TopExp_Explorer  # noqa: E402
+from OCP.TopExp import TopExp, TopExp_Explorer  # noqa: E402
 from OCP.TopoDS import TopoDS  # noqa: E402
 
 from compas_brep.curves.nurbs import NurbsCurve
@@ -46,6 +47,7 @@ from compas_brep.edge import BrepEdge
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
 from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 if TYPE_CHECKING:
@@ -60,8 +62,13 @@ if TYPE_CHECKING:
 def occ_to_brep(shape: TopoDS_Shape):
     """Convert an OCC TopoDS_Shape to a canonical compas_brep.Brep.
 
-    Extracts all NURBS surface data, edge curves, trim curves, and topology
-    from the OCC shape into Python-owned data structures.
+    Extracts all NURBS surface data, edge curves, trim curves (pcurves),
+    and topology from the OCC shape into Python-owned data structures.
+
+    Inspired by STEP (ISO 10303-21): each edge usage in a loop becomes a
+    BrepTrim (coedge) carrying an orientation flag and a 2D pcurve in the
+    face surface's UV space. This allows kernel-independent tessellation
+    and faithful round-trip serialization.
     """
     from compas_brep.brep import Brep
 
@@ -75,8 +82,11 @@ def occ_to_brep(shape: TopoDS_Shape):
             vertex_map[h] = BrepVertex(Point(pnt.X(), pnt.Y(), pnt.Z()))
         return vertex_map[h]
 
+    # Shared edge deduplication: same OCC edge (by IsSame) → same BrepEdge
+    # Store as list of (occ_edge, BrepEdge) pairs and use IsSame for comparison
+    edge_registry = []  # list of (occ_edge, BrepEdge)
+
     all_faces = []
-    all_edges_set = set()
     all_edges = []
     all_loops = []
 
@@ -101,44 +111,65 @@ def occ_to_brep(shape: TopoDS_Shape):
             occ_wire = TopoDS.Wire_s(wire_exp.Current())
 
             # Extract edges from wire in proper traversal order
-            loop_edges = []
+            loop_trims = []
             wire_explorer = BRepTools_WireExplorer(occ_wire, occ_face)
             while wire_explorer.More():
                 occ_edge = wire_explorer.Current()
-                current_vertex = _get_vertex(wire_explorer.CurrentVertex())
 
-                # Extract 3D edge curve
+                # Edge orientation: REVERSED means this usage traverses backward
+                edge_reversed = occ_edge.Orientation() == TopAbs_REVERSED
+
+                # Extract 3D edge curve (in the edge's canonical direction)
                 curve = _extract_edge_curve(occ_edge)
 
-                # Get the other vertex of this edge
-                v_exp = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
-                edge_verts = []
-                while v_exp.More():
-                    edge_verts.append(_get_vertex(TopoDS.Vertex_s(v_exp.Current())))
-                    v_exp.Next()
+                # Get the vertices in canonical (FORWARD) order using TopExp.
+                # cumOri=False gives the underlying edge's natural direction,
+                # independent of the orientation flag.
+                try:
+                    occ_first = TopExp.FirstVertex_s(occ_edge, False)
+                    occ_last = TopExp.LastVertex_s(occ_edge, False)
+                    start_v = _get_vertex(occ_first)
+                    end_v = _get_vertex(occ_last)
+                except Exception:
+                    # Fallback for degenerate edges
+                    v_exp = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
+                    edge_verts = []
+                    while v_exp.More():
+                        edge_verts.append(_get_vertex(TopoDS.Vertex_s(v_exp.Current())))
+                        v_exp.Next()
+                    if len(edge_verts) < 1:
+                        wire_explorer.Next()
+                        continue
+                    elif len(edge_verts) < 2:
+                        start_v = end_v = edge_verts[0]
+                    else:
+                        start_v, end_v = edge_verts[0], edge_verts[1]
 
-                if len(edge_verts) < 2:
-                    wire_explorer.Next()
-                    continue
+                # Shared edge deduplication via IsSame
+                brep_edge = None
+                for reg_occ_edge, reg_brep_edge in edge_registry:
+                    if occ_edge.IsSame(reg_occ_edge):
+                        brep_edge = reg_brep_edge
+                        break
+                if brep_edge is None:
+                    brep_edge = BrepEdge(start_v, end_v, curve=curve)
+                    edge_registry.append((occ_edge, brep_edge))
+                    all_edges.append(brep_edge)
 
-                # current_vertex is the start vertex in wire direction
-                if current_vertex is edge_verts[0]:
-                    start_v, end_v = edge_verts[0], edge_verts[1]
-                else:
-                    start_v, end_v = edge_verts[1], edge_verts[0]
+                # Extract pcurve (2D curve in face UV space)
+                pcurve = _extract_pcurve(occ_edge, occ_face)
 
-                edge = BrepEdge(start_v, end_v, curve=curve)
-                loop_edges.append(edge)
-
-                eh = occ_edge.__hash__()
-                if eh not in all_edges_set:
-                    all_edges_set.add(eh)
-                    all_edges.append(edge)
+                trim = BrepTrim(
+                    edge=brep_edge,
+                    is_reversed=edge_reversed,
+                    curve_2d=pcurve,
+                )
+                loop_trims.append(trim)
 
                 wire_explorer.Next()
 
-            if loop_edges:
-                loop = BrepLoop(loop_edges)
+            if loop_trims:
+                loop = BrepLoop(trims=loop_trims)
                 face_loops.append(loop)
                 all_loops.append(loop)
 
@@ -169,6 +200,100 @@ def occ_to_brep(shape: TopoDS_Shape):
     brep._native_brep = shape
     brep._native_dirty = False
     return brep
+
+
+def _extract_pcurve(occ_edge, occ_face):
+    """Extract the 2D parametric curve (pcurve) of an edge on a face.
+
+    Returns a NurbsCurve with 2D control points (z=0) representing the
+    curve in the face surface's UV parameter space, or None if extraction fails.
+
+    Handles both BSpline and Line 2D curves from OCC.
+    """
+    from OCP.BRepAdaptor import BRepAdaptor_Curve as _BRepAdaptor_Curve
+    from OCP.Geom2d import Geom2d_Line as _Geom2d_Line
+
+    try:
+        # Get parameter range from the 3D curve
+        adaptor = _BRepAdaptor_Curve(occ_edge)
+        first_param = adaptor.FirstParameter()
+        last_param = adaptor.LastParameter()
+
+        # Get the 2D pcurve
+        curve_2d = BRep_Tool.CurveOnSurface_s(occ_edge, occ_face, first_param, last_param)
+        if curve_2d is None:
+            return None
+
+        # Handle Geom2d_Line: create degree-1 NurbsCurve from endpoints
+        if isinstance(curve_2d, _Geom2d_Line):
+            p0 = curve_2d.Value(first_param)
+            p1 = curve_2d.Value(last_param)
+            return NurbsCurve.from_parameters(
+                points=[Point(p0.X(), p0.Y(), 0.0), Point(p1.X(), p1.Y(), 0.0)],
+                weights=[1.0, 1.0],
+                knots=[0.0, 1.0],
+                mults=[2, 2],
+                degree=1,
+            )
+
+        # Convert other 2D curve types to BSpline
+        try:
+            bspline_2d = Geom2dConvert.CurveToBSplineCurve_s(curve_2d)
+        except Exception:
+            # Fallback: evaluate endpoints and make a line
+            try:
+                p0 = curve_2d.Value(first_param)
+                p1 = curve_2d.Value(last_param)
+                return NurbsCurve.from_parameters(
+                    points=[Point(p0.X(), p0.Y(), 0.0), Point(p1.X(), p1.Y(), 0.0)],
+                    weights=[1.0, 1.0],
+                    knots=[0.0, 1.0],
+                    mults=[2, 2],
+                    degree=1,
+                )
+            except Exception:
+                return None
+
+        if bspline_2d is None:
+            return None
+
+        # Handle periodic curves
+        if bspline_2d.IsPeriodic():
+            bspline_2d.SetNotPeriodic()
+
+        # Trim to the edge's parameter range if needed
+        knot_first = bspline_2d.Knot(1)
+        knot_last = bspline_2d.Knot(bspline_2d.NbKnots())
+        if first_param > knot_first + 1e-10 or last_param < knot_last - 1e-10:
+            try:
+                bspline_2d.Segment(first_param, last_param)
+            except Exception:
+                pass  # Use the full curve if segmentation fails
+
+        # Extract as a NurbsCurve with 2D points (z=0)
+        n_poles = bspline_2d.NbPoles()
+        points = []
+        weights = []
+        for i in range(1, n_poles + 1):
+            p = bspline_2d.Pole(i)
+            points.append(Point(p.X(), p.Y(), 0.0))
+            weights.append(bspline_2d.Weight(i))
+
+        knots = []
+        mults = []
+        for i in range(1, bspline_2d.NbKnots() + 1):
+            knots.append(bspline_2d.Knot(i))
+            mults.append(bspline_2d.Multiplicity(i))
+
+        return NurbsCurve.from_parameters(
+            points=points,
+            weights=weights,
+            knots=knots,
+            mults=mults,
+            degree=bspline_2d.Degree(),
+        )
+    except Exception:
+        return None
 
 
 def _extract_surface(occ_face):
@@ -412,34 +537,60 @@ def _points_to_occ_wire(points):
 
 
 def _loop_to_occ_wire(loop):
-    """Create an OCC wire from a BrepLoop's edge curves.
+    """Create an OCC wire from a BrepLoop's trims or edge curves.
 
+    When trims are present, respects edge orientation (is_reversed).
     Converts each edge's curve (NurbsCurve or Line) to an OCC edge and
     assembles them into a wire. Returns None if the wire cannot be built.
     """
     wire_builder = BRepBuilderAPI_MakeWire()
-    for edge in loop.edges:
-        curve = edge.curve
-        sp = edge.first_vertex.point
-        ep = edge.last_vertex.point
-        p0 = gp_Pnt(sp.x, sp.y, sp.z)
-        p1 = gp_Pnt(ep.x, ep.y, ep.z)
-        dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
 
-        if isinstance(curve, NurbsCurve):
-            occ_curve = _nurbs_curve_to_occ(curve)
-            # Use the curve's own parametric domain rather than endpoint matching,
-            # which avoids precision issues from vertex coordinate rounding.
-            occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-        elif dist < 1e-9:
-            # Degenerate edge (start == end, e.g. pole of sphere) — skip
-            continue
-        elif isinstance(curve, Line):
-            occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
-        else:
-            occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+    if loop.trims:
+        for trim in loop.trims:
+            edge = trim.edge
+            curve = edge.curve
+            sp = edge.first_vertex.point
+            ep = edge.last_vertex.point
+            p0 = gp_Pnt(sp.x, sp.y, sp.z)
+            p1 = gp_Pnt(ep.x, ep.y, ep.z)
+            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
 
-        wire_builder.Add(occ_edge)
+            if isinstance(curve, NurbsCurve):
+                occ_curve = _nurbs_curve_to_occ(curve)
+                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
+            elif dist < 1e-9:
+                continue  # Degenerate edge
+            elif isinstance(curve, Line):
+                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+            else:
+                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+
+            # Apply orientation from trim
+            if trim.is_reversed:
+                occ_edge.Reverse()
+
+            wire_builder.Add(occ_edge)
+    else:
+        # Legacy path: direct edges
+        for edge in loop.edges:
+            curve = edge.curve
+            sp = edge.first_vertex.point
+            ep = edge.last_vertex.point
+            p0 = gp_Pnt(sp.x, sp.y, sp.z)
+            p1 = gp_Pnt(ep.x, ep.y, ep.z)
+            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+
+            if isinstance(curve, NurbsCurve):
+                occ_curve = _nurbs_curve_to_occ(curve)
+                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
+            elif dist < 1e-9:
+                continue
+            elif isinstance(curve, Line):
+                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+            else:
+                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+
+            wire_builder.Add(occ_edge)
 
     if not wire_builder.IsDone():
         return None

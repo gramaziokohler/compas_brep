@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from compas.geometry import Line, Point
 
+from compas_brep.curves.nurbs import NurbsCurve
 from compas_brep.vertex import BrepVertex
 
 
@@ -62,8 +63,6 @@ class BrepEdge:
 
     @property
     def is_bspline(self) -> bool:
-        from compas_brep.curves.nurbs import NurbsCurve
-
         return isinstance(self._curve, NurbsCurve)
 
     @property
@@ -86,6 +85,76 @@ class BrepEdge:
         if self.is_line:
             return Line(Point(*self._start.point), Point(*self._end.point))
         return Line(Point(*self._start.point), Point(*self._end.point))
+
+    # =========================================================================
+    # Serialization
+    # =========================================================================
+
+    @property
+    def __data__(self) -> dict:
+        """Serialize this edge to a dict."""
+        sp = self._start.point
+        ep = self._end.point
+        start_xyz = [sp.x, sp.y, sp.z]
+        end_xyz = [ep.x, ep.y, ep.z]
+        if isinstance(self._curve, NurbsCurve):
+            curve_data = {"type": "nurbs", "data": self._curve.__data__}
+        else:
+            curve_data = {"type": "line", "data": {"start": start_xyz, "end": end_xyz}}
+        return {"start": start_xyz, "end": end_xyz, "curve": curve_data}
+
+    @classmethod
+    def __from_data__(cls, data: dict, start: BrepVertex, end: BrepVertex) -> BrepEdge:
+        """Deserialize an edge from a dict.
+
+        Parameters
+        ----------
+        data : dict
+            Serialized edge data.
+        start : BrepVertex
+            The start vertex (from shared vertex pool).
+        end : BrepVertex
+            The end vertex (from shared vertex pool).
+        """
+        curve_info = data["curve"]
+        if curve_info["type"] == "nurbs":
+            curve = NurbsCurve.__from_data__(curve_info["data"])
+        else:
+            curve = Line(start.point, end.point)
+        return cls(start, end, curve=curve)
+
+    # =========================================================================
+    # Sampling
+    # =========================================================================
+
+    def sample_points(self, n: int = 64) -> list[Point]:
+        """Sample points along this edge for visualization.
+
+        For NurbsCurve edges, samples at n+1 parameter values (n segments).
+        For Line edges, returns just the two endpoints.
+
+        Parameters
+        ----------
+        n : int, optional
+            Number of segments for curved edges. Defaults to 64.
+
+        Returns
+        -------
+        list[Point]
+        """
+        if isinstance(self._curve, NurbsCurve):
+            t_start, t_end = self._curve.domain
+            points = []
+            for i in range(n + 1):
+                t = t_start + (t_end - t_start) * i / n
+                points.append(self._curve.point_at(t))
+            return points
+
+        sp = self._start.point
+        ep = self._end.point
+        if (abs(sp.x - ep.x) + abs(sp.y - ep.y) + abs(sp.z - ep.z)) > 1e-9:
+            return [sp, ep]
+        return []
 
     def __repr__(self):
         curve_type = "line" if self.is_line else "nurbs"
