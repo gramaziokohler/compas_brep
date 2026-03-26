@@ -31,16 +31,19 @@ from OCP.BRepPrimAPI import (  # noqa: E402
 )
 from OCP.BRepTools import BRepTools, BRepTools_WireExplorer  # noqa: E402
 from OCP.Geom import Geom_BSplineCurve, Geom_BSplineSurface, Geom_RectangularTrimmedSurface  # noqa: E402
+from OCP.Geom2d import Geom2d_BSplineCurve  # noqa: E402
 from OCP.Geom2dConvert import Geom2dConvert  # noqa: E402
 from OCP.GeomAbs import GeomAbs_Line, GeomAbs_Plane  # noqa: E402
 from OCP.GeomConvert import GeomConvert  # noqa: E402
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Vec  # noqa: E402
+from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Pnt2d, gp_Vec  # noqa: E402
 from OCP.ShapeConstruct import ShapeConstruct_Curve  # noqa: E402
-from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array2OfPnt  # noqa: E402
+from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array1OfPnt2d, TColgp_Array2OfPnt  # noqa: E402
 from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal, TColStd_Array2OfReal  # noqa: E402
 from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE  # noqa: E402
 from OCP.TopExp import TopExp, TopExp_Explorer  # noqa: E402
 from OCP.TopoDS import TopoDS  # noqa: E402
+from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
+from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
 from compas_brep.curves.nurbs import NurbsCurve
 from compas_brep.edge import BrepEdge
@@ -224,14 +227,16 @@ def _extract_pcurve(occ_edge, occ_face):
         if curve_2d is None:
             return None
 
-        # Handle Geom2d_Line: create degree-1 NurbsCurve from endpoints
+        # Handle Geom2d_Line: create degree-1 NurbsCurve from endpoints.
+        # Knots must match the 3D edge parameter range so OCC can reconstruct
+        # the pcurve with correct parameterization.
         if isinstance(curve_2d, _Geom2d_Line):
             p0 = curve_2d.Value(first_param)
             p1 = curve_2d.Value(last_param)
             return NurbsCurve.from_parameters(
                 points=[Point(p0.X(), p0.Y(), 0.0), Point(p1.X(), p1.Y(), 0.0)],
                 weights=[1.0, 1.0],
-                knots=[0.0, 1.0],
+                knots=[first_param, last_param],
                 mults=[2, 2],
                 degree=1,
             )
@@ -247,7 +252,7 @@ def _extract_pcurve(occ_edge, occ_face):
                 return NurbsCurve.from_parameters(
                     points=[Point(p0.X(), p0.Y(), 0.0), Point(p1.X(), p1.Y(), 0.0)],
                     weights=[1.0, 1.0],
-                    knots=[0.0, 1.0],
+                    knots=[first_param, last_param],
                     mults=[2, 2],
                     degree=1,
                 )
@@ -493,20 +498,7 @@ def brep_to_occ(brep) -> TopoDS_Shape:
 
         elif isinstance(surface, NurbsSurface):
             occ_surface = _nurbs_surface_to_occ(surface)
-
-            # Build outer wire from edge curves (preserves trim information)
-            outer_wire = _loop_to_occ_wire(face.outer_loop)
-            if outer_wire is not None:
-                maker = BRepBuilderAPI_MakeFace(occ_surface, outer_wire, True)
-                # Add inner wires (holes)
-                for inner_loop in face._inner_loops:
-                    inner_wire = _loop_to_occ_wire(inner_loop)
-                    if inner_wire is not None:
-                        maker.Add(inner_wire)
-                occ_face = maker.Face()
-            else:
-                # Fallback: untrimmed face (shouldn't happen for valid data)
-                occ_face = BRepBuilderAPI_MakeFace(occ_surface, 1e-6).Face()
+            occ_face = _build_nurbs_face(occ_surface, face)
         else:
             continue
 
@@ -534,6 +526,93 @@ def _points_to_occ_wire(points):
         ).Edge()
         wire_builder.Add(edge)
     return wire_builder.Wire()
+
+
+def _pcurve_to_geom2d(pcurve):
+    """Convert a compas_brep NurbsCurve (2D, z=0) to an OCC Geom2d_BSplineCurve."""
+    pts = pcurve._points
+    wts = pcurve._weights
+    n = len(pts)
+    poles = TColgp_Array1OfPnt2d(1, n)
+    weights = TColStd_Array1OfReal(1, n)
+    for i in range(n):
+        poles.SetValue(i + 1, gp_Pnt2d(pts[i].x, pts[i].y))
+        weights.SetValue(i + 1, wts[i])
+    knots = TColStd_Array1OfReal(1, len(pcurve._knots))
+    mults = TColStd_Array1OfInteger(1, len(pcurve._mults))
+    for i, k in enumerate(pcurve._knots):
+        knots.SetValue(i + 1, k)
+    for i, m in enumerate(pcurve._mults):
+        mults.SetValue(i + 1, m)
+    return Geom2d_BSplineCurve(poles, weights, knots, mults, pcurve._degree)
+
+
+def _build_nurbs_face(occ_surface, face):
+    """Build an OCC face from a NURBS surface with pcurve-based trimming.
+
+    Constructs edges with pcurves attached so that OCC correctly handles
+    periodic surfaces (e.g. cylinders) where 3D wire-only reconstruction
+    is ambiguous.
+
+    Falls back to domain-bounded or wire-based construction when pcurves
+    are not available.
+    """
+    from OCP.BRep import BRep_Builder as _BRep_Builder
+
+    builder = _BRep_Builder()
+
+    # Check if all trims have pcurves
+    all_have_pcurves = all(
+        t.curve_2d is not None for loop in face.loops for t in loop.trims
+    ) if face.outer_loop.trims else False
+
+    if all_have_pcurves:
+        # Build face with explicit pcurve-based trimming
+        occ_face = _TopoDS_Face()
+        builder.MakeFace(occ_face, occ_surface, 1e-6)
+
+        for loop_idx, loop in enumerate(face.loops):
+            wire = _TopoDS_Wire()
+            builder.MakeWire(wire)
+
+            for trim in loop.trims:
+                edge = trim.edge
+                curve = edge.curve
+                sp = edge.first_vertex.point
+                ep = edge.last_vertex.point
+                p0 = gp_Pnt(sp.x, sp.y, sp.z)
+                p1 = gp_Pnt(ep.x, ep.y, ep.z)
+                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+
+                if isinstance(curve, NurbsCurve):
+                    occ_curve = _nurbs_curve_to_occ(curve)
+                    occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
+                elif dist < 1e-9:
+                    continue
+                else:
+                    occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+
+                # Attach pcurve to this face
+                geom2d = _pcurve_to_geom2d(trim.curve_2d)
+                builder.UpdateEdge(occ_edge, geom2d, occ_face, 1e-6)
+
+                if trim.is_reversed:
+                    occ_edge.Reverse()
+
+                builder.Add(wire, occ_edge)
+
+            builder.Add(occ_face, wire)
+
+        return occ_face
+
+    # Fallback: use domain bounds for untrimmed faces
+    du = face.domain_u or face.surface.domain_u
+    dv = face.domain_v or face.surface.domain_v
+    if du is not None and dv is not None:
+        return BRepBuilderAPI_MakeFace(occ_surface, du[0], du[1], dv[0], dv[1], 1e-6).Face()
+
+    # Last resort: untrimmed face from surface
+    return BRepBuilderAPI_MakeFace(occ_surface, 1e-6).Face()
 
 
 def _loop_to_occ_wire(loop):

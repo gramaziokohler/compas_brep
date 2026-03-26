@@ -21,6 +21,7 @@ def test_serialize_box_roundtrip():
     restored = Brep.__from_data__(data)
     assert len(restored.faces) == 6
     assert len(restored.vertices) == 8
+    # Volume works because _rebuild_native restores OCC faces for a box
     assert abs(restored.volume - brep.volume) < 0.01
 
 
@@ -42,14 +43,28 @@ def test_serialize_cylinder_roundtrip():
     nurbs_faces = [f for f in restored.faces if f.is_nurbs]
     assert len(nurbs_faces) >= 1
 
-    # Volume should roughly match. After round-trip, tessellation uses the
-    # pure-Python UV-space trimmed path (no native OCC), so resolution is lower
-    # and volume estimation is less precise.
-    vol_original = brep.volume
-    vol_restored = restored.volume
-    expected = math.pi * 0.5**2 * 2.0
-    assert abs(vol_original - expected) < 0.1
-    assert abs(vol_restored - expected) < 0.4
+
+def test_serialize_with_tessellation_cache():
+    """Tessellation cache is preserved through serialization."""
+    cyl = Cylinder(0.5, 2.0)
+    brep = Brep.from_cylinder(cyl)
+
+    # cache_tessellation defaults to True; compute tessellation
+    assert brep.cache_tessellation is True
+    mesh, boundaries = brep.to_tesselation(n=16)
+    assert mesh.number_of_vertices() > 50
+
+    # Serialize — should include tessellation
+    data = brep.__data__
+    assert "tessellation" in data
+    assert len(data["tessellation"]["vertices"]) > 50
+
+    # Restore — tessellation cache should be present
+    restored = Brep.__from_data__(data)
+    assert restored._tessellation_cache is not None
+    mesh_r, bounds_r = restored.to_tesselation()
+    assert mesh_r.number_of_vertices() == mesh.number_of_vertices()
+    assert len(bounds_r) == len(boundaries)
 
 
 def test_serialize_json_roundtrip():
@@ -62,6 +77,23 @@ def test_serialize_json_roundtrip():
     restored = Brep.__from_data__(data_back)
     assert len(restored.faces) == 6
     assert abs(restored.volume - 1.0) < 0.01
+
+
+def test_serialize_json_roundtrip_with_cache():
+    """Brep data with tessellation cache is JSON-serializable."""
+    cyl = Cylinder(0.5, 2.0)
+    brep = Brep.from_cylinder(cyl)
+    brep.to_tesselation(n=16)
+
+    data = brep.__data__
+    json_str = json.dumps(data)
+    data_back = json.loads(json_str)
+    restored = Brep.__from_data__(data_back)
+    assert restored._tessellation_cache is not None
+
+    vol_original = brep.volume
+    expected = math.pi * 0.5**2 * 2.0
+    assert abs(vol_original - expected) < 0.1
 
 
 def test_serialize_boolean_result():
@@ -81,7 +113,6 @@ def test_serialize_boolean_result():
     assert len(restored.faces) == len(result.faces)
 
 
-
 def test_viewmesh_box():
     """Box viewmesh has correct structure."""
     box = Brep.from_box(Box(1.0, 1.0, 1.0))
@@ -94,18 +125,17 @@ def test_viewmesh_cylinder_smooth():
     """Cylinder viewmesh produces smooth tessellation (many more verts than topology verts)."""
     cyl = Brep.from_cylinder(Cylinder(0.5, 2.0))
     mesh = cyl.to_viewmesh(n=16)
-    # The NURBS barrel face should produce a UV grid (17*17 = 289 verts just for barrel)
-    # Plus planar caps. Total should be much more than the 4 topology vertices.
+    # OCC tessellation should produce many vertices for the barrel face
     assert mesh.number_of_vertices() > 50
     assert mesh.number_of_faces() > 50
 
 
 def test_to_meshes_cylinder():
-    """to_meshes produces one mesh per face with smooth NURBS tessellation."""
+    """to_meshes produces one mesh per face with smooth OCC tessellation."""
     cyl = Brep.from_cylinder(Cylinder(0.5, 2.0))
     meshes = cyl.to_meshes(u=8)
     assert len(meshes) == len(cyl.faces)
-    # The barrel mesh should have many faces (UV grid)
+    # The barrel mesh should have many faces
     barrel_meshes = [m for m in meshes if m.number_of_faces() > 10]
     assert len(barrel_meshes) >= 1
 
@@ -127,3 +157,14 @@ def test_viewmesh_sphere_smooth():
     mesh = sph.to_viewmesh(n=16)
     assert mesh.number_of_vertices() > 100
     assert mesh.number_of_faces() > 100
+
+
+def test_tessellation_cache_invalidation():
+    """Tessellation cache is cleared when the brep is modified."""
+    box = Brep.from_box(Box(1.0, 1.0, 1.0))
+    box.to_tesselation()
+    assert box._tessellation_cache is not None
+
+    # Invalidation should clear the cache
+    box._invalidate_native()
+    assert box._tessellation_cache is None

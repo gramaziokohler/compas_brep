@@ -78,6 +78,11 @@ class Brep(Data):
         # Native backend object cache
         self._native_brep = None  # cached OCC TopoDS_Shape or Rhino.Geometry.Brep
         self._native_dirty: bool = True  # True when canonical data changed since last native sync
+        # Tessellation cache — populated by to_tesselation(), serialized
+        # alongside the Brep data so visualization works without a backend.
+        # Set cache_tessellation=False to exclude it from serialization.
+        self._tessellation_cache: tuple[Mesh, list[Polyline]] | None = None
+        self.cache_tessellation: bool = True
 
     # =========================================================================
     # Data
@@ -85,11 +90,36 @@ class Brep(Data):
 
     @property
     def __data__(self) -> dict:
-        return {"version": 3, "faces": [face.__data__ for face in self._faces]}
+        data = {"version": 3, "faces": [face.__data__ for face in self._faces]}
+        if self.cache_tessellation:
+            # Eagerly compute tessellation if not cached yet but native
+            # faces are available (i.e. Brep was just created via backend).
+            if self._tessellation_cache is None:
+                has_native = any(f._native_face is not None for f in self._faces)
+                if has_native:
+                    self.to_tesselation()
+            if self._tessellation_cache is not None:
+                mesh, boundaries = self._tessellation_cache
+                verts, faces = mesh.to_vertices_and_faces()
+                data["tessellation"] = {
+                    "vertices": [[v[0], v[1], v[2]] for v in verts],
+                    "faces": faces,
+                    "boundaries": [[[p.x, p.y, p.z] for p in b.points] for b in boundaries],
+                }
+        return data
 
     @classmethod
     def __from_data__(cls, data: dict) -> Brep:
-        return _deserialize_brep_data(data)
+        brep = _deserialize_brep_data(data)
+        # Always rebuild native backend object so tessellation and operations work.
+        brep._rebuild_native()
+        # Restore tessellation cache if present (avoids re-tessellation).
+        tess = data.get("tessellation")
+        if tess is not None:
+            mesh = Mesh.from_vertices_and_faces(tess["vertices"], tess["faces"])
+            boundaries = [Polyline([Point(*p) for p in b]) for b in tess["boundaries"]]
+            brep._tessellation_cache = (mesh, boundaries)
+        return brep
 
     # =========================================================================
     # Dunder methods
@@ -170,20 +200,35 @@ class Brep(Data):
 
     @property
     def volume(self) -> float:
-        """Compute volume using the divergence theorem on tessellated faces."""
+        """Compute volume using the divergence theorem on the tessellated mesh.
+
+        Uses the cached tessellation or rebuilds native geometry if needed.
+        """
+        # Ensure we have tessellated geometry
+        self._ensure_native()
+        mesh = self.to_viewmesh()
+        verts, faces = mesh.to_vertices_and_faces()
         vol = 0.0
-        for face in self._faces:
-            verts, tris = face.tessellate(n=16)
-            for tri in tris:
-                v0 = verts[tri[0]]
-                v1 = verts[tri[1]]
-                v2 = verts[tri[2]]
-                vol += (
-                    v0[0] * (v1[1] * v2[2] - v2[1] * v1[2])
-                    - v1[0] * (v0[1] * v2[2] - v2[1] * v0[2])
-                    + v2[0] * (v0[1] * v1[2] - v1[1] * v0[2])
-                )
+        for tri in faces:
+            v0 = verts[tri[0]]
+            v1 = verts[tri[1]]
+            v2 = verts[tri[2]]
+            vol += (
+                v0[0] * (v1[1] * v2[2] - v2[1] * v1[2])
+                - v1[0] * (v0[1] * v2[2] - v2[1] * v0[2])
+                + v2[0] * (v0[1] * v1[2] - v1[1] * v0[2])
+            )
         return abs(vol) / 6.0
+
+    def _ensure_native(self):
+        """Ensure native faces are available for tessellation.
+
+        Native geometry is always rebuilt on deserialization, so this is
+        only needed as a safety net.
+        """
+        if any(f._native_face is not None for f in self._faces):
+            return
+        self._rebuild_native()
 
     @property
     def centroid(self) -> Point:
@@ -835,36 +880,42 @@ class Brep(Data):
     def to_meshes(self, u: int = 16, v: int = 16) -> list[Mesh]:
         """Convert the Brep to a list of meshes (one per face).
 
-        For NURBS faces, tessellates the surface at the given UV resolution.
-        For planar faces, uses fan triangulation.
+        Requires a backend (OCC or Rhino) for tessellation.
 
         Parameters
         ----------
         u : int, optional
-            UV resolution for NURBS face tessellation.
+            Resolution for tessellation.
         v : int, optional
-            Unused, kept for interface compatibility (uses u for both directions).
+            Unused, kept for interface compatibility.
         """
+        self._ensure_native()
         meshes = []
         for face in self._faces:
             verts, faces = face.tessellate(n=u)
-            mesh = Mesh.from_vertices_and_faces(verts, faces)
-            meshes.append(mesh)
+            if verts:
+                mesh = Mesh.from_vertices_and_faces(verts, faces)
+                meshes.append(mesh)
         return meshes
 
     def to_viewmesh(self, precision: float = 1e-6, n: int = 16) -> Mesh:
         """Convert the Brep to a single mesh for visualization.
 
-        For NURBS faces, tessellates the surface into a smooth UV grid mesh.
-        For planar faces, uses fan triangulation.
+        Uses cached tessellation if available, otherwise ensures native
+        geometry is present and tessellates each face via the backend.
 
         Parameters
         ----------
         precision : float, optional
             Unused, kept for interface compatibility.
         n : int, optional
-            UV resolution for NURBS face tessellation.
+            Resolution for face tessellation.
         """
+        if self._tessellation_cache is not None:
+            return self._tessellation_cache[0]
+
+        self._ensure_native()
+
         all_vertices = []
         all_faces = []
         vertex_offset = 0
@@ -888,21 +939,23 @@ class Brep(Data):
     def to_tesselation(
         self, linear_deflection: float = 0.1, n: int = 16, n_curves: int = 64
     ) -> tuple[Mesh, list[Polyline]]:
-        """Create a tesselation of the Brep for visualization.
+        """Create a tessellation of the Brep for visualization.
 
-        Returns a triangulated mesh and a list of boundary polylines (one per unique edge).
-        Matches the interface expected by compas_viewer's BRepObject.
+        Returns a triangulated mesh and a list of boundary polylines (one per
+        unique edge).  Matches the interface expected by compas_viewer's
+        BRepObject.
 
-        For NURBS faces, produces smooth UV-grid tessellation.
-        For curved edges, samples the edge curve to produce smooth boundary polylines.
-        Each topological edge appears exactly once (no duplicates from shared face loops).
+        Uses cached tessellation when available (populated by a previous call
+        or restored from serialized data).  Otherwise tessellates via the
+        backend (OCC/Rhino) and caches the result.  The cache is included
+        in serialized data when ``cache_tessellation`` is ``True`` (default).
 
         Parameters
         ----------
         linear_deflection : float, optional
             Unused, kept for interface compatibility.
         n : int, optional
-            Resolution for NURBS surface tessellation (UV grid density).
+            Resolution for face tessellation.
         n_curves : int, optional
             Number of samples per curved edge for boundary polylines.
             Higher values produce smoother curves. Defaults to 64.
@@ -912,26 +965,20 @@ class Brep(Data):
         tuple[Mesh, list[Polyline]]
             A triangulated mesh and edge boundary polylines.
         """
+        if self._tessellation_cache is not None:
+            return self._tessellation_cache
+
         mesh = self.to_viewmesh(n=n)
 
-        # Sample edge polylines via pcurve → surface to stay consistent with
-        # the mesh tessellation.  Each edge is emitted once; we pick the first
-        # trim that references it (any face works — the surface evaluation
-        # guarantees the polyline lies on the mesh).
-        seen_edges: set[int] = set()
+        # Sample edge polylines from edge curves.
         boundaries: list[Polyline] = []
-        for face in self._faces:
-            for loop in face.loops:
-                for trim in loop.trims:
-                    eid = id(trim.edge)
-                    if eid in seen_edges:
-                        continue
-                    seen_edges.add(eid)
-                    pts = trim.sample_points(face.surface, n=n_curves)
-                    if pts and len(pts) >= 2:
-                        boundaries.append(Polyline(pts))
+        for edge in self._edges:
+            pts = edge.sample_points(n=n_curves)
+            if pts and len(pts) >= 2:
+                boundaries.append(Polyline(pts))
 
-        return mesh, boundaries
+        self._tessellation_cache = (mesh, boundaries)
+        return self._tessellation_cache
 
     # =========================================================================
     # Topology queries
@@ -982,6 +1029,7 @@ class Brep(Data):
         """Mark the native cache as stale (canonical data was modified)."""
         self._native_brep = None
         self._native_dirty = True
+        self._tessellation_cache = None
 
     def _rebuild_native(self):
         """Rebuild the native OCC shape from canonical data, if OCP is available.
