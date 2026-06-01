@@ -15,6 +15,16 @@ All 84 tests still pass. `pytest -m occ` selects all tests correctly.
 
 Satisfies PRD user stories 20–23 (test infrastructure, auto-skip, pytest -m rhino).
 
+## Task: GitHub Actions CI workflow
+
+Added `.github/workflows/ci.yml` that:
+- Triggers on every push and pull request
+- Sets up Python 3.11 on ubuntu-latest
+- Installs `compas_brep[occ]` (includes cadquery-ocp-novtk)
+- Runs `pytest -m occ -v`
+
+Completes issue 01 (test infrastructure). All acceptance criteria checked except "CI passes on a clean push" which is verified on actual push to GitHub.
+
 ## Next
 
-- GitHub Actions CI: add .github/workflows/ci.yml to run OCC tests on every push
+- Issue 02: Topology sub-objects (OCC) — refactor BrepVertex, BrepEdge, BrepLoop, BrepFace, BrepTrim into native-handle wrappers
