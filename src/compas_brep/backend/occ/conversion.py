@@ -1,47 +1,38 @@
-"""OCC backend for compas_brep — converts between canonical Brep data and OCC shapes.
+"""OCC ↔ compas_brep conversion functions.
 
-Uses cadquery-ocp-novtk for OCCT bindings. Provides:
-- Primitive constructors (box, cylinder, sphere, cone, torus)
-- Boolean operations (difference, union, intersection)
-- Bidirectional conversion: brep_to_occ / occ_to_brep
+All COMPAS↔OCC conversion logic lives here:
+- ``occ_to_brep`` — OCC TopoDS_Shape → canonical Brep
+- ``brep_to_occ`` — canonical Brep → OCC TopoDS_Shape
+- Private helpers used by both directions and shared with other modules.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from compas.geometry import Frame, Line, Plane, Point, Vector
+from compas.geometry import Line, Plane, Point, Vector
 
-# OCC imports — this module is only loaded when OCP is available (via plugin requires=["OCP"])
-from OCP.BRep import BRep_Tool  # noqa: E402
-from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface  # noqa: E402
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse  # noqa: E402
-from OCP.BRepBuilderAPI import (  # noqa: E402
+from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
+from OCP.BRepBuilderAPI import (
     BRepBuilderAPI_MakeEdge,
     BRepBuilderAPI_MakeFace,
     BRepBuilderAPI_MakeWire,
     BRepBuilderAPI_Sewing,
 )
-from OCP.BRepPrimAPI import (  # noqa: E402
-    BRepPrimAPI_MakeBox,
-    BRepPrimAPI_MakeCone,
-    BRepPrimAPI_MakeCylinder,
-    BRepPrimAPI_MakeSphere,
-    BRepPrimAPI_MakeTorus,
-)
-from OCP.BRepTools import BRepTools, BRepTools_WireExplorer  # noqa: E402
-from OCP.Geom import Geom_BSplineCurve, Geom_BSplineSurface, Geom_RectangularTrimmedSurface  # noqa: E402
-from OCP.Geom2d import Geom2d_BSplineCurve  # noqa: E402
-from OCP.Geom2dConvert import Geom2dConvert  # noqa: E402
-from OCP.GeomAbs import GeomAbs_Line, GeomAbs_Plane  # noqa: E402
-from OCP.GeomConvert import GeomConvert  # noqa: E402
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Pnt2d, gp_Vec  # noqa: E402
-from OCP.ShapeConstruct import ShapeConstruct_Curve  # noqa: E402
-from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array1OfPnt2d, TColgp_Array2OfPnt  # noqa: E402
-from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal, TColStd_Array2OfReal  # noqa: E402
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE  # noqa: E402
-from OCP.TopExp import TopExp, TopExp_Explorer  # noqa: E402
-from OCP.TopoDS import TopoDS  # noqa: E402
+from OCP.BRepTools import BRepTools, BRepTools_WireExplorer
+from OCP.Geom import Geom_BSplineCurve, Geom_BSplineSurface, Geom_RectangularTrimmedSurface
+from OCP.Geom2d import Geom2d_BSplineCurve
+from OCP.Geom2dConvert import Geom2dConvert
+from OCP.GeomAbs import GeomAbs_Line, GeomAbs_Plane
+from OCP.GeomConvert import GeomConvert
+from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Pnt2d, gp_Vec  # noqa: F401
+from OCP.ShapeConstruct import ShapeConstruct_Curve
+from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array1OfPnt2d, TColgp_Array2OfPnt
+from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal, TColStd_Array2OfReal
+from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE
+from OCP.TopExp import TopExp, TopExp_Explorer
+from OCP.TopoDS import TopoDS
 from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
@@ -63,17 +54,31 @@ if TYPE_CHECKING:
 
 
 def occ_to_brep(shape: TopoDS_Shape):
-    """Convert an OCC TopoDS_Shape to a canonical compas_brep.Brep.
+    """Wrap an OCC TopoDS_Shape in a compas_brep.Brep.
+
+    Returns a thin Brep with ``_native_brep`` set but no topology extracted yet.
+    Topology (vertices, edges, loops, faces) is populated lazily on first access
+    via :func:`occ_extract_topology`.
+    """
+    from compas_brep.brep import Brep
+
+    brep = Brep()
+    brep._native_brep = shape
+    return brep
+
+
+def occ_extract_topology(brep) -> None:
+    """Populate a Brep's topology lists in-place from its cached OCC native shape.
 
     Extracts all NURBS surface data, edge curves, trim curves (pcurves),
-    and topology from the OCC shape into Python-owned data structures.
+    and topology from the OCC shape into Python-owned COMPAS data structures.
 
     Inspired by STEP (ISO 10303-21): each edge usage in a loop becomes a
     BrepTrim (coedge) carrying an orientation flag and a 2D pcurve in the
     face surface's UV space. This allows kernel-independent tessellation
     and faithful round-trip serialization.
     """
-    from compas_brep.brep import Brep
+    shape = brep._native_brep
 
     # Collect all vertices with deduplication
     vertex_map = {}  # hash(TopoDS_Vertex) -> BrepVertex
@@ -189,20 +194,14 @@ def occ_to_brep(shape: TopoDS_Shape):
             )
             for inner_loop in face_loops[1:]:
                 brep_face.add_loop(inner_loop)
-            brep_face._native_face = occ_face  # cache for tessellation
             all_faces.append(brep_face)
 
         face_exp.Next()
 
-    # Build Brep
-    brep = Brep()
     brep._vertices = list(vertex_map.values())
     brep._edges = all_edges
     brep._loops = all_loops
     brep._faces = all_faces
-    brep._native_brep = shape
-    brep._native_dirty = False
-    return brep
 
 
 def _extract_pcurve(occ_edge, occ_face):
@@ -467,7 +466,7 @@ def brep_to_occ(brep) -> TopoDS_Shape:
     Reconstructs properly trimmed faces from edge curves for both planar and
     NURBS surfaces, and caches native faces on each BrepFace for tessellation.
     """
-    if brep._native_brep is not None and not brep._native_dirty:
+    if brep._native_brep is not None:
         return brep._native_brep
 
     sewing = BRepBuilderAPI_Sewing(1e-6)
@@ -502,14 +501,12 @@ def brep_to_occ(brep) -> TopoDS_Shape:
         else:
             continue
 
-        face._native_face = occ_face
         sewing.Add(occ_face)
 
     sewing.Perform()
     shape = sewing.SewedShape()
 
     brep._native_brep = shape
-    brep._native_dirty = False
     return shape
 
 
@@ -562,9 +559,7 @@ def _build_nurbs_face(occ_surface, face):
     builder = _BRep_Builder()
 
     # Check if all trims have pcurves
-    all_have_pcurves = all(
-        t.curve_2d is not None for loop in face.loops for t in loop.trims
-    ) if face.outer_loop.trims else False
+    all_have_pcurves = all(t.curve_2d is not None for loop in face.loops for t in loop.trims) if face.outer_loop.trims else False
 
     if all_have_pcurves:
         # Build face with explicit pcurve-based trimming
@@ -755,12 +750,7 @@ def _nurbs_curve_to_occ(curve: NurbsCurve):
     )
 
 
-# =============================================================================
-# Primitive constructors
-# =============================================================================
-
-
-def _frame_to_ax2(frame: Frame):
+def _frame_to_ax2(frame):
     """Convert a COMPAS Frame to an OCC gp_Ax2."""
     origin = frame.point
     zaxis = frame.zaxis
@@ -770,569 +760,3 @@ def _frame_to_ax2(frame: Frame):
         gp_Dir(zaxis.x, zaxis.y, zaxis.z),
         gp_Dir(xaxis.x, xaxis.y, xaxis.z),
     )
-
-
-def make_box(box):
-    """Create a Brep from a COMPAS Box using OCC.
-
-    COMPAS Box is centered at its frame. OCC's MakeBox builds from a corner point
-    to (+xsize, +ysize, +zsize), so we offset the origin to the min corner.
-    """
-    frame = box.frame
-    corner = (
-        frame.point + frame.xaxis * (-box.xsize / 2) + frame.yaxis * (-box.ysize / 2) + frame.zaxis * (-box.zsize / 2)
-    )
-    ax2 = gp_Ax2(
-        gp_Pnt(corner.x, corner.y, corner.z),
-        gp_Dir(frame.zaxis.x, frame.zaxis.y, frame.zaxis.z),
-        gp_Dir(frame.xaxis.x, frame.xaxis.y, frame.xaxis.z),
-    )
-    shape = BRepPrimAPI_MakeBox(ax2, box.xsize, box.ysize, box.zsize).Shape()
-    return occ_to_brep(shape)
-
-
-def make_cylinder(cylinder):
-    """Create a Brep from a COMPAS Cylinder using OCC.
-
-    COMPAS Cylinder is centered at its frame. OCC's MakeCylinder builds from
-    the ax2 origin upward along the z-axis, so we offset to the bottom.
-    """
-    frame = cylinder.frame
-    bottom = frame.point + frame.zaxis * (-cylinder.height / 2)
-    ax2 = gp_Ax2(
-        gp_Pnt(bottom.x, bottom.y, bottom.z),
-        gp_Dir(frame.zaxis.x, frame.zaxis.y, frame.zaxis.z),
-        gp_Dir(frame.xaxis.x, frame.xaxis.y, frame.xaxis.z),
-    )
-    shape = BRepPrimAPI_MakeCylinder(ax2, cylinder.radius, cylinder.height).Shape()
-    return occ_to_brep(shape)
-
-
-def make_sphere(sphere):
-    """Create a Brep from a COMPAS Sphere using OCC."""
-    center = sphere.frame.point
-    shape = BRepPrimAPI_MakeSphere(gp_Pnt(center.x, center.y, center.z), sphere.radius).Shape()
-    return occ_to_brep(shape)
-
-
-def make_cone(cone):
-    """Create a Brep from a COMPAS Cone using OCC."""
-    ax2 = _frame_to_ax2(cone.frame)
-    shape = BRepPrimAPI_MakeCone(ax2, cone.radius, 0.0, cone.height).Shape()
-    return occ_to_brep(shape)
-
-
-def make_torus(torus):
-    """Create a Brep from a COMPAS Torus using OCC."""
-    ax2 = _frame_to_ax2(torus.frame)
-    shape = BRepPrimAPI_MakeTorus(ax2, torus.radius_axis, torus.radius_pipe).Shape()
-    return occ_to_brep(shape)
-
-
-# =============================================================================
-# Boolean operations
-# =============================================================================
-
-
-def boolean_difference(brep_a, brep_b):
-    """Boolean subtraction: A - B."""
-    shape_a = brep_to_occ(brep_a)
-    shape_b = brep_to_occ(brep_b)
-    op = BRepAlgoAPI_Cut(shape_a, shape_b)
-    return occ_to_brep(op.Shape())
-
-
-def boolean_union(brep_a, brep_b):
-    """Boolean union: A + B."""
-    shape_a = brep_to_occ(brep_a)
-    shape_b = brep_to_occ(brep_b)
-    op = BRepAlgoAPI_Fuse(shape_a, shape_b)
-    return occ_to_brep(op.Shape())
-
-
-def boolean_intersection(brep_a, brep_b):
-    """Boolean intersection: A & B."""
-    shape_a = brep_to_occ(brep_a)
-    shape_b = brep_to_occ(brep_b)
-    op = BRepAlgoAPI_Common(shape_a, shape_b)
-    return occ_to_brep(op.Shape())
-
-
-# =============================================================================
-# Other constructors
-# =============================================================================
-
-
-def make_from_mesh(mesh):
-    """Create a Brep from a COMPAS Mesh by sewing polygon faces."""
-    sewing = BRepBuilderAPI_Sewing(1e-6)
-
-    for fkey in mesh.faces():
-        vertices = mesh.face_vertices(fkey)
-        points = [mesh.vertex_coordinates(v) for v in vertices]
-        wire = _points_to_occ_wire([Point(*p) for p in points])
-        face = BRepBuilderAPI_MakeFace(wire, True).Face()
-        sewing.Add(face)
-
-    sewing.Perform()
-    return occ_to_brep(sewing.SewedShape())
-
-
-def make_extrusion(curve_or_profile, vector, cap_ends=True):
-    """Create a Brep by extruding a curve/profile along a vector."""
-    from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
-
-    if hasattr(curve_or_profile, "points"):
-        points = list(curve_or_profile.points)
-        wire = _points_to_occ_wire(points)
-    else:
-        raise NotImplementedError("Extrusion currently supports polygon profiles only")
-
-    face = BRepBuilderAPI_MakeFace(wire, True).Face()
-    vec = gp_Vec(vector.x, vector.y, vector.z)
-    shape = BRepPrimAPI_MakePrism(face, vec).Shape()
-    return occ_to_brep(shape)
-
-
-def make_loft(curves):
-    """Create a Brep by lofting through curves."""
-    from OCP.BRepOffsetAPI import BRepOffsetAPI_ThruSections
-
-    loft = BRepOffsetAPI_ThruSections(True)  # isSolid=True
-
-    for curve in curves:
-        if hasattr(curve, "points") and hasattr(curve, "_knots"):
-            occ_curve = _nurbs_curve_to_occ(curve)
-            edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-            wire = BRepBuilderAPI_MakeWire(edge).Wire()
-        elif hasattr(curve, "points"):
-            points = list(curve.points)
-            wire = _points_to_occ_wire(points)
-        else:
-            raise NotImplementedError(f"Unsupported curve type: {type(curve)}")
-        loft.AddWire(wire)
-
-    loft.Build()
-    return occ_to_brep(loft.Shape())
-
-
-def from_native(native_shape):
-    """Create a Brep from a native OCC TopoDS_Shape."""
-    return occ_to_brep(native_shape)
-
-
-# =============================================================================
-# Pluggable instance operations
-# =============================================================================
-
-
-def occ_trimmed(brep, plane):
-    """OCC implementation of brep.trimmed(plane)."""
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
-    from OCP.BRepPrimAPI import BRepPrimAPI_MakeHalfSpace
-
-    shape = brep_to_occ(brep)
-    occ_pln = gp_Pln(
-        gp_Pnt(plane.point.x, plane.point.y, plane.point.z),
-        gp_Dir(plane.normal.x, plane.normal.y, plane.normal.z),
-    )
-    face = BRepBuilderAPI_MakeFace(occ_pln).Face()
-    ref_pt = gp_Pnt(
-        plane.point.x + plane.normal.x * 1000,
-        plane.point.y + plane.normal.y * 1000,
-        plane.point.z + plane.normal.z * 1000,
-    )
-    halfspace = BRepPrimAPI_MakeHalfSpace(face, ref_pt).Solid()
-    result = BRepAlgoAPI_Cut(shape, halfspace).Shape()
-    return occ_to_brep(result)
-
-
-def occ_split(brep, cutter):
-    """OCC implementation of brep.split(cutter_brep).
-
-    Splits a solid by a cutter Brep.  When the cutter is a planar face
-    (open surface), the split is performed via two half-space cuts so that
-    both sides of the cutting plane are returned.
-    """
-    from compas.geometry import Plane
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
-    from OCP.BRepPrimAPI import BRepPrimAPI_MakeHalfSpace
-
-    shape = brep_to_occ(brep)
-
-    # Determine the cutting plane from the cutter's first face
-    if not cutter._faces:
-        return [brep]
-    cutting_surface = cutter._faces[0].surface
-
-    if isinstance(cutting_surface, Plane):
-        plane = cutting_surface
-        occ_pln = gp_Pln(
-            gp_Pnt(plane.point.x, plane.point.y, plane.point.z),
-            gp_Dir(plane.normal.x, plane.normal.y, plane.normal.z),
-        )
-        plane_face = BRepBuilderAPI_MakeFace(occ_pln).Face()
-
-        # Half-space on the normal side (positive side)
-        ref_pt_pos = gp_Pnt(
-            plane.point.x + plane.normal.x * 1000,
-            plane.point.y + plane.normal.y * 1000,
-            plane.point.z + plane.normal.z * 1000,
-        )
-        # Half-space on the opposite side (negative side)
-        ref_pt_neg = gp_Pnt(
-            plane.point.x - plane.normal.x * 1000,
-            plane.point.y - plane.normal.y * 1000,
-            plane.point.z - plane.normal.z * 1000,
-        )
-
-        halfspace_pos = BRepPrimAPI_MakeHalfSpace(plane_face, ref_pt_pos).Solid()
-        halfspace_neg = BRepPrimAPI_MakeHalfSpace(plane_face, ref_pt_neg).Solid()
-
-        result_a = occ_to_brep(BRepAlgoAPI_Cut(shape, halfspace_pos).Shape())
-        result_b = occ_to_brep(BRepAlgoAPI_Cut(shape, halfspace_neg).Shape())
-    else:
-        # Generic case: cut by the cutter shape in both directions
-        from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
-
-        cutter_shape = brep_to_occ(cutter)
-        result_a = occ_to_brep(BRepAlgoAPI_Cut(shape, cutter_shape).Shape())
-        result_b = occ_to_brep(BRepAlgoAPI_Common(shape, cutter_shape).Shape())
-
-    results = []
-    if result_a._faces:
-        results.append(result_a)
-    if result_b._faces:
-        results.append(result_b)
-    return results
-
-
-def occ_slice(brep, plane):
-    """OCC implementation of brep.slice(plane) — returns intersection polylines."""
-    from compas.geometry import Point as _Point
-    from compas.geometry import Polyline
-    from OCP.BRepAdaptor import BRepAdaptor_Curve as _BRepAdaptor_Curve
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
-    from OCP.TopExp import TopExp_Explorer as _TopExp_Explorer
-    from OCP.TopoDS import TopoDS as _TopoDS
-
-    shape = brep_to_occ(brep)
-    pln = gp_Pln(
-        gp_Pnt(plane.point.x, plane.point.y, plane.point.z),
-        gp_Dir(plane.normal.x, plane.normal.y, plane.normal.z),
-    )
-    plane_face = BRepBuilderAPI_MakeFace(pln).Face()
-    section = BRepAlgoAPI_Section(shape, plane_face)
-    section.Build()
-    result_shape = section.Shape()
-
-    polylines = []
-    edge_exp = _TopExp_Explorer(result_shape, TopAbs_EDGE)
-    while edge_exp.More():
-        edge = _TopoDS.Edge_s(edge_exp.Current())
-        adaptor = _BRepAdaptor_Curve(edge)
-        t0, t1 = adaptor.FirstParameter(), adaptor.LastParameter()
-        n_pts = 32
-        pts = []
-        for i in range(n_pts + 1):
-            t = t0 + (t1 - t0) * i / n_pts
-            p = adaptor.Value(t)
-            pts.append(_Point(p.X(), p.Y(), p.Z()))
-        polylines.append(Polyline(pts))
-        edge_exp.Next()
-    return polylines
-
-
-# =============================================================================
-# Additional operations
-# =============================================================================
-
-
-def occ_fillet(brep, radius, edges=None):
-    """Fillet edges of a Brep. If edges is None, fillet all edges."""
-    from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
-
-    shape = brep_to_occ(brep)
-    fillet = BRepFilletAPI_MakeFillet(shape)
-
-    if edges is not None:
-        # Fillet specific edges by index
-        all_edges = []
-        exp = TopExp_Explorer(shape, TopAbs_EDGE)
-        while exp.More():
-            all_edges.append(TopoDS.Edge_s(exp.Current()))
-            exp.Next()
-        for edge_idx in edges:
-            if 0 <= edge_idx < len(all_edges):
-                fillet.Add(radius, all_edges[edge_idx])
-    else:
-        # Fillet all edges
-        exp = TopExp_Explorer(shape, TopAbs_EDGE)
-        while exp.More():
-            fillet.Add(radius, TopoDS.Edge_s(exp.Current()))
-            exp.Next()
-
-    fillet.Build()
-    return occ_to_brep(fillet.Shape())
-
-
-def occ_offset(brep, distance):
-    """Offset a Brep by a distance."""
-    from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
-
-    shape = brep_to_occ(brep)
-    offset = BRepOffsetAPI_MakeOffsetShape()
-    offset.PerformBySimple(shape, distance)
-    return occ_to_brep(offset.Shape())
-
-
-def occ_contains(brep, point):
-    """Check if a point is contained inside a solid Brep."""
-    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
-    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
-
-    shape = brep_to_occ(brep)
-    classifier = BRepClass3d_SolidClassifier(shape, gp_Pnt(point.x, point.y, point.z), 1e-6)
-    state = classifier.State()
-    return state == TopAbs_IN or state == TopAbs_ON
-
-
-def occ_cap_planar_holes(brep):
-    """Cap planar holes in a Brep."""
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
-
-    shape = brep_to_occ(brep)
-    sewing = BRepBuilderAPI_Sewing()
-    sewing.Add(shape)
-    sewing.Perform()
-    sewn = sewing.SewedShape()
-    try:
-        solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewn))
-        return occ_to_brep(solid.Shape())
-    except Exception:
-        return occ_to_brep(sewn)
-
-
-def occ_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
-    """Compute the overlap between two Breps, returning the common shape."""
-    shape_a = brep_to_occ(brep_a)
-    shape_b = brep_to_occ(brep_b)
-    common = BRepAlgoAPI_Common(shape_a, shape_b)
-    result = occ_to_brep(common.Shape())
-    return result
-
-
-def occ_fix(brep):
-    """Fix a Brep shape using ShapeFix."""
-    from OCP.ShapeFix import ShapeFix_Shape
-
-    shape = brep_to_occ(brep)
-    fixer = ShapeFix_Shape(shape)
-    fixer.Perform()
-    return occ_to_brep(fixer.Shape())
-
-
-def occ_heal(brep):
-    """Heal a Brep shape (fix + sew)."""
-    from OCP.ShapeFix import ShapeFix_Shape
-
-    shape = brep_to_occ(brep)
-    fixer = ShapeFix_Shape(shape)
-    fixer.Perform()
-    fixed = fixer.Shape()
-
-    sewing = BRepBuilderAPI_Sewing()
-    sewing.Add(fixed)
-    sewing.Perform()
-    return occ_to_brep(sewing.SewedShape())
-
-
-def occ_sew(brep):
-    """Sew a Brep shape."""
-    shape = brep_to_occ(brep)
-    sewing = BRepBuilderAPI_Sewing()
-    sewing.Add(shape)
-    sewing.Perform()
-    return occ_to_brep(sewing.SewedShape())
-
-
-def occ_make_solid(brep):
-    """Convert a shell Brep to a solid."""
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
-
-    shape = brep_to_occ(brep)
-    solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(shape))
-    return occ_to_brep(solid.Shape())
-
-
-def occ_sweep(profile, path):
-    """Create a Brep by sweeping a profile along a path."""
-    from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipe
-
-    profile_shape = brep_to_occ(profile)
-    path_shape = brep_to_occ(path)
-    # Extract the wire from the path
-    wire_exp = TopExp_Explorer(path_shape, TopAbs_WIRE)
-    if wire_exp.More():
-        wire = TopoDS.Wire_s(wire_exp.Current())
-    else:
-        # Build wire from edges
-        builder = BRepBuilderAPI_MakeWire()
-        edge_exp = TopExp_Explorer(path_shape, TopAbs_EDGE)
-        while edge_exp.More():
-            builder.Add(TopoDS.Edge_s(edge_exp.Current()))
-            edge_exp.Next()
-        wire = builder.Wire()
-
-    # Get profile shape (first face or first wire)
-    face_exp = TopExp_Explorer(profile_shape, TopAbs_FACE)
-    if face_exp.More():
-        profile_topo = TopoDS.Face_s(face_exp.Current())
-    else:
-        wire_exp2 = TopExp_Explorer(profile_shape, TopAbs_WIRE)
-        profile_topo = TopoDS.Wire_s(wire_exp2.Current())
-
-    pipe = BRepOffsetAPI_MakePipe(wire, profile_topo)
-    pipe.Build()
-    return occ_to_brep(pipe.Shape())
-
-
-def occ_pipe(path, radius):
-    """Create a pipe by sweeping a circle along a path."""
-
-    from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipe
-    from OCP.GC import GC_MakeCircle
-
-    path_shape = brep_to_occ(path)
-    # Extract wire from path
-    wire_exp = TopExp_Explorer(path_shape, TopAbs_WIRE)
-    if wire_exp.More():
-        wire = TopoDS.Wire_s(wire_exp.Current())
-    else:
-        builder = BRepBuilderAPI_MakeWire()
-        edge_exp = TopExp_Explorer(path_shape, TopAbs_EDGE)
-        while edge_exp.More():
-            builder.Add(TopoDS.Edge_s(edge_exp.Current()))
-            edge_exp.Next()
-        wire = builder.Wire()
-
-    # Get starting point and tangent of path
-    edge_exp = TopExp_Explorer(wire, TopAbs_EDGE)
-    first_edge = TopoDS.Edge_s(edge_exp.Current())
-    adaptor = BRepAdaptor_Curve(first_edge)
-    start_pt = adaptor.Value(adaptor.FirstParameter())
-    d1 = gp_Vec()
-    p_tmp = gp_Pnt()
-    adaptor.D1(adaptor.FirstParameter(), p_tmp, d1)
-    direction = gp_Dir(d1)
-
-    ax2 = gp_Ax2(start_pt, direction)
-    circle_edge = BRepBuilderAPI_MakeEdge(GC_MakeCircle(ax2, radius).Value())
-    circle_wire = BRepBuilderAPI_MakeWire(circle_edge.Edge()).Wire()
-    circle_face = BRepBuilderAPI_MakeFace(circle_wire)
-
-    pipe = BRepOffsetAPI_MakePipe(wire, circle_face.Face())
-    pipe.Build()
-    return occ_to_brep(pipe.Shape())
-
-
-def occ_from_curves(curves):
-    """Create a Brep from planar boundary curves."""
-    from compas_brep.curves.nurbs import NurbsCurve as _NC
-
-    wire_builder = BRepBuilderAPI_MakeWire()
-    for curve in curves:
-        if isinstance(curve, _NC):
-            occ_curve = _nurbs_curve_to_occ(curve)
-            edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-        else:
-            # Line
-            p0 = gp_Pnt(curve.start.x, curve.start.y, curve.start.z)
-            p1 = gp_Pnt(curve.end.x, curve.end.y, curve.end.z)
-            edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
-        wire_builder.Add(edge)
-
-    wire = wire_builder.Wire()
-    face = BRepBuilderAPI_MakeFace(wire)
-    return occ_to_brep(face.Shape())
-
-
-def occ_from_breps(breps):
-    """Join multiple Breps into one by sewing overlapping edges."""
-    sewing = BRepBuilderAPI_Sewing()
-    for b in breps:
-        sewing.Add(brep_to_occ(b))
-    sewing.Perform()
-    return occ_to_brep(sewing.SewedShape())
-
-
-def occ_from_surface(surface, domain_u=None, domain_v=None):
-    """Create a Brep from a NurbsSurface."""
-    occ_surface = _nurbs_surface_to_occ(surface)
-    if domain_u and domain_v:
-        face = BRepBuilderAPI_MakeFace(occ_surface, domain_u[0], domain_u[1], domain_v[0], domain_v[1], 1e-6)
-    else:
-        face = BRepBuilderAPI_MakeFace(occ_surface, 1e-6)
-    return occ_to_brep(face.Shape())
-
-
-def occ_to_step(brep, filepath, **kwargs):
-    """Export a Brep to a STEP file."""
-    from OCP.IFSelect import IFSelect_RetDone
-    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
-
-    shape = brep_to_occ(brep)
-    writer = STEPControl_Writer()
-    writer.Transfer(shape, STEPControl_AsIs)
-    status = writer.Write(str(filepath))
-    if status != IFSelect_RetDone:
-        raise RuntimeError(f"Failed to write STEP file: {filepath}")
-
-
-def occ_from_step(filepath):
-    """Import a Brep from a STEP file."""
-    from OCP.IFSelect import IFSelect_RetDone
-    from OCP.STEPControl import STEPControl_Reader
-
-    reader = STEPControl_Reader()
-    status = reader.ReadFile(str(filepath))
-    if status != IFSelect_RetDone:
-        raise RuntimeError(f"Failed to read STEP file: {filepath}")
-    reader.TransferRoots()
-    shape = reader.OneShape()
-    return occ_to_brep(shape)
-
-
-def occ_to_stl(brep, filepath, linear_deflection=1e-3, angular_deflection=0.5):
-    """Export a Brep to an STL file."""
-    from OCP.BRepMesh import BRepMesh_IncrementalMesh
-    from OCP.StlAPI import StlAPI_Writer
-
-    shape = brep_to_occ(brep)
-    BRepMesh_IncrementalMesh(shape, linear_deflection, True, angular_deflection)
-    writer = StlAPI_Writer()
-    writer.Write(shape, str(filepath))
-
-
-def occ_to_iges(brep, filepath):
-    """Export a Brep to an IGES file."""
-    from OCP.IGESControl import IGESControl_Writer
-
-    shape = brep_to_occ(brep)
-    writer = IGESControl_Writer()
-    writer.AddShape(shape)
-    writer.Write(str(filepath))
-
-
-def occ_from_iges(filepath):
-    """Import a Brep from an IGES file."""
-    from OCP.IGESControl import IGESControl_Reader
-
-    reader = IGESControl_Reader()
-    reader.ReadFile(str(filepath))
-    reader.TransferRoots()
-    shape = reader.OneShape()
-    return occ_to_brep(shape)

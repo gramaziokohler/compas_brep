@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from compas.data import Data
 from compas.datastructures import Mesh
-from compas.geometry import Box, Cylinder, Frame, Plane, Point, Polygon, Polyline, Sphere, Vector
+from compas.geometry import Cylinder, Frame, Plane, Point, Polygon, Polyline, Sphere, Vector
 
 from compas_brep.curves.nurbs import NurbsCurve
 from compas_brep.edge import BrepEdge
@@ -20,29 +20,42 @@ from compas_brep.operations import (
     boolean_difference,
     boolean_intersection,
     boolean_union,
+    brep_aabb,
+    brep_area,
+    brep_extract_topology,
     brep_cap_planar_holes,
+    brep_centroid,
     brep_contains,
+    brep_copy,
     brep_fillet,
     brep_fix,
+    brep_flip,
     brep_from_iges,
     brep_from_step,
     brep_heal,
+    brep_is_solid,
+    brep_is_valid,
     brep_make_solid,
     brep_offset,
     brep_overlap,
+    brep_rebuild,
     brep_sew,
     brep_slice,
     brep_split,
+    brep_tessellate,
     brep_to_iges,
     brep_to_step,
     brep_to_stl,
+    brep_transform,
     brep_trimmed,
+    brep_volume,
     make_box,
     make_cone,
     make_cylinder,
     make_extrusion,
     make_from_breps,
     make_from_curves,
+    make_from_mesh,
     make_from_native,
     make_from_surface,
     make_loft,
@@ -74,10 +87,11 @@ class Brep(Data):
         self._edges: list[BrepEdge] = []
         self._loops: list[BrepLoop] = []
         self._faces: list[BrepFace] = []
+        self._topology_loaded: bool = False
         self._frame: Frame = Frame.worldXY()
-        # Native backend object cache
-        self._native_brep = None  # cached OCC TopoDS_Shape or Rhino.Geometry.Brep
-        self._native_dirty: bool = True  # True when canonical data changed since last native sync
+        # Native backend object cache — set by the active backend (OCC/Rhino)
+        # after every constructor or operation. Always the source of truth.
+        self._native_brep = None
         # Tessellation cache — populated by to_tesselation(), serialized
         # alongside the Brep data so visualization works without a backend.
         # Set cache_tessellation=False to exclude it from serialization.
@@ -90,14 +104,11 @@ class Brep(Data):
 
     @property
     def __data__(self) -> dict:
-        data = {"version": 3, "faces": [face.__data__ for face in self._faces]}
+        data = {"version": 3, "faces": [face.__data__ for face in self.faces]}
         if self.cache_tessellation:
-            # Eagerly compute tessellation if not cached yet but native
-            # faces are available (i.e. Brep was just created via backend).
-            if self._tessellation_cache is None:
-                has_native = any(f._native_face is not None for f in self._faces)
-                if has_native:
-                    self.to_tesselation()
+            # Eagerly compute tessellation if not cached but native brep is available.
+            if self._tessellation_cache is None and self._native_brep is not None:
+                self.to_tesselation()
             if self._tessellation_cache is not None:
                 mesh, boundaries = self._tessellation_cache
                 verts, faces = mesh.to_vertices_and_faces()
@@ -111,8 +122,12 @@ class Brep(Data):
     @classmethod
     def __from_data__(cls, data: dict) -> Brep:
         brep = _deserialize_brep_data(data)
-        # Always rebuild native backend object so tessellation and operations work.
-        brep._rebuild_native()
+        # Rebuild native backend object so operations and tessellation work.
+        # Silently skip if no backend is available.
+        try:
+            brep_rebuild(brep)
+        except NotImplementedError:
+            pass
         # Restore tessellation cache if present (avoids re-tessellation).
         tess = data.get("tessellation")
         if tess is not None:
@@ -126,9 +141,11 @@ class Brep(Data):
     # =========================================================================
 
     def __repr__(self):
+        self._ensure_topology()
         return f"Brep(vertices={len(self._vertices)}, edges={len(self._edges)}, faces={len(self._faces)})"
 
     def __str__(self):
+        self._ensure_topology()
         return (
             "Brep\n"
             "-----\n"
@@ -156,18 +173,22 @@ class Brep(Data):
 
     @property
     def vertices(self) -> list[BrepVertex]:
+        self._ensure_topology()
         return self._vertices
 
     @property
     def edges(self) -> list[BrepEdge]:
+        self._ensure_topology()
         return self._edges
 
     @property
     def loops(self) -> list[BrepLoop]:
+        self._ensure_topology()
         return self._loops
 
     @property
     def faces(self) -> list[BrepFace]:
+        self._ensure_topology()
         return self._faces
 
     @property
@@ -176,18 +197,22 @@ class Brep(Data):
 
     @property
     def points(self) -> list[Point]:
+        self._ensure_topology()
         return [v.point for v in self._vertices]
 
     @property
     def curves(self):
+        self._ensure_topology()
         return [e.curve for e in self._edges]
 
     @property
     def surfaces(self):
+        self._ensure_topology()
         return [f.surface for f in self._faces]
 
     @property
     def trims(self):
+        self._ensure_topology()
         all_trims = []
         for face in self._faces:
             for loop in face.loops:
@@ -196,62 +221,53 @@ class Brep(Data):
 
     @property
     def area(self) -> float:
-        return sum(f.area for f in self._faces)
+        return brep_area(self)
 
     @property
     def volume(self) -> float:
-        """Compute volume using the divergence theorem on the tessellated mesh.
+        return brep_volume(self)
 
-        Uses the cached tessellation or rebuilds native geometry if needed.
+    def _ensure_topology(self) -> None:
+        """Lazily populate vertices/edges/loops/faces from the native backend shape.
+
+        Does nothing if topology is already loaded or no native shape is available.
         """
-        # Ensure we have tessellated geometry
-        self._ensure_native()
-        mesh = self.to_viewmesh()
-        verts, faces = mesh.to_vertices_and_faces()
-        vol = 0.0
-        for tri in faces:
-            v0 = verts[tri[0]]
-            v1 = verts[tri[1]]
-            v2 = verts[tri[2]]
-            vol += (
-                v0[0] * (v1[1] * v2[2] - v2[1] * v1[2])
-                - v1[0] * (v0[1] * v2[2] - v2[1] * v0[2])
-                + v2[0] * (v0[1] * v1[2] - v1[1] * v0[2])
-            )
-        return abs(vol) / 6.0
+        if self._topology_loaded or self._native_brep is None:
+            return
+        try:
+            brep_extract_topology(self)
+        except NotImplementedError:
+            pass
+        self._topology_loaded = True
 
     def _ensure_native(self):
-        """Ensure native faces are available for tessellation.
+        """Ensure native backend object is available.
 
-        Native geometry is always rebuilt on deserialization, so this is
-        only needed as a safety net.
+        Rebuilds from canonical Python topology if not already present.
         """
-        if any(f._native_face is not None for f in self._faces):
+        if self._native_brep is not None:
             return
-        self._rebuild_native()
+        try:
+            brep_rebuild(self)
+        except NotImplementedError:
+            pass
 
     @property
     def centroid(self) -> Point:
-        if not self._vertices:
-            return Point(0, 0, 0)
-        xs = [v.point.x for v in self._vertices]
-        ys = [v.point.y for v in self._vertices]
-        zs = [v.point.z for v in self._vertices]
-        n = len(self._vertices)
-        return Point(sum(xs) / n, sum(ys) / n, sum(zs) / n)
+        return brep_centroid(self)
 
     @property
     def is_closed(self) -> bool:
         # A rough check: each edge should be shared by exactly 2 faces
-        return len(self._faces) >= 4
+        return len(self.faces) >= 4
 
     @property
     def is_solid(self) -> bool:
-        return self.is_closed
+        return brep_is_solid(self)
 
     @property
     def is_valid(self) -> bool:
-        return len(self._faces) > 0 and len(self._vertices) > 0
+        return brep_is_valid(self)
 
     @property
     def is_manifold(self) -> bool:
@@ -267,7 +283,7 @@ class Brep(Data):
 
     @property
     def is_surface(self) -> bool:
-        return len(self._faces) == 1
+        return len(self.faces) == 1
 
     @property
     def is_compound(self) -> bool:
@@ -287,7 +303,7 @@ class Brep(Data):
 
     @property
     def native_brep(self):
-        return self
+        return self._native_brep
 
     @property
     def orientation(self):
@@ -313,22 +329,7 @@ class Brep(Data):
         -------
         :class:`compas.geometry.Box`
         """
-        if not self._vertices:
-            return Box(1, 1, 1)
-        pts = self.points
-        xs = [p.x for p in pts]
-        ys = [p.y for p in pts]
-        zs = [p.z for p in pts]
-        xmin, xmax = min(xs), max(xs)
-        ymin, ymax = min(ys), max(ys)
-        zmin, zmax = min(zs), max(zs)
-        cx = (xmin + xmax) / 2
-        cy = (ymin + ymax) / 2
-        cz = (zmin + zmax) / 2
-        dx = max(xmax - xmin, 1e-10)
-        dy = max(ymax - ymin, 1e-10)
-        dz = max(zmax - zmin, 1e-10)
-        return Box(dx, dy, dz, Frame(Point(cx, cy, cz), [1, 0, 0], [0, 1, 0]))
+        return brep_aabb(self)
 
     # =========================================================================
     # Constructors
@@ -342,20 +343,16 @@ class Brep(Data):
     @classmethod
     def from_polygons(cls, polygons: list[Polygon]) -> Brep:
         """Create a Brep from a list of COMPAS Polygons."""
-        brep = cls()
-        brep._build_from_polygons(polygons)
-        return brep
+        mesh = Mesh()
+        for polygon in polygons:
+            vkeys = [mesh.add_vertex(x=p.x, y=p.y, z=p.z) for p in polygon.points]
+            mesh.add_face(vkeys)
+        return make_from_mesh(mesh)
 
     @classmethod
     def from_mesh(cls, mesh: Mesh) -> Brep:
         """Create a Brep from a COMPAS Mesh."""
-        vertices, faces = mesh.to_vertices_and_faces()
-        polygons = []
-        for face in faces:
-            pts = [Point(*vertices[i]) for i in face]
-            if len(pts) >= 3:
-                polygons.append(Polygon(pts))
-        return cls.from_polygons(polygons)
+        return make_from_mesh(mesh)
 
     @classmethod
     def from_cylinder(cls, cylinder: Cylinder) -> Brep:
@@ -376,9 +373,6 @@ class Brep(Data):
     def from_extrusion(cls, profile, vector: Vector, cap_ends: bool = True) -> Brep:
         """Create a Brep by extruding a profile along a vector.
 
-        Tries the active backend first for exact NURBS extrusion.
-        Falls back to polygonal extrusion if no backend is available.
-
         Parameters
         ----------
         profile : BrepFace, Polygon, or curve
@@ -386,34 +380,9 @@ class Brep(Data):
         vector : Vector
             The extrusion direction and magnitude.
         cap_ends : bool, optional
-            If True, cap the top and bottom.
+            If True, cap the top and bottom. Passed to the backend where supported.
         """
-        try:
-            return make_extrusion(profile, vector)
-        except Exception:
-            pass
-
-        # Fallback: polygonal extrusion
-        if isinstance(profile, BrepFace):
-            boundary = [v.point for v in profile.outer_loop.vertices]
-        elif isinstance(profile, Polygon):
-            boundary = list(profile.points)
-        else:
-            raise TypeError(f"Unsupported profile type: {type(profile)}")
-
-        n = len(boundary)
-        top_pts = [Point(p.x + vector.x, p.y + vector.y, p.z + vector.z) for p in boundary]
-
-        polygons = []
-        for i in range(n):
-            j = (i + 1) % n
-            polygons.append(Polygon([boundary[i], boundary[j], top_pts[j], top_pts[i]]))
-
-        if cap_ends:
-            polygons.append(Polygon(list(reversed(boundary))))
-            polygons.append(Polygon(list(top_pts)))
-
-        return cls.from_polygons(polygons)
+        return make_extrusion(profile, vector)
 
     @classmethod
     def from_brepfaces(cls, faces: list[BrepFace]) -> Brep:
@@ -736,9 +705,7 @@ class Brep(Data):
 
     def flip(self) -> None:
         """Flip face orientations of this Brep in-place."""
-        for face in self._faces:
-            face._is_reversed = not face._is_reversed
-        self._invalidate_native()
+        self._replace_from(brep_flip(self))
 
     def transform(self, matrix) -> None:
         """Transform this Brep in-place by a transformation matrix.
@@ -748,13 +715,7 @@ class Brep(Data):
         matrix : :class:`compas.geometry.Transformation`
             The transformation to apply.
         """
-        from compas.geometry import transform_points
-
-        pts = [[v.point.x, v.point.y, v.point.z] for v in self._vertices]
-        transformed = transform_points(pts, matrix)
-        for vertex, xyz in zip(self._vertices, transformed):
-            vertex._point = Point(*xyz)
-        self._invalidate_native()
+        self._replace_from(brep_transform(self, matrix))
 
     def transformed(self, matrix) -> Brep:
         """Return a transformed copy of this Brep.
@@ -779,11 +740,7 @@ class Brep(Data):
         -------
         Brep
         """
-        # TODO: use the native copy mechanism of the backend when possible,
-        # to preserve native data and avoid expensive Python-level copying.
-        import copy as _copy
-
-        return _copy.deepcopy(self)
+        return brep_copy(self)
 
     def contours(self, planes: list[Plane]) -> list[list[Polyline]]:
         """Generate contour lines by slicing with multiple planes.
@@ -878,9 +835,9 @@ class Brep(Data):
     # =========================================================================
 
     def to_meshes(self, u: int = 16, v: int = 16) -> list[Mesh]:
-        """Convert the Brep to a list of meshes (one per face).
+        """Convert the Brep to a list of meshes for visualization.
 
-        Requires a backend (OCC or Rhino) for tessellation.
+        Returns a single mesh covering the whole Brep.
 
         Parameters
         ----------
@@ -889,76 +846,49 @@ class Brep(Data):
         v : int, optional
             Unused, kept for interface compatibility.
         """
-        self._ensure_native()
-        meshes = []
-        for face in self._faces:
-            verts, faces = face.tessellate(n=u)
-            if verts:
-                mesh = Mesh.from_vertices_and_faces(verts, faces)
-                meshes.append(mesh)
-        return meshes
+        mesh, _ = brep_tessellate(self, n=u)
+        return [mesh]
 
     def to_viewmesh(self, precision: float = 1e-6, n: int = 16) -> Mesh:
         """Convert the Brep to a single mesh for visualization.
 
-        Uses cached tessellation if available, otherwise ensures native
-        geometry is present and tessellates each face via the backend.
+        Uses cached tessellation if available, otherwise delegates to the
+        active backend via the brep_tessellate pluggable.
 
         Parameters
         ----------
         precision : float, optional
             Unused, kept for interface compatibility.
         n : int, optional
-            Resolution for face tessellation.
+            Resolution for tessellation.
         """
         if self._tessellation_cache is not None:
             return self._tessellation_cache[0]
-
-        self._ensure_native()
-
-        all_vertices = []
-        all_faces = []
-        vertex_offset = 0
-
-        for face in self._faces:
-            verts, faces = face.tessellate(n=n)
-            for v in verts:
-                all_vertices.append(v)
-            for f in faces:
-                all_faces.append([fi + vertex_offset for fi in f])
-            vertex_offset += len(verts)
-
-        if not all_vertices:
-            return Mesh()
-        return Mesh.from_vertices_and_faces(all_vertices, all_faces)
+        mesh, boundaries = brep_tessellate(self, n=n)
+        self._tessellation_cache = (mesh, boundaries)
+        return mesh
 
     def to_polygons(self) -> list[Polygon]:
         """Convert each face to a Polygon."""
-        return [face.to_polygon() for face in self._faces]
+        return [face.to_polygon() for face in self.faces]
 
-    def to_tesselation(
-        self, linear_deflection: float = 0.1, n: int = 16, n_curves: int = 64
-    ) -> tuple[Mesh, list[Polyline]]:
+    def to_tesselation(self, linear_deflection: float = 0.1, n: int = 16, n_curves: int = 64) -> tuple[Mesh, list[Polyline]]:
         """Create a tessellation of the Brep for visualization.
 
-        Returns a triangulated mesh and a list of boundary polylines (one per
-        unique edge).  Matches the interface expected by compas_viewer's
-        BRepObject.
+        Returns a triangulated mesh and a list of boundary polylines.
+        Matches the interface expected by compas_viewer's BRepObject.
 
-        Uses cached tessellation when available (populated by a previous call
-        or restored from serialized data).  Otherwise tessellates via the
-        backend (OCC/Rhino) and caches the result.  The cache is included
-        in serialized data when ``cache_tessellation`` is ``True`` (default).
+        Uses cached tessellation when available.  Otherwise delegates to the
+        active backend via the brep_tessellate pluggable and caches the result.
 
         Parameters
         ----------
         linear_deflection : float, optional
-            Unused, kept for interface compatibility.
+            Linear deflection passed to the backend tessellator.
         n : int, optional
             Resolution for face tessellation.
         n_curves : int, optional
             Number of samples per curved edge for boundary polylines.
-            Higher values produce smoother curves. Defaults to 64.
 
         Returns
         -------
@@ -967,16 +897,7 @@ class Brep(Data):
         """
         if self._tessellation_cache is not None:
             return self._tessellation_cache
-
-        mesh = self.to_viewmesh(n=n)
-
-        # Sample edge polylines from edge curves.
-        boundaries: list[Polyline] = []
-        for edge in self._edges:
-            pts = edge.sample_points(n=n_curves)
-            if pts and len(pts) >= 2:
-                boundaries.append(Polyline(pts))
-
+        mesh, boundaries = brep_tessellate(self, linear_deflection=linear_deflection, n=n, n_curves=n_curves)
         self._tessellation_cache = (mesh, boundaries)
         return self._tessellation_cache
 
@@ -986,7 +907,7 @@ class Brep(Data):
 
     def vertex_neighbors(self, vertex):
         neighbors = set()
-        for edge in self._edges:
+        for edge in self.edges:
             if edge.first_vertex is vertex:
                 neighbors.add(edge.last_vertex)
             elif edge.last_vertex is vertex:
@@ -994,16 +915,16 @@ class Brep(Data):
         return list(neighbors)
 
     def vertex_edges(self, vertex):
-        return [e for e in self._edges if e.first_vertex is vertex or e.last_vertex is vertex]
+        return [e for e in self.edges if e.first_vertex is vertex or e.last_vertex is vertex]
 
     def vertex_faces(self, vertex):
-        return [f for f in self._faces if vertex in f.vertices]
+        return [f for f in self.faces if vertex in f.vertices]
 
     def edge_faces(self, edge):
-        return [f for f in self._faces if edge in f.edges]
+        return [f for f in self.faces if edge in f.edges]
 
     def edge_loop(self, edge):
-        for loop in self._loops:
+        for loop in self.loops:
             if edge in loop.edges:
                 return loop
         return None
@@ -1019,95 +940,25 @@ class Brep(Data):
         -------
         list[BrepLoop]
         """
-        return [loop for loop in self._loops if edge in loop.edges]
+        return [loop for loop in self.loops if edge in loop.edges]
 
     # =========================================================================
     # Internal helpers
     # =========================================================================
 
     def _invalidate_native(self):
-        """Mark the native cache as stale (canonical data was modified)."""
+        """Clear the native cache (e.g. after deserialization before rebuild)."""
         self._native_brep = None
-        self._native_dirty = True
         self._tessellation_cache = None
 
-    def _rebuild_native(self):
-        """Rebuild the native OCC shape from canonical data, if OCP is available.
-
-        This restores ``_native_face`` on each :class:`BrepFace` so that
-        OCC-based tessellation (with proper trim curves and holes) works
-        correctly — e.g. after deserialization where native caches are lost.
-
-        This is optional — the pure-Python tessellation handles trimmed NURBS
-        faces using edge curves directly. Native rebuild only improves quality
-        for operations that need a kernel (booleans, fillet, etc.).
-
-        Does nothing if OCP is not installed or if reconstruction fails.
-        """
-        try:
-            from compas_brep.backend.occ_backend import brep_to_occ
-
-            brep_to_occ(self)
-        except ImportError:
-            pass
-        except Exception:
-            pass
-
     def _replace_from(self, other: Brep) -> None:
-        """Replace this Brep's topology with another's (for in-place operations)."""
+        """Replace this Brep's data with another's (for in-place operations)."""
         self._vertices = other._vertices
         self._edges = other._edges
         self._loops = other._loops
         self._faces = other._faces
-        self._invalidate_native()
-
-    def _build_from_polygons(self, polygons: list[Polygon]):
-        """Build Brep topology from a list of polygons."""
-        vertex_map: dict[tuple[float, float, float], BrepVertex] = {}
-        self._vertices = []
-        self._edges = []
-        self._loops = []
-        self._faces = []
-
-        precision = 6  # decimal places for vertex merging
-
-        for polygon in polygons:
-            face_verts = []
-            for pt in polygon.points:
-                key = (round(pt.x, precision), round(pt.y, precision), round(pt.z, precision))
-                if key not in vertex_map:
-                    vertex = BrepVertex(Point(*key))
-                    vertex_map[key] = vertex
-                    self._vertices.append(vertex)
-                face_verts.append(vertex_map[key])
-
-            if len(face_verts) < 3:
-                continue
-
-            # Deduplicate consecutive vertices
-            deduped = [face_verts[0]]
-            for v in face_verts[1:]:
-                if v is not deduped[-1]:
-                    deduped.append(v)
-            if len(deduped) >= 2 and deduped[-1] is deduped[0]:
-                deduped.pop()
-            if len(deduped) < 3:
-                continue
-            face_verts = deduped
-
-            trims = []
-            for j in range(len(face_verts)):
-                v0 = face_verts[j]
-                v1 = face_verts[(j + 1) % len(face_verts)]
-                edge = BrepEdge(v0, v1)
-                self._edges.append(edge)
-                trims.append(BrepTrim(edge=edge, is_reversed=False))
-
-            loop = BrepLoop(trims=trims)
-            self._loops.append(loop)
-
-            face = BrepFace(loop)
-            self._faces.append(face)
+        self._native_brep = other._native_brep
+        self._tessellation_cache = None
 
 
 def _deserialize_brep_data(data: dict) -> Brep:
@@ -1178,4 +1029,5 @@ def _deserialize_brep_data(data: dict) -> Brep:
             face.add_loop(inner_loop)
         brep._faces.append(face)
 
+    brep._topology_loaded = True
     return brep

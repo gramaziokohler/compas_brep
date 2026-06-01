@@ -333,7 +333,7 @@ class TestOperations:
         brep = _unit_box_brep()
         meshes = brep.to_meshes()
         assert isinstance(meshes, list)
-        assert len(meshes) == 6
+        assert len(meshes) == 1
         for m in meshes:
             assert isinstance(m, Mesh)
 

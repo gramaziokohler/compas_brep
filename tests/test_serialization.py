@@ -131,13 +131,12 @@ def test_viewmesh_cylinder_smooth():
 
 
 def test_to_meshes_cylinder():
-    """to_meshes produces one mesh per face with smooth OCC tessellation."""
+    """to_meshes produces a single combined mesh via brep_tessellate."""
     cyl = Brep.from_cylinder(Cylinder(0.5, 2.0))
     meshes = cyl.to_meshes(u=8)
-    assert len(meshes) == len(cyl.faces)
-    # The barrel mesh should have many faces
-    barrel_meshes = [m for m in meshes if m.number_of_faces() > 10]
-    assert len(barrel_meshes) >= 1
+    assert len(meshes) == 1
+    # The combined mesh should have many faces
+    assert meshes[0].number_of_faces() > 10
 
 
 def test_tesselation_cylinder():

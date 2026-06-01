@@ -11,8 +11,8 @@ from compas_brep.vertex import BrepVertex
 
 __all_plugins__ = [
     "compas_brep.scene",
-    "compas_brep.backend.occ_plugins",
-    "compas_brep.backend.rhino_plugins",
+    "compas_brep.backend.occ.plugins",
+    "compas_brep.backend.rhino.plugins",
 ]
 
 __all__ = [

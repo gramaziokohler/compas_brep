@@ -29,7 +29,6 @@ class BrepFace:
         self._is_reversed = is_reversed
         self._domain_u = domain_u
         self._domain_v = domain_v
-        self._native_face = None  # cached OCC face for tessellation; never serialized
 
     def _compute_plane(self) -> Plane:
         """Compute the face plane from the outer loop vertices."""
@@ -107,90 +106,11 @@ class BrepFace:
     def is_valid(self) -> bool:
         return len(self._outer_loop.vertices) >= 3
 
-    @property
-    def native_face(self):
-        return self
-
     def to_polygon(self) -> Polygon:
         return Polygon([v.point for v in self._outer_loop.vertices])
 
     def add_loop(self, loop: BrepLoop):
         self._inner_loops.append(loop)
-
-    def tessellate(self, n: int = 16):
-        """Tessellate this face into triangles via the backend (OCC or Rhino).
-
-        Requires a cached ``_native_face`` — set by the backend when the
-        Brep is created or reconstructed.  Returns ``([], [])`` when no
-        native face is available.
-
-        Parameters
-        ----------
-        n : int
-            Angular deflection control for OCC tessellation (higher = finer).
-
-        Returns
-        -------
-        tuple[list[list[float]], list[list[int]]]
-            Vertices and triangle faces (winding consistent with outward normals).
-        """
-        if self._native_face is not None:
-            verts, faces = self._tessellate_occ(n)
-            if verts is not None:
-                return verts, faces
-
-        return [], []
-
-    def _tessellate_occ(self, n: int = 16):
-        """Tessellate using OCC's BRepMesh — correctly handles trim curves and holes.
-
-        Returns (vertices, faces) or (None, None) if OCC is unavailable or fails.
-        """
-        import math
-
-        try:
-            from OCP.BRep import BRep_Tool
-            from OCP.BRepMesh import BRepMesh_IncrementalMesh
-            from OCP.gp import gp_Pnt
-            from OCP.TopLoc import TopLoc_Location
-        except ImportError:
-            return None, None
-
-        try:
-            # Angular deflection controls how many segments approximate curved edges.
-            # pi / (n * 4) gives ~8n segments per full circle.
-            ang_def = math.pi / max(n * 4, 16)
-            BRepMesh_IncrementalMesh(self._native_face, 0.05, True, ang_def).Perform()
-
-            loc = TopLoc_Location()
-            tri = BRep_Tool.Triangulation_s(self._native_face, loc)
-            if tri is None or tri.NbTriangles() == 0:
-                return None, None
-
-            trsf = loc.Transformation() if not loc.IsIdentity() else None
-
-            vertices = []
-            for i in range(1, tri.NbNodes() + 1):
-                node = tri.Node(i)
-                if trsf is not None:
-                    pnt = gp_Pnt(node.X(), node.Y(), node.Z())
-                    pnt.Transform(trsf)
-                    vertices.append([pnt.X(), pnt.Y(), pnt.Z()])
-                else:
-                    vertices.append([node.X(), node.Y(), node.Z()])
-
-            faces = []
-            for i in range(1, tri.NbTriangles() + 1):
-                n1, n2, n3 = tri.Triangle(i).Get()
-                if self._is_reversed:
-                    faces.append([n1 - 1, n3 - 1, n2 - 1])
-                else:
-                    faces.append([n1 - 1, n2 - 1, n3 - 1])
-
-            return vertices, faces
-
-        except Exception:
-            return None, None
 
     # =========================================================================
     # Serialization

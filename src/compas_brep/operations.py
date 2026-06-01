@@ -156,6 +156,82 @@ def brep_make_solid(brep):
     raise NotImplementedError
 
 
+@pluggable(category="brep-operations")
+def brep_transform(brep, transformation):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-operations")
+def brep_flip(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-operations")
+def brep_copy(brep):
+    raise NotImplementedError
+
+
+# ---- Queries ----
+
+
+@pluggable(category="brep-queries")
+def brep_area(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_volume(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_centroid(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_aabb(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_is_solid(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_extract_topology(brep):
+    """Populate a Brep's topology lists in-place from its native backend shape.
+
+    Called lazily the first time topology (vertices, edges, loops, faces) is
+    accessed on a Brep that was returned from a backend operation without
+    eager extraction.
+    """
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_is_valid(brep):
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
+def brep_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
+    raise NotImplementedError
+
+
+# ---- Native rebuild ----
+
+
+@pluggable(category="brep-operations")
+def brep_rebuild(brep):
+    """Rebuild the native backend object from canonical Python topology data.
+
+    Called after deserialization so that operations and tessellation work.
+    """
+    raise NotImplementedError
+
+
 # ---- File I/O ----
 
 

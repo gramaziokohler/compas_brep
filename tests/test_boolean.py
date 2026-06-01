@@ -71,4 +71,4 @@ def test_to_meshes():
     box = Box(1.0, 1.0, 1.0)
     brep = Brep.from_box(box)
     meshes = brep.to_meshes()
-    assert len(meshes) == 6  # One mesh per face
+    assert len(meshes) == 1  # One combined mesh
