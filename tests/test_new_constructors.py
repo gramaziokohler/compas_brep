@@ -2,10 +2,13 @@
 
 import math
 
+import pytest
 from compas.datastructures import Mesh
 from compas.geometry import Box, Cylinder, Plane, Point, Sphere, Vector
 
 from compas_brep import Brep
+
+pytestmark = pytest.mark.occ
 
 
 def test_from_mesh():

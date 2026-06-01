@@ -1,8 +1,11 @@
 """Tests for boolean operations on Brep."""
 
+import pytest
 from compas.geometry import Box, Frame, Point, Vector
 
 from compas_brep import Brep
+
+pytestmark = pytest.mark.occ
 
 
 def test_brep_from_box():

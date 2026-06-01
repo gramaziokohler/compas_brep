@@ -3,9 +3,12 @@
 import json
 import math
 
+import pytest
 from compas.geometry import Box, Cylinder, Sphere
 
 from compas_brep import Brep
+
+pytestmark = pytest.mark.occ
 
 
 def test_serialize_box_roundtrip():

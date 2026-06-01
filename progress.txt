@@ -1,0 +1,20 @@
+## Task: Test infrastructure — pytest marks and conftest
+
+Added `tests/conftest.py` that:
+- Registers `@pytest.mark.occ` and `@pytest.mark.rhino` markers
+- Auto-skips `occ` tests when OCP is not importable
+- Auto-skips `rhino` tests when rhinoinside is not importable
+
+Applied `pytestmark = pytest.mark.occ` to all four test modules:
+- tests/test_brep_api.py
+- tests/test_boolean.py
+- tests/test_new_constructors.py
+- tests/test_serialization.py
+
+All 84 tests still pass. `pytest -m occ` selects all tests correctly.
+
+Satisfies PRD user stories 20–23 (test infrastructure, auto-skip, pytest -m rhino).
+
+## Next
+
+- GitHub Actions CI: add .github/workflows/ci.yml to run OCC tests on every push

@@ -6,6 +6,8 @@ from compas.geometry import Box, Frame, Plane, Point, Polygon, Translation, Vect
 
 from compas_brep import Brep
 
+pytestmark = pytest.mark.occ
+
 # =============================================================================
 # Helpers
 # =============================================================================
