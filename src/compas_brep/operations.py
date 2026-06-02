@@ -220,14 +220,25 @@ def brep_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     raise NotImplementedError
 
 
-# ---- Native rebuild ----
+# ---- Serialization ----
 
 
 @pluggable(category="brep-operations")
-def brep_rebuild(brep):
-    """Rebuild the native backend object from canonical Python topology data.
+def brep_to_data(brep) -> dict:
+    """Extract a STEP-inspired JSON-serializable dict from the native backend.
 
-    Called after deserialization so that operations and tessellation work.
+    Called from Brep.__data__ to produce the canonical serialization.
+    Requires an active backend (OCC or Rhino).
+    """
+    raise NotImplementedError
+
+
+@pluggable(category="brep-operations")
+def brep_rebuild(brep, data: dict) -> None:
+    """Rebuild the native backend object from a STEP-inspired JSON data dict.
+
+    Called from Brep.__from_data__ to reconstruct the native shape.
+    Requires an active backend (OCC or Rhino).
     """
     raise NotImplementedError
 

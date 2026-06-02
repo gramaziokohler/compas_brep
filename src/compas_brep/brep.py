@@ -11,9 +11,8 @@ from __future__ import annotations
 
 from compas.data import Data
 from compas.datastructures import Mesh
-from compas.geometry import Cylinder, Frame, Plane, Point, Polygon, Polyline, Sphere, Vector
+from compas.geometry import Box, Cylinder, Frame, Plane, Point, Polygon, Polyline, Sphere, Vector
 
-from compas_brep.curves.nurbs import NurbsCurve
 from compas_brep.edge import BrepEdge
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
@@ -23,11 +22,11 @@ from compas_brep.operations import (
     boolean_union,
     brep_aabb,
     brep_area,
-    brep_extract_topology,
     brep_cap_planar_holes,
     brep_centroid,
     brep_contains,
     brep_copy,
+    brep_extract_topology,
     brep_fillet,
     brep_fix,
     brep_flip,
@@ -44,6 +43,7 @@ from compas_brep.operations import (
     brep_slice,
     brep_split,
     brep_tessellate,
+    brep_to_data,
     brep_to_iges,
     brep_to_step,
     brep_to_stl,
@@ -65,8 +65,6 @@ from compas_brep.operations import (
     make_sweep,
     make_torus,
 )
-from compas_brep.surfaces.nurbs import NurbsSurface
-from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 
@@ -104,7 +102,7 @@ class Brep(Data):
 
     @property
     def __data__(self) -> dict:
-        data = {"version": 3, "faces": [face.__data__ for face in self.faces]}
+        data = brep_to_data(self)
         if self.cache_tessellation:
             # Eagerly compute tessellation if not cached but native brep is available.
             if self._tessellation_cache is None and self._native_brep is not None:
@@ -121,15 +119,12 @@ class Brep(Data):
 
     @classmethod
     def __from_data__(cls, data: dict) -> Brep:
-        brep = _deserialize_brep_data(data)
-        # Rebuild native backend object from Python topology in brep._faces.
-        # Silently skip if no backend is available.
-        try:
-            brep_rebuild(brep)
-        except NotImplementedError:
-            pass
+        brep = Brep()
+        # Reconstruct native backend from STEP-inspired JSON.
+        # Raises NotImplementedError if no backend is active (by design).
+        brep_rebuild(brep, data)
         # Native is now the source of truth. Clear Python-owned topology so
-        # it is lazily repopulated from native on first access (criterion 1/3).
+        # it is lazily repopulated from native on first access.
         brep._vertices = []
         brep._edges = []
         brep._loops = []
@@ -957,73 +952,3 @@ class Brep(Data):
         self._topology_loaded = other._topology_loaded
 
 
-def _deserialize_brep_data(data: dict) -> Brep:
-    """Deserialize Brep from v3 data dict."""
-    brep = Brep()
-    vertex_map: dict[tuple[float, float, float], BrepVertex] = {}
-    edge_map: dict[tuple, BrepEdge] = {}
-    precision = 6
-
-    def _get_vertex(xyz: list[float]) -> BrepVertex:
-        key = (round(xyz[0], precision), round(xyz[1], precision), round(xyz[2], precision))
-        if key not in vertex_map:
-            vertex = BrepVertex(Point(*key))
-            vertex_map[key] = vertex
-            brep._vertices.append(vertex)
-        return vertex_map[key]
-
-    def _get_edge(edge_data: dict) -> BrepEdge:
-        start = _get_vertex(edge_data["start"])
-        end = _get_vertex(edge_data["end"])
-        # Deduplicate edges by their canonical vertex pair (unordered)
-        s = edge_data["start"]
-        e = edge_data["end"]
-        sk = (round(s[0], precision), round(s[1], precision), round(s[2], precision))
-        ek = (round(e[0], precision), round(e[1], precision), round(e[2], precision))
-        key = (sk, ek) if sk <= ek else (ek, sk)
-        if key not in edge_map:
-            edge = BrepEdge.__from_data__(edge_data, start, end)
-            edge_map[key] = edge
-            brep._edges.append(edge)
-        return edge_map[key]
-
-    for face_data in data["faces"]:
-        surface_info = face_data["surface"]
-        if surface_info["type"] == "nurbs":
-            surface = NurbsSurface.__from_data__(surface_info["data"])
-        else:
-            sd = surface_info["data"]
-            surface = Plane(Point(*sd["point"]), Vector(*sd["normal"]))
-
-        loops = []
-        for loop_data in face_data["loops"]:
-            trims = []
-            for trim_data in loop_data:
-                edge = _get_edge(trim_data["edge"])
-                is_reversed = trim_data.get("is_reversed", False)
-                pcurve = None
-                if "pcurve" in trim_data:
-                    pcurve = NurbsCurve.__from_data__(trim_data["pcurve"])
-                trim = BrepTrim(edge=edge, is_reversed=is_reversed, curve_2d=pcurve)
-                trims.append(trim)
-            loop = BrepLoop(trims=trims)
-            brep._loops.append(loop)
-            loops.append(loop)
-
-        domain_u = tuple(face_data["domain_u"]) if "domain_u" in face_data else None
-        domain_v = tuple(face_data["domain_v"]) if "domain_v" in face_data else None
-        is_reversed = face_data.get("is_reversed", False)
-
-        face = BrepFace(
-            loops[0],
-            surface=surface,
-            is_reversed=is_reversed,
-            domain_u=domain_u,
-            domain_v=domain_v,
-        )
-        for inner_loop in loops[1:]:
-            face.add_loop(inner_loop)
-        brep._faces.append(face)
-
-    brep._topology_loaded = True
-    return brep

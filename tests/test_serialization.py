@@ -1,4 +1,4 @@
-"""Tests for Brep serialization and smooth visualization."""
+"""Tests for Brep STEP-inspired JSON serialization and tessellation."""
 
 import json
 import math
@@ -11,67 +11,23 @@ from compas_brep import Brep
 pytestmark = pytest.mark.occ
 
 
-def test_serialize_box_roundtrip():
-    """Box Brep serializes and deserializes preserving topology."""
+def test_serialize_step_format_box():
+    """__data__ produces STEP-inspired JSON (version 4) with correct entity counts."""
     box = Box(2.0, 2.0, 2.0)
     brep = Brep.from_box(box)
     data = brep.__data__
 
-    assert data["version"] == 3
+    assert data["version"] == 4
+    assert "vertices" in data
+    assert "edges" in data
+    assert "faces" in data
+    assert len(data["vertices"]) == 8
+    assert len(data["edges"]) == 12
     assert len(data["faces"]) == 6
-
-    # Round-trip
-    restored = Brep.__from_data__(data)
-    assert len(restored.faces) == 6
-    assert len(restored.vertices) == 8
-    # Volume works because _rebuild_native restores OCC faces for a box
-    assert abs(restored.volume - brep.volume) < 0.01
-
-
-def test_serialize_cylinder_roundtrip():
-    """Cylinder Brep preserves NURBS surface data through serialization."""
-    cyl = Cylinder(0.5, 2.0)
-    brep = Brep.from_cylinder(cyl)
-    data = brep.__data__
-
-    assert data["version"] == 3
-    # Check that we have at least one NURBS surface (the barrel)
-    surface_types = [f["surface"]["type"] for f in data["faces"]]
-    assert "nurbs" in surface_types
-
-    # Round-trip
-    restored = Brep.__from_data__(data)
-    assert len(restored.faces) == len(brep.faces)
-    # Check NURBS faces survived
-    nurbs_faces = [f for f in restored.faces if f.is_nurbs]
-    assert len(nurbs_faces) >= 1
-
-
-def test_serialize_with_tessellation_cache():
-    """Tessellation cache is preserved through serialization."""
-    cyl = Cylinder(0.5, 2.0)
-    brep = Brep.from_cylinder(cyl)
-
-    # cache_tessellation defaults to True; compute tessellation
-    assert brep.cache_tessellation is True
-    mesh, boundaries = brep.to_tesselation(n=16)
-    assert mesh.number_of_vertices() > 50
-
-    # Serialize — should include tessellation
-    data = brep.__data__
-    assert "tessellation" in data
-    assert len(data["tessellation"]["vertices"]) > 50
-
-    # Restore — tessellation cache should be present
-    restored = Brep.__from_data__(data)
-    assert restored._tessellation_cache is not None
-    mesh_r, bounds_r = restored.to_tesselation()
-    assert mesh_r.number_of_vertices() == mesh.number_of_vertices()
-    assert len(bounds_r) == len(boundaries)
 
 
 def test_serialize_json_roundtrip():
-    """Brep data is JSON-serializable (all native Python types)."""
+    """__data__ is JSON-serializable and round-trips via json.dumps/loads."""
     box = Box(1.0, 1.0, 1.0)
     brep = Brep.from_box(box)
     data = brep.__data__
@@ -82,8 +38,78 @@ def test_serialize_json_roundtrip():
     assert abs(restored.volume - 1.0) < 0.01
 
 
+def test_roundtrip_box():
+    """Round-trip: box → serialize → deserialize → volume and topology match."""
+    box = Box(2.0, 2.0, 2.0)
+    brep = Brep.from_box(box)
+    data = brep.__data__
+
+    restored = Brep.__from_data__(data)
+    assert len(restored.faces) == 6
+    assert len(restored.vertices) == 8
+    assert abs(restored.volume - brep.volume) < 0.01
+    # Confirm topology is accessible
+    assert len(restored.edges) == 12
+
+
+def test_roundtrip_boolean_difference():
+    """Round-trip: boolean-subtracted shape → serialize → deserialize → volume within 5%."""
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    cyl = Brep.from_cylinder(Cylinder(0.3, 4.0))
+    result = box - cyl
+    expected_volume = result.volume
+
+    data = result.__data__
+    restored = Brep.__from_data__(data)
+    # Allow 5% relative error for NURBS surface round-trip approximation
+    assert abs(restored.volume - expected_volume) / expected_volume < 0.05
+
+
+def test_serialize_step_format_cylinder():
+    """Cylinder __data__ contains NURBS surface data in STEP format."""
+    cyl = Cylinder(0.5, 2.0)
+    brep = Brep.from_cylinder(cyl)
+    data = brep.__data__
+
+    assert data["version"] == 4
+    surface_types = [f["surface"]["type"] for f in data["faces"]]
+    assert "nurbs" in surface_types
+
+
+def test_roundtrip_cylinder():
+    """Round-trip: cylinder → serialize → deserialize → face count and volume match."""
+    cyl = Cylinder(0.5, 2.0)
+    brep = Brep.from_cylinder(cyl)
+    data = brep.__data__
+
+    restored = Brep.__from_data__(data)
+    assert len(restored.faces) == len(brep.faces)
+    expected = math.pi * 0.5**2 * 2.0
+    assert abs(restored.volume - expected) < 0.1
+
+
+def test_serialize_with_tessellation_cache():
+    """Tessellation cache is preserved through serialization."""
+    cyl = Cylinder(0.5, 2.0)
+    brep = Brep.from_cylinder(cyl)
+
+    assert brep.cache_tessellation is True
+    mesh, boundaries = brep.to_tesselation(n=16)
+    assert mesh.number_of_vertices() > 50
+
+    data = brep.__data__
+    assert "tessellation" in data
+    assert len(data["tessellation"]["vertices"]) > 50
+
+    restored = Brep.__from_data__(data)
+    assert restored._tessellation_cache is not None
+    mesh_r, bounds_r = restored.to_tesselation()
+    assert mesh_r.number_of_vertices() == mesh.number_of_vertices()
+    assert len(bounds_r) == len(boundaries)
+
+
 def test_serialize_json_roundtrip_with_cache():
-    """Brep data with tessellation cache is JSON-serializable."""
+    """Tessellation cache survives a full json.dumps/loads round-trip."""
     cyl = Cylinder(0.5, 2.0)
     brep = Brep.from_cylinder(cyl)
     brep.to_tesselation(n=16)
@@ -94,9 +120,8 @@ def test_serialize_json_roundtrip_with_cache():
     restored = Brep.__from_data__(data_back)
     assert restored._tessellation_cache is not None
 
-    vol_original = brep.volume
     expected = math.pi * 0.5**2 * 2.0
-    assert abs(vol_original - expected) < 0.1
+    assert abs(restored.volume - expected) < 0.1
 
 
 def test_serialize_boolean_result():
@@ -106,8 +131,7 @@ def test_serialize_boolean_result():
     result = box - cyl
 
     data = result.__data__
-    assert data["version"] == 3
-
+    assert data["version"] == 4
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "plane" in surface_types
     assert "nurbs" in surface_types
@@ -125,10 +149,9 @@ def test_viewmesh_box():
 
 
 def test_viewmesh_cylinder_smooth():
-    """Cylinder viewmesh produces smooth tessellation (many more verts than topology verts)."""
+    """Cylinder viewmesh produces smooth tessellation."""
     cyl = Brep.from_cylinder(Cylinder(0.5, 2.0))
     mesh = cyl.to_viewmesh(n=16)
-    # OCC tessellation should produce many vertices for the barrel face
     assert mesh.number_of_vertices() > 50
     assert mesh.number_of_faces() > 50
 
@@ -138,7 +161,6 @@ def test_to_meshes_cylinder():
     cyl = Brep.from_cylinder(Cylinder(0.5, 2.0))
     meshes = cyl.to_meshes(u=8)
     assert len(meshes) == 1
-    # The combined mesh should have many faces
     assert meshes[0].number_of_faces() > 10
 
 
@@ -148,9 +170,8 @@ def test_tesselation_cylinder():
     mesh, boundaries = cyl.to_tesselation(n=16)
     assert mesh.number_of_vertices() > 50
     assert len(boundaries) > 0
-    # At least one boundary should have many points (curved edge)
     max_pts = max(len(b.points) for b in boundaries)
-    assert max_pts > 4  # More than a simple rectangle = curved edge sampled
+    assert max_pts > 4
 
 
 def test_viewmesh_sphere_smooth():
@@ -167,6 +188,14 @@ def test_tessellation_cache_invalidation():
     box.to_tesselation()
     assert box._tessellation_cache is not None
 
-    # Invalidation should clear the cache
     box._invalidate_native()
     assert box._tessellation_cache is None
+
+
+def test_restored_brep_tessellatable():
+    """A deserialized Brep can be tessellated without errors."""
+    box = Brep.from_box(Box(1.0, 1.0, 1.0))
+    data = box.__data__
+    restored = Brep.__from_data__(data)
+    mesh = restored.to_viewmesh()
+    assert mesh.number_of_vertices() > 0

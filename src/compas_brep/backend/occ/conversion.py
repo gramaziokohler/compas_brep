@@ -432,6 +432,149 @@ def _bspline_curve_to_nurbs(bspline):
 
 
 # =============================================================================
+# compas_brep ↔ STEP-inspired JSON serialization
+# =============================================================================
+
+
+def occ_brep_to_data(brep) -> dict:
+    """Extract a STEP-inspired JSON dict from a native OCC shape.
+
+    Entity types mirror STEP semantics: vertices (CARTESIAN_POINT), edges
+    (EDGE_CURVE with 3D curve + vertex refs), faces (FACE_SURFACE with surface +
+    oriented loops + pcurves).
+    """
+    from compas.geometry import Line, Plane
+
+    shape = brep._native_brep
+
+    # --- Vertices ---
+    vertex_list = []
+    vertex_id_map = {}  # occ_hash -> list index
+
+    def _vertex_id(occ_vertex):
+        h = occ_vertex.__hash__()
+        if h not in vertex_id_map:
+            pnt = BRep_Tool.Pnt_s(occ_vertex)
+            vertex_list.append([pnt.X(), pnt.Y(), pnt.Z()])
+            vertex_id_map[h] = len(vertex_list) - 1
+        return vertex_id_map[h]
+
+    # Pre-populate all vertices so isolated ones are also captured
+    v_exp = TopExp_Explorer(shape, TopAbs_VERTEX)
+    while v_exp.More():
+        _vertex_id(TopoDS.Vertex_s(v_exp.Current()))
+        v_exp.Next()
+
+    # --- Edges ---
+    edge_list = []
+    edge_registry = []  # (occ_edge, index) for IsSame deduplication
+
+    def _edge_id(occ_edge):
+        for reg_edge, idx in edge_registry:
+            if occ_edge.IsSame(reg_edge):
+                return idx
+
+        try:
+            occ_first = TopExp.FirstVertex_s(occ_edge, False)
+            occ_last = TopExp.LastVertex_s(occ_edge, False)
+            start_id = _vertex_id(occ_first)
+            end_id = _vertex_id(occ_last)
+        except Exception:
+            exp = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
+            verts = []
+            while exp.More():
+                verts.append(TopoDS.Vertex_s(exp.Current()))
+                exp.Next()
+            if not verts:
+                start_id = end_id = 0
+            elif len(verts) < 2:
+                start_id = end_id = _vertex_id(verts[0])
+            else:
+                start_id = _vertex_id(verts[0])
+                end_id = _vertex_id(verts[1])
+
+        curve = _extract_edge_curve(occ_edge)
+        if isinstance(curve, Line):
+            curve_data = {
+                "type": "line",
+                "data": [
+                    [curve.start.x, curve.start.y, curve.start.z],
+                    [curve.end.x, curve.end.y, curve.end.z],
+                ],
+            }
+        else:
+            curve_data = {"type": "nurbs", "data": curve.__data__}
+
+        idx = len(edge_list)
+        edge_list.append({"start": start_id, "end": end_id, "curve": curve_data})
+        edge_registry.append((occ_edge, idx))
+        return idx
+
+    # --- Faces ---
+    face_list = []
+
+    face_exp = TopExp_Explorer(shape, TopAbs_FACE)
+    while face_exp.More():
+        occ_face = TopoDS.Face_s(face_exp.Current())
+        is_reversed = occ_face.Orientation() == TopAbs_REVERSED
+
+        surface = _extract_surface(occ_face)
+        if isinstance(surface, Plane):
+            surface_data = {
+                "type": "plane",
+                "data": {
+                    "point": [surface.point.x, surface.point.y, surface.point.z],
+                    "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
+                },
+            }
+        else:
+            surface_data = {"type": "nurbs", "data": surface.__data__}
+
+        loops = []
+        wire_exp = TopExp_Explorer(occ_face, TopAbs_WIRE)
+        while wire_exp.More():
+            occ_wire = TopoDS.Wire_s(wire_exp.Current())
+            trims = []
+            wire_explorer = BRepTools_WireExplorer(occ_wire, occ_face)
+            while wire_explorer.More():
+                occ_edge = wire_explorer.Current()
+                edge_reversed = occ_edge.Orientation() == TopAbs_REVERSED
+                edge_idx = _edge_id(occ_edge)
+
+                pcurve = _extract_pcurve(occ_edge, occ_face)
+                trims.append(
+                    {
+                        "edge": edge_idx,
+                        "is_reversed": edge_reversed,
+                        "curve_2d": pcurve.__data__ if pcurve is not None else None,
+                    }
+                )
+                wire_explorer.Next()
+
+            if trims:
+                loops.append(trims)
+            wire_exp.Next()
+
+        if loops:
+            face_list.append(
+                {
+                    "surface": surface_data,
+                    "is_reversed": is_reversed,
+                    "loops": loops,
+                }
+            )
+
+        face_exp.Next()
+
+    return {
+        "version": 4,
+        "vertices": vertex_list,
+        "edges": edge_list,
+        "faces": face_list,
+    }
+
+
+# =============================================================================
 # compas_brep → OCC conversion
 # =============================================================================
 

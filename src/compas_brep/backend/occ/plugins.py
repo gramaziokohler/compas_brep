@@ -292,10 +292,17 @@ def brep_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
 
 
 @plugin(category="brep-operations", requires=["OCP"])
-def brep_rebuild(brep):
+def brep_to_data(brep):
+    from compas_brep.backend.occ.conversion import occ_brep_to_data
+
+    return occ_brep_to_data(brep)
+
+
+@plugin(category="brep-operations", requires=["OCP"])
+def brep_rebuild(brep, data):
     from compas_brep.backend.occ.operations import occ_rebuild
 
-    return occ_rebuild(brep)
+    return occ_rebuild(brep, data)
 
 
 # --- brep-io ---
