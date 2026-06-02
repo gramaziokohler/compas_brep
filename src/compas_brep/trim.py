@@ -137,8 +137,9 @@ class BrepTrim:
             "edge": self._edge.__data__,
             "is_reversed": self._is_reversed,
         }
-        if self._curve_2d is not None:
-            data["pcurve"] = self._curve_2d.__data__
+        curve_2d = self.curve_2d
+        if curve_2d is not None:
+            data["pcurve"] = curve_2d.__data__
         return data
 
     def __repr__(self):

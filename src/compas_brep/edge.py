@@ -39,7 +39,7 @@ class BrepEdge:
 
     @property
     def is_line(self) -> bool:
-        return isinstance(self._curve, Line)
+        return isinstance(self.curve, Line)
 
     @property
     def is_circle(self) -> bool:
@@ -63,7 +63,7 @@ class BrepEdge:
 
     @property
     def is_bspline(self) -> bool:
-        return isinstance(self._curve, NurbsCurve)
+        return isinstance(self.curve, NurbsCurve)
 
     @property
     def is_other(self) -> bool:
@@ -75,7 +75,7 @@ class BrepEdge:
 
     @property
     def length(self) -> float:
-        return self._curve.length
+        return self.curve.length
 
     @property
     def native_edge(self):
@@ -97,8 +97,9 @@ class BrepEdge:
         ep = self._end.point
         start_xyz = [sp.x, sp.y, sp.z]
         end_xyz = [ep.x, ep.y, ep.z]
-        if isinstance(self._curve, NurbsCurve):
-            curve_data = {"type": "nurbs", "data": self._curve.__data__}
+        curve = self.curve
+        if isinstance(curve, NurbsCurve):
+            curve_data = {"type": "nurbs", "data": curve.__data__}
         else:
             curve_data = {"type": "line", "data": {"start": start_xyz, "end": end_xyz}}
         return {"start": start_xyz, "end": end_xyz, "curve": curve_data}
@@ -142,12 +143,13 @@ class BrepEdge:
         -------
         list[Point]
         """
-        if isinstance(self._curve, NurbsCurve):
-            t_start, t_end = self._curve.domain
+        curve = self.curve
+        if isinstance(curve, NurbsCurve):
+            t_start, t_end = curve.domain
             points = []
             for i in range(n + 1):
                 t = t_start + (t_end - t_start) * i / n
-                points.append(self._curve.point_at(t))
+                points.append(curve.point_at(t))
             return points
 
         sp = self._start.point

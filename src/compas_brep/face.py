@@ -53,7 +53,7 @@ class BrepFace:
 
     @property
     def is_planar(self) -> bool:
-        return isinstance(self._surface, Plane)
+        return isinstance(self.surface, Plane)
 
     @property
     def is_plane(self) -> bool:
@@ -61,7 +61,7 @@ class BrepFace:
 
     @property
     def is_nurbs(self) -> bool:
-        return isinstance(self._surface, NurbsSurface)
+        return isinstance(self.surface, NurbsSurface)
 
     @property
     def loops(self) -> list[BrepLoop]:
@@ -118,7 +118,7 @@ class BrepFace:
 
     @property
     def __data__(self) -> dict:
-        surface = self._surface
+        surface = self.surface
         if isinstance(surface, NurbsSurface):
             surface_data = {"type": "nurbs", "data": surface.__data__}
         else:

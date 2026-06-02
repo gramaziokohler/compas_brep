@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from compas.geometry import Line, Plane, Point, Vector
-
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
 from OCP.BRepBuilderAPI import (
@@ -30,19 +29,15 @@ from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Pnt2d, gp_Vec  # noqa: F40
 from OCP.ShapeConstruct import ShapeConstruct_Curve
 from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array1OfPnt2d, TColgp_Array2OfPnt
 from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal, TColStd_Array2OfReal
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE
+from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE
 from OCP.TopExp import TopExp, TopExp_Explorer
 from OCP.TopoDS import TopoDS
 from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
+from compas_brep.backend.occ.topology import OccBrepEdge, OccBrepFace, OccBrepLoop, OccBrepTrim, OccBrepVertex
 from compas_brep.curves.nurbs import NurbsCurve
-from compas_brep.edge import BrepEdge
-from compas_brep.face import BrepFace
-from compas_brep.loop import BrepLoop
 from compas_brep.surfaces.nurbs import NurbsSurface
-from compas_brep.trim import BrepTrim
-from compas_brep.vertex import BrepVertex
 
 if TYPE_CHECKING:
     from OCP.TopoDS import TopoDS_Shape
@@ -70,29 +65,27 @@ def occ_to_brep(shape: TopoDS_Shape):
 def occ_extract_topology(brep) -> None:
     """Populate a Brep's topology lists in-place from its cached OCC native shape.
 
-    Extracts all NURBS surface data, edge curves, trim curves (pcurves),
-    and topology from the OCC shape into Python-owned COMPAS data structures.
+    Produces native-handle wrapper objects (OccBrepVertex, OccBrepEdge, etc.)
+    that hold references to their underlying OCC entities. Geometric properties
+    (.point, .curve, .surface, .curve_2d) are deferred to first access.
 
-    Inspired by STEP (ISO 10303-21): each edge usage in a loop becomes a
-    BrepTrim (coedge) carrying an orientation flag and a 2D pcurve in the
-    face surface's UV space. This allows kernel-independent tessellation
-    and faithful round-trip serialization.
+    Topology structure (which vertex is in which edge, which edge is in which
+    loop, etc.) is fully determined here so that identity-based deduplication
+    and traversal order are correct.
     """
     shape = brep._native_brep
 
-    # Collect all vertices with deduplication
-    vertex_map = {}  # hash(TopoDS_Vertex) -> BrepVertex
+    # Vertex deduplication: same OCC vertex hash → same OccBrepVertex instance
+    vertex_map = {}  # hash(TopoDS_Vertex) -> OccBrepVertex
 
     def _get_vertex(occ_vertex):
         h = occ_vertex.__hash__()
         if h not in vertex_map:
-            pnt = BRep_Tool.Pnt_s(occ_vertex)
-            vertex_map[h] = BrepVertex(Point(pnt.X(), pnt.Y(), pnt.Z()))
+            vertex_map[h] = OccBrepVertex(occ_vertex)
         return vertex_map[h]
 
-    # Shared edge deduplication: same OCC edge (by IsSame) → same BrepEdge
-    # Store as list of (occ_edge, BrepEdge) pairs and use IsSame for comparison
-    edge_registry = []  # list of (occ_edge, BrepEdge)
+    # Edge deduplication: same OCC edge (by IsSame) → same OccBrepEdge instance
+    edge_registry = []  # list of (occ_edge, OccBrepEdge)
 
     all_faces = []
     all_edges = []
@@ -104,21 +97,12 @@ def occ_extract_topology(brep) -> None:
         occ_face = TopoDS.Face_s(face_exp.Current())
         face_reversed = occ_face.Orientation() == TopAbs_REVERSED
 
-        # Extract surface
-        surface = _extract_surface(occ_face)
-
-        # Extract domain
-        umin, umax, vmin, vmax = BRepTools.UVBounds_s(occ_face)
-        domain_u = (umin, umax)
-        domain_v = (vmin, vmax)
-
         # Extract wire loops
         face_loops = []
         wire_exp = TopExp_Explorer(occ_face, TopAbs_WIRE)
         while wire_exp.More():
             occ_wire = TopoDS.Wire_s(wire_exp.Current())
 
-            # Extract edges from wire in proper traversal order
             loop_trims = []
             wire_explorer = BRepTools_WireExplorer(occ_wire, occ_face)
             while wire_explorer.More():
@@ -126,9 +110,6 @@ def occ_extract_topology(brep) -> None:
 
                 # Edge orientation: REVERSED means this usage traverses backward
                 edge_reversed = occ_edge.Orientation() == TopAbs_REVERSED
-
-                # Extract 3D edge curve (in the edge's canonical direction)
-                curve = _extract_edge_curve(occ_edge)
 
                 # Get the vertices in canonical (FORWARD) order using TopExp.
                 # cumOri=False gives the underlying edge's natural direction,
@@ -160,40 +141,36 @@ def occ_extract_topology(brep) -> None:
                         brep_edge = reg_brep_edge
                         break
                 if brep_edge is None:
-                    brep_edge = BrepEdge(start_v, end_v, curve=curve)
+                    brep_edge = OccBrepEdge(occ_edge, start_v, end_v)
                     edge_registry.append((occ_edge, brep_edge))
                     all_edges.append(brep_edge)
 
-                # Extract pcurve (2D curve in face UV space)
-                pcurve = _extract_pcurve(occ_edge, occ_face)
-
-                trim = BrepTrim(
-                    edge=brep_edge,
+                # Trim wraps oriented edge on this face; pcurve is deferred
+                trim = OccBrepTrim(
+                    occ_edge=occ_edge,
+                    occ_face=occ_face,
+                    brep_edge=brep_edge,
                     is_reversed=edge_reversed,
-                    curve_2d=pcurve,
                 )
                 loop_trims.append(trim)
 
                 wire_explorer.Next()
 
             if loop_trims:
-                loop = BrepLoop(trims=loop_trims)
+                loop = OccBrepLoop(occ_wire=occ_wire, trims=loop_trims)
                 face_loops.append(loop)
                 all_loops.append(loop)
 
             wire_exp.Next()
 
-        # First loop is outer, rest are inner
+        # First loop is outer, rest are inner; surface is deferred
         if face_loops:
-            brep_face = BrepFace(
-                face_loops[0],
-                surface=surface,
+            brep_face = OccBrepFace(
+                occ_face=occ_face,
+                outer_loop=face_loops[0],
+                inner_loops=face_loops[1:],
                 is_reversed=face_reversed,
-                domain_u=domain_u,
-                domain_v=domain_v,
             )
-            for inner_loop in face_loops[1:]:
-                brep_face.add_loop(inner_loop)
             all_faces.append(brep_face)
 
         face_exp.Next()
@@ -559,7 +536,9 @@ def _build_nurbs_face(occ_surface, face):
     builder = _BRep_Builder()
 
     # Check if all trims have pcurves
-    all_have_pcurves = all(t.curve_2d is not None for loop in face.loops for t in loop.trims) if face.outer_loop.trims else False
+    all_have_pcurves = (
+        all(t.curve_2d is not None for loop in face.loops for t in loop.trims) if face.outer_loop.trims else False
+    )
 
     if all_have_pcurves:
         # Build face with explicit pcurve-based trimming

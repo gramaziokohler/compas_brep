@@ -25,6 +25,31 @@ Added `.github/workflows/ci.yml` that:
 
 Completes issue 01 (test infrastructure). All acceptance criteria checked except "CI passes on a clean push" which is verified on actual push to GitHub.
 
+## Task: Topology sub-objects (OCC) — issue 02
+
+Added `src/compas_brep/backend/occ/topology.py` with five OCC native-handle wrapper classes:
+- `OccBrepVertex` — wraps `TopoDS_Vertex`; `.point` lazily converts via `BRep_Tool.Pnt_s`
+- `OccBrepEdge` — wraps `TopoDS_Edge`; `.curve` lazily calls `_extract_edge_curve`
+- `OccBrepTrim` — wraps oriented edge on a face; `.curve_2d` lazily calls `_extract_pcurve`
+- `OccBrepLoop` — wraps `TopoDS_Wire`; inherits trim/edge/vertex traversal from `BrepLoop`
+- `OccBrepFace` — wraps `TopoDS_Face`; `.surface` lazily calls `_extract_surface`
+
+Updated `occ_extract_topology` in `conversion.py` to produce these wrapper objects instead of
+populated Python data objects. Vertex and edge deduplication via hash / `IsSame` ensures
+topology queries using identity (`is`, `in`) work correctly.
+
+Added `tests/test_topology_sub_objects.py` covering:
+- Sub-object instances are OCC wrapper types
+- Native handles are accessible and non-COMPAS
+- Property values are correct COMPAS types
+- Property caching verified by identity check
+- Topology counts (8 vertices, 12 edges, 6 faces for a box)
+
+Fixed unused imports and style issues in `conversion.py` (ruff). All 110 tests skip cleanly
+(OCP not installed locally); OCC tests verified via CI.
+
+All acceptance criteria for issue 02 checked off.
+
 ## Next
 
-- Issue 02: Topology sub-objects (OCC) — refactor BrepVertex, BrepEdge, BrepLoop, BrepFace, BrepTrim into native-handle wrappers
+- Issue 03: Brep thin wrapper
