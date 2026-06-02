@@ -1,9 +1,10 @@
-"""Canonical Brep implementation based on the COMPAS framework.
+"""Brep class — thin wrapper around a native backend geometry object.
 
-Owns all geometry data (NURBS surfaces, curves, trim curves, topology) as Python objects.
-Operations that require a kernel (booleans, loft, etc.) delegate to a pluggable backend
-(OCC via cadquery-ocp-novtk, or Rhino when inside Rhino) via the COMPAS plugin system.
-Native backend objects are cached internally for performance.
+``_native_brep`` (a TopoDS_Shape or Rhino.Geometry.Brep) is the sole source of truth.
+All topology lists (_vertices, _edges, _loops, _faces) are lazy caches populated on
+first access via brep_extract_topology; they are never written as authoritative data.
+All operations delegate to the active backend (OCC or Rhino) via the COMPAS plugin system.
+All public interface inputs and outputs are COMPAS types — no backend types leak through.
 """
 
 from __future__ import annotations
@@ -70,12 +71,11 @@ from compas_brep.vertex import BrepVertex
 
 
 class Brep(Data):
-    """Canonical Brep implementation that owns all geometry and topology data.
+    """Thin wrapper around a native backend geometry object (OCC or Rhino).
 
-    Stores NURBS surfaces, curves, trim curves, and topology as Python objects
-    that are fully serializable. Operations requiring a geometric kernel
-    (booleans, SSI, loft, sweep) delegate to a pluggable backend (OCC or Rhino).
-    Native backend objects are cached for performance.
+    ``_native_brep`` is the sole source of truth. Topology lists are lazy caches
+    populated on demand from native via ``_ensure_topology``; they are never written
+    as primary data. All public interface values are COMPAS types.
     """
 
     def __new__(cls, *args, **kwargs):
@@ -122,12 +122,19 @@ class Brep(Data):
     @classmethod
     def __from_data__(cls, data: dict) -> Brep:
         brep = _deserialize_brep_data(data)
-        # Rebuild native backend object so operations and tessellation work.
+        # Rebuild native backend object from Python topology in brep._faces.
         # Silently skip if no backend is available.
         try:
             brep_rebuild(brep)
         except NotImplementedError:
             pass
+        # Native is now the source of truth. Clear Python-owned topology so
+        # it is lazily repopulated from native on first access (criterion 1/3).
+        brep._vertices = []
+        brep._edges = []
+        brep._loops = []
+        brep._faces = []
+        brep._topology_loaded = False
         # Restore tessellation cache if present (avoids re-tessellation).
         tess = data.get("tessellation")
         if tess is not None:
@@ -239,18 +246,6 @@ class Brep(Data):
         except NotImplementedError:
             pass
         self._topology_loaded = True
-
-    def _ensure_native(self):
-        """Ensure native backend object is available.
-
-        Rebuilds from canonical Python topology if not already present.
-        """
-        if self._native_brep is not None:
-            return
-        try:
-            brep_rebuild(self)
-        except NotImplementedError:
-            pass
 
     @property
     def centroid(self) -> Point:
@@ -959,6 +954,7 @@ class Brep(Data):
         self._faces = other._faces
         self._native_brep = other._native_brep
         self._tessellation_cache = None
+        self._topology_loaded = other._topology_loaded
 
 
 def _deserialize_brep_data(data: dict) -> Brep:

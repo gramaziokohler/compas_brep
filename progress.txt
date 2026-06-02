@@ -50,6 +50,34 @@ Fixed unused imports and style issues in `conversion.py` (ruff). All 110 tests s
 
 All acceptance criteria for issue 02 checked off.
 
+## Task: Brep thin wrapper — issue 03
+
+Removed Python-owned topology as canonical state from `Brep`. Changes in `brep.py`:
+
+- `__from_data__`: after `brep_rebuild` creates the native OCC shape from v3 Python
+  topology, immediately clear `_vertices`, `_edges`, `_loops`, `_faces` and reset
+  `_topology_loaded = False`. Native is now the sole source of truth; topology is
+  lazily repopulated from it on first access.
+
+- `_replace_from`: added `self._topology_loaded = other._topology_loaded` so that
+  in-place operations (flip, transform, etc.) correctly reset the topology-loaded flag
+  from the replacement Brep (always False for fresh operation results). Previously,
+  `_topology_loaded` was left at True from before the operation, causing subsequent
+  topology access to return a stale empty list instead of repopulating from the new native.
+
+- Removed dead `_ensure_native` method (called nowhere; embedded the old rebuild-from-
+  Python-topology pattern which is now obsolete).
+
+- Updated module and class docstrings to reflect the thin-wrapper architecture.
+
+The `_deserialize_brep_data` helper function remains: it builds a temporary Python
+topology Brep used exclusively by `brep_rebuild` to reconstruct the native OCC shape.
+It will be removed in issue 04 when the serialization format changes.
+
+All @pytest.mark.occ tests verified via CI.
+
+All acceptance criteria for issue 03 checked off.
+
 ## Next
 
-- Issue 03: Brep thin wrapper
+- Issue 04: STEP-inspired JSON serialization
