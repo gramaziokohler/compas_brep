@@ -314,6 +314,52 @@ def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):
 # =============================================================================
 
 
+def _rhino_curve_from_loop(loop):
+    """Build a single joined Rhino Curve from a BrepLoop's trims or edges.
+
+    Returns None if no curves can be built (e.g. all degenerate edges).
+    """
+    curves = []
+    if loop.trims:
+        for trim in loop.trims:
+            edge = trim.edge
+            curve = edge.curve
+            sp = edge.first_vertex.point
+            ep = edge.last_vertex.point
+            if isinstance(curve, NurbsCurve):
+                rc = _compas_nurbs_curve_to_rhino(curve)
+                if trim.is_reversed:
+                    rc.Reverse()
+                curves.append(rc)
+            else:
+                if trim.is_reversed:
+                    p0 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
+                    p1 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
+                else:
+                    p0 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
+                    p1 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
+                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+                if dist > 1e-9:
+                    curves.append(Rhino.Geometry.LineCurve(p0, p1))
+    else:
+        for edge in loop.edges:
+            curve = edge.curve
+            sp = edge.first_vertex.point
+            ep = edge.last_vertex.point
+            if isinstance(curve, NurbsCurve):
+                curves.append(_compas_nurbs_curve_to_rhino(curve))
+            else:
+                p0 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
+                p1 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
+                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+                if dist > 1e-9:
+                    curves.append(Rhino.Geometry.LineCurve(p0, p1))
+    if not curves:
+        return None
+    joined = Rhino.Geometry.Curve.JoinCurves(curves, TOL.absolute)
+    return joined[0] if joined else None
+
+
 def brep_to_rhino(brep):
     """Convert a canonical compas_brep.Brep to a Rhino.Geometry.Brep.
 
@@ -337,14 +383,25 @@ def brep_to_rhino(brep):
         surface = face.surface
 
         if isinstance(surface, Plane):
-            # Build a planar face from polygon vertices
-            points = [v.point for v in face.outer_loop.vertices]
-            rhino_points = [Rhino.Geometry.Point3d(p.x, p.y, p.z) for p in points]
-            # Close the polyline
-            rhino_points.append(rhino_points[0])
-            polyline = Rhino.Geometry.Polyline(rhino_points)
-            curve = polyline.ToNurbsCurve()
-            planar_breps = Rhino.Geometry.Brep.CreatePlanarBreps(curve, TOL.absolute)
+            # Build boundary curves from loop trim edges (handles inner loops/holes).
+            outer_curve = _rhino_curve_from_loop(face.outer_loop)
+            if outer_curve is None:
+                # Fallback: closed polygon from vertex positions
+                points = [v.point for v in face.outer_loop.vertices]
+                if not points:
+                    continue
+                rhino_points = [Rhino.Geometry.Point3d(p.x, p.y, p.z) for p in points]
+                rhino_points.append(rhino_points[0])
+                polyline = Rhino.Geometry.Polyline(rhino_points)
+                outer_curve = polyline.ToNurbsCurve()
+
+            all_curves = [outer_curve]
+            for inner_loop in face._inner_loops:
+                inner_curve = _rhino_curve_from_loop(inner_loop)
+                if inner_curve is not None:
+                    all_curves.append(inner_curve)
+
+            planar_breps = Rhino.Geometry.Brep.CreatePlanarBreps(all_curves, TOL.absolute)
             if planar_breps and len(planar_breps) > 0:
                 for pb in planar_breps:
                     for pf in pb.Faces:
@@ -462,3 +519,114 @@ def _expand_knots(knots, mults):
     for k, m in zip(knots, mults):
         kv.extend([k] * m)
     return kv
+
+
+# =============================================================================
+# STEP-inspired JSON serialization (Rhino backend)
+# =============================================================================
+
+
+def _extract_trim_pcurve(rhino_trim):
+    """Extract the 2D parametric curve from a Rhino BrepTrim, returning NurbsCurve or None."""
+    curve = rhino_trim.TrimCurve
+    if curve is None:
+        return None
+    nurbs = curve.ToNurbsCurve()
+    if nurbs is None:
+        return None
+    return _rhino_nurbs_curve_to_compas(nurbs)
+
+
+def rhino_brep_to_data(brep) -> dict:
+    """Extract a STEP-inspired JSON dict from a native Rhino.Geometry.Brep.
+
+    Mirrors the OCC version (``occ_brep_to_data``) using Rhino's topology API
+    instead of OCC's TopExp traversal. Entity types follow the same STEP-inspired
+    model: CARTESIAN_POINT vertices, EDGE_CURVE edges with 3D curves, and
+    FACE_SURFACE faces with surface + oriented loops + pcurves.
+    """
+    rhino_brep = brep._native_brep
+
+    # --- Vertices ---
+    vertex_list = []
+    vertex_id_map = {}  # VertexIndex -> list index
+    for rv in rhino_brep.Vertices:
+        p = rv.Location
+        vertex_id_map[rv.VertexIndex] = len(vertex_list)
+        vertex_list.append([p.X, p.Y, p.Z])
+
+    # --- Edges ---
+    edge_list = []
+    edge_id_map = {}  # EdgeIndex -> list index
+    for re in rhino_brep.Edges:
+        sv = re.StartVertex
+        ev = re.EndVertex
+        start_id = vertex_id_map.get(sv.VertexIndex, 0) if sv is not None else 0
+        end_id = vertex_id_map.get(ev.VertexIndex, 0) if ev is not None else 0
+
+        curve = _extract_edge_curve(re)
+        if isinstance(curve, Line):
+            curve_data = {
+                "type": "line",
+                "data": [
+                    [curve.start.x, curve.start.y, curve.start.z],
+                    [curve.end.x, curve.end.y, curve.end.z],
+                ],
+            }
+        else:
+            curve_data = {"type": "nurbs", "data": curve.__data__}
+
+        edge_id_map[re.EdgeIndex] = len(edge_list)
+        edge_list.append({"start": start_id, "end": end_id, "curve": curve_data})
+
+    # --- Faces ---
+    face_list = []
+    for rf in rhino_brep.Faces:
+        surface = _extract_surface(rf)
+        if isinstance(surface, Plane):
+            surface_data = {
+                "type": "plane",
+                "data": {
+                    "point": [surface.point.x, surface.point.y, surface.point.z],
+                    "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
+                },
+            }
+        else:
+            surface_data = {"type": "nurbs", "data": surface.__data__}
+
+        loops = []
+        for rl in rf.Loops:
+            trims = []
+            for rt in rl.Trims:
+                re_obj = rt.Edge
+                if re_obj is None:
+                    continue  # Singular trim (e.g. pole of sphere)
+                eidx = re_obj.EdgeIndex
+                if eidx not in edge_id_map:
+                    continue
+                pcurve = _extract_trim_pcurve(rt)
+                trims.append(
+                    {
+                        "edge": edge_id_map[eidx],
+                        "is_reversed": rt.IsReversed(),
+                        "curve_2d": pcurve.__data__ if pcurve is not None else None,
+                    }
+                )
+            if trims:
+                loops.append(trims)
+
+        if loops:
+            face_list.append(
+                {
+                    "surface": surface_data,
+                    "is_reversed": rf.OrientationIsReversed,
+                    "loops": loops,
+                }
+            )
+
+    return {
+        "version": 4,
+        "vertices": vertex_list,
+        "edges": edge_list,
+        "faces": face_list,
+    }

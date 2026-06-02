@@ -227,6 +227,74 @@ def rhino_is_valid(brep):
     return brep_to_rhino(brep).IsValid
 
 
-def rhino_rebuild(brep):
-    """Rebuild the native Rhino Brep from canonical Python topology data."""
+def rhino_rebuild(brep, data: dict) -> None:
+    """Rebuild native Rhino.Geometry.Brep from a STEP-inspired JSON data dict.
+
+    Constructs Python topology from the data dict (same intermediate objects as
+    occ_rebuild), then calls brep_to_rhino to build the native Rhino shape which
+    is cached on brep._native_brep.
+    """
+    from compas.geometry import Line, Plane, Point, Vector
+
+    from compas_brep.curves.nurbs import NurbsCurve
+    from compas_brep.edge import BrepEdge
+    from compas_brep.face import BrepFace
+    from compas_brep.loop import BrepLoop
+    from compas_brep.surfaces.nurbs import NurbsSurface
+    from compas_brep.trim import BrepTrim
+    from compas_brep.vertex import BrepVertex
+
+    vertices = [BrepVertex(Point(*xyz)) for xyz in data["vertices"]]
+
+    edges = []
+    for ed in data["edges"]:
+        start = vertices[ed["start"]]
+        end = vertices[ed["end"]]
+        cd = ed["curve"]
+        if cd["type"] == "line":
+            pts = cd["data"]
+            curve = Line(Point(*pts[0]), Point(*pts[1]))
+        else:
+            curve = NurbsCurve.__from_data__(cd["data"])
+        edges.append(BrepEdge(start, end, curve=curve))
+
+    all_loops = []
+    faces = []
+    for fd in data["faces"]:
+        sd = fd["surface"]
+        if sd["type"] == "plane":
+            pd = sd["data"]
+            surface = Plane(Point(*pd["point"]), Vector(*pd["normal"]))
+        else:
+            surface = NurbsSurface.__from_data__(sd["data"])
+
+        face_loops = []
+        for loop_data in fd["loops"]:
+            trims = [
+                BrepTrim(
+                    edge=edges[td["edge"]],
+                    is_reversed=td.get("is_reversed", False),
+                    curve_2d=NurbsCurve.__from_data__(td["curve_2d"]) if td.get("curve_2d") else None,
+                )
+                for td in loop_data
+            ]
+            loop = BrepLoop(trims=trims)
+            face_loops.append(loop)
+            all_loops.append(loop)
+
+        if face_loops:
+            face = BrepFace(
+                face_loops[0],
+                surface=surface,
+                is_reversed=fd.get("is_reversed", False),
+            )
+            for inner_loop in face_loops[1:]:
+                face.add_loop(inner_loop)
+            faces.append(face)
+
+    brep._vertices = vertices
+    brep._edges = edges
+    brep._loops = all_loops
+    brep._faces = faces
+    brep._topology_loaded = True
     brep_to_rhino(brep)

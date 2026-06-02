@@ -229,12 +229,16 @@ def brep_copy(brep):
 
 @plugin(category="brep-operations", requires=["Rhino"])
 def brep_to_data(brep) -> dict:
-    raise NotImplementedError("brep_to_data not yet implemented for Rhino backend (issue 06)")
+    from compas_brep.backend.rhino.conversion import rhino_brep_to_data
+
+    return rhino_brep_to_data(brep)
 
 
 @plugin(category="brep-operations", requires=["Rhino"])
 def brep_rebuild(brep, data: dict) -> None:
-    raise NotImplementedError("brep_rebuild not yet implemented for Rhino backend (issue 06)")
+    from compas_brep.backend.rhino.operations import rhino_rebuild
+
+    return rhino_rebuild(brep, data)
 
 
 # --- brep-queries ---
