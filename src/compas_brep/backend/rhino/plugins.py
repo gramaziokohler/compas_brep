@@ -206,7 +206,80 @@ def brep_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
     raise NotImplementedError("overlap not yet implemented for Rhino backend")
 
 
+@plugin(category="brep-operations", requires=["Rhino"])
+def brep_transform(brep, transformation):
+    from compas_brep.backend.rhino.operations import rhino_transform
+
+    return rhino_transform(brep, transformation)
+
+
+@plugin(category="brep-operations", requires=["Rhino"])
+def brep_flip(brep):
+    from compas_brep.backend.rhino.operations import rhino_flip
+
+    return rhino_flip(brep)
+
+
+@plugin(category="brep-operations", requires=["Rhino"])
+def brep_copy(brep):
+    from compas_brep.backend.rhino.operations import rhino_copy
+
+    return rhino_copy(brep)
+
+
+@plugin(category="brep-operations", requires=["Rhino"])
+def brep_to_data(brep) -> dict:
+    raise NotImplementedError("brep_to_data not yet implemented for Rhino backend (issue 06)")
+
+
+@plugin(category="brep-operations", requires=["Rhino"])
+def brep_rebuild(brep, data: dict) -> None:
+    raise NotImplementedError("brep_rebuild not yet implemented for Rhino backend (issue 06)")
+
+
 # --- brep-queries ---
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
+def brep_area(brep):
+    from compas_brep.backend.rhino.operations import rhino_area
+
+    return rhino_area(brep)
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
+def brep_volume(brep):
+    from compas_brep.backend.rhino.operations import rhino_volume
+
+    return rhino_volume(brep)
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
+def brep_centroid(brep):
+    from compas_brep.backend.rhino.operations import rhino_centroid
+
+    return rhino_centroid(brep)
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
+def brep_aabb(brep):
+    from compas_brep.backend.rhino.operations import rhino_aabb
+
+    return rhino_aabb(brep)
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
+def brep_is_solid(brep):
+    from compas_brep.backend.rhino.operations import rhino_is_solid
+
+    return rhino_is_solid(brep)
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
+def brep_is_valid(brep):
+    from compas_brep.backend.rhino.operations import rhino_is_valid
+
+    return rhino_is_valid(brep)
 
 
 @plugin(category="brep-queries", requires=["Rhino"])
@@ -221,13 +294,6 @@ def brep_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     from compas_brep.backend.rhino.operations import rhino_tessellate
 
     return rhino_tessellate(brep, linear_deflection, n, n_curves)
-
-
-@plugin(category="brep-operations", requires=["Rhino"])
-def brep_rebuild(brep):
-    from compas_brep.backend.rhino.operations import rhino_rebuild
-
-    return rhino_rebuild(brep)
 
 
 # --- brep-io ---

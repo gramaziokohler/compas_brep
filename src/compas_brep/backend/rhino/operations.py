@@ -9,7 +9,6 @@ from compas_rhino.conversions import plane_to_rhino
 
 from compas_brep.backend.rhino.conversion import brep_to_rhino, rhino_to_brep
 
-
 # =============================================================================
 # Boolean operations
 # =============================================================================
@@ -167,6 +166,65 @@ def rhino_fix(brep):
 def rhino_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     """Tessellate a Brep via Rhino.Geometry — returns (Mesh, list[Polyline])."""
     raise NotImplementedError("tessellate not yet implemented for Rhino backend")
+
+
+def rhino_copy(brep):
+    """Return a deep copy of a Brep."""
+    return rhino_to_brep(brep_to_rhino(brep).Duplicate())
+
+
+def rhino_transform(brep, transformation):
+    """Apply a COMPAS Transformation to a Brep and return the result."""
+    rhino_brep = brep_to_rhino(brep).Duplicate()
+    m = transformation.matrix
+    xform = Rhino.Geometry.Transform(1.0)
+    xform.M00 = m[0][0]; xform.M01 = m[0][1]; xform.M02 = m[0][2]; xform.M03 = m[0][3]  # noqa: E702
+    xform.M10 = m[1][0]; xform.M11 = m[1][1]; xform.M12 = m[1][2]; xform.M13 = m[1][3]  # noqa: E702
+    xform.M20 = m[2][0]; xform.M21 = m[2][1]; xform.M22 = m[2][2]; xform.M23 = m[2][3]  # noqa: E702
+    xform.M30 = m[3][0]; xform.M31 = m[3][1]; xform.M32 = m[3][2]; xform.M33 = m[3][3]  # noqa: E702
+    rhino_brep.Transform(xform)
+    return rhino_to_brep(rhino_brep)
+
+
+def rhino_area(brep):
+    """Return the surface area of a Brep."""
+    mp = Rhino.Geometry.AreaMassProperties.Compute(brep_to_rhino(brep))
+    return mp.Area if mp is not None else 0.0
+
+
+def rhino_volume(brep):
+    """Return the enclosed volume of a solid Brep."""
+    mp = Rhino.Geometry.VolumeMassProperties.Compute(brep_to_rhino(brep))
+    return mp.Volume if mp is not None else 0.0
+
+
+def rhino_centroid(brep):
+    """Return the area centroid of a Brep as a COMPAS Point."""
+    mp = Rhino.Geometry.AreaMassProperties.Compute(brep_to_rhino(brep))
+    if mp is None:
+        return Point(0, 0, 0)
+    c = mp.Centroid
+    return Point(c.X, c.Y, c.Z)
+
+
+def rhino_aabb(brep):
+    """Return the axis-aligned bounding box of a Brep as a COMPAS Box."""
+    from compas.geometry import Box, Frame
+
+    bbox = brep_to_rhino(brep).GetBoundingBox(True)
+    mn, mx = bbox.Min, bbox.Max
+    cx, cy, cz = (mn.X + mx.X) / 2, (mn.Y + mx.Y) / 2, (mn.Z + mx.Z) / 2
+    return Box(Frame(Point(cx, cy, cz)), mx.X - mn.X, mx.Y - mn.Y, mx.Z - mn.Z)
+
+
+def rhino_is_solid(brep):
+    """Return True if the Brep is a closed solid."""
+    return brep_to_rhino(brep).IsSolid
+
+
+def rhino_is_valid(brep):
+    """Return True if the Brep passes Rhino's validity check."""
+    return brep_to_rhino(brep).IsValid
 
 
 def rhino_rebuild(brep):

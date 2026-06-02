@@ -11,24 +11,9 @@ from __future__ import annotations
 import Rhino  # type: ignore
 from compas.geometry import Line, Plane, Point, Vector
 from compas.tolerance import TOL
-from compas_rhino.conversions import (
-    box_to_rhino,
-    cone_to_rhino,
-    cylinder_to_rhino,
-    mesh_to_rhino,
-    plane_to_rhino,
-    sphere_to_rhino,
-    torus_to_rhino,
-    vector_to_rhino,
-)
 
 from compas_brep.curves.nurbs import NurbsCurve
-from compas_brep.edge import BrepEdge
-from compas_brep.face import BrepFace
-from compas_brep.loop import BrepLoop
 from compas_brep.surfaces.nurbs import NurbsSurface
-from compas_brep.vertex import BrepVertex
-
 
 # =============================================================================
 # Rhino → compas_brep conversion
@@ -62,8 +47,9 @@ def rhino_to_brep(rhino_brep):
 def rhino_extract_topology(brep) -> None:
     """Populate a Brep's topology lists in-place from its cached Rhino native shape.
 
-    Extracts all NURBS surface data, edge curves, and topology from
-    the Rhino Brep into Python-owned COMPAS data structures.
+    Produces native-handle wrapper objects (RhinoBrepVertex, RhinoBrepEdge, etc.)
+    that hold references to their underlying Rhino.Geometry entities. Geometric
+    properties (.point, .curve, .surface, .curve_2d) are deferred to first access.
 
     Parameters
     ----------
@@ -71,89 +57,65 @@ def rhino_extract_topology(brep) -> None:
         A Brep whose ``_native_brep`` is a Rhino.Geometry.Brep.
 
     """
+    from compas_brep.backend.rhino.topology import (
+        RhinoBrepEdge,
+        RhinoBrepFace,
+        RhinoBrepLoop,
+        RhinoBrepTrim,
+        RhinoBrepVertex,
+    )
+
     rhino_brep = brep._native_brep
 
-    # Build a vertex map keyed by Rhino vertex index
+    # Build vertex wrappers keyed by Rhino vertex index
     vertex_map = {}
     for rhino_vertex in rhino_brep.Vertices:
-        pt = rhino_vertex.Location
-        vertex_map[rhino_vertex.VertexIndex] = BrepVertex(Point(pt.X, pt.Y, pt.Z))
+        vertex_map[rhino_vertex.VertexIndex] = RhinoBrepVertex(rhino_vertex)
+
+    # Build edge wrappers keyed by Rhino edge index (deduplication via index)
+    edge_map = {}
+    for rhino_edge in rhino_brep.Edges:
+        sv_idx = rhino_edge.StartVertex.VertexIndex
+        ev_idx = rhino_edge.EndVertex.VertexIndex
+        edge_map[rhino_edge.EdgeIndex] = RhinoBrepEdge(
+            rhino_edge,
+            vertex_map[sv_idx],
+            vertex_map[ev_idx],
+        )
 
     all_faces = []
-    all_edges_set = set()
-    all_edges = []
     all_loops = []
 
     for rhino_face in rhino_brep.Faces:
         face_reversed = rhino_face.OrientationIsReversed
+        loop_pairs = []  # (rhino_loop, RhinoBrepLoop)
 
-        # Extract surface
-        surface = _extract_surface(rhino_face)
-
-        # Extract UV domain
-        u_domain = (rhino_face.Domain(0)[0], rhino_face.Domain(0)[1])
-        v_domain = (rhino_face.Domain(1)[0], rhino_face.Domain(1)[1])
-
-        # Extract wire loops
-        face_loops = []
         for rhino_loop in rhino_face.Loops:
-            loop_edges = []
+            trims = []
             for rhino_trim in rhino_loop.Trims:
                 rhino_edge_obj = rhino_trim.Edge
                 if rhino_edge_obj is None:
                     # Singular trim (e.g. at pole of sphere) — skip
                     continue
-
-                # Extract 3D edge curve
-                curve = _extract_edge_curve(rhino_edge_obj)
-
-                # Determine start/end vertex based on trim direction
-                sv_idx = rhino_trim.Edge.StartVertex.VertexIndex
-                ev_idx = rhino_trim.Edge.EndVertex.VertexIndex
-                if rhino_trim.IsReversed():
-                    sv_idx, ev_idx = ev_idx, sv_idx
-                start_v = vertex_map[sv_idx]
-                end_v = vertex_map[ev_idx]
-
-                edge = BrepEdge(start_v, end_v, curve=curve)
-                loop_edges.append(edge)
-
-                # Track unique edges by Rhino edge index
                 edge_idx = rhino_edge_obj.EdgeIndex
-                if edge_idx not in all_edges_set:
-                    all_edges_set.add(edge_idx)
-                    all_edges.append(edge)
+                brep_edge = edge_map[edge_idx]
+                is_reversed = rhino_trim.IsReversed()
+                trims.append(RhinoBrepTrim(rhino_trim, brep_edge, is_reversed))
 
-            if loop_edges:
-                loop = BrepLoop(loop_edges)
-                face_loops.append(loop)
+            if trims:
+                loop = RhinoBrepLoop(rhino_loop, trims)
                 all_loops.append(loop)
+                loop_pairs.append((rhino_loop, loop))
 
-        # Rhino BrepLoop.LoopType: Outer = 0, Inner = 1
-        # Sort so that the outer loop comes first
-        outer_loops = []
-        inner_loops = []
-        for i, rhino_loop in enumerate(rhino_face.Loops):
-            if i < len(face_loops):
-                if rhino_loop.LoopType == Rhino.Geometry.BrepLoopType.Outer:
-                    outer_loops.append(face_loops[i])
-                else:
-                    inner_loops.append(face_loops[i])
+        outer_loops = [lp for rl, lp in loop_pairs if rl.LoopType == Rhino.Geometry.BrepLoopType.Outer]
+        inner_loops = [lp for rl, lp in loop_pairs if rl.LoopType != Rhino.Geometry.BrepLoopType.Outer]
 
         if outer_loops:
-            brep_face = BrepFace(
-                outer_loops[0],
-                surface=surface,
-                is_reversed=face_reversed,
-                domain_u=u_domain,
-                domain_v=v_domain,
-            )
-            for inner_loop in inner_loops:
-                brep_face.add_loop(inner_loop)
+            brep_face = RhinoBrepFace(rhino_face, outer_loops[0], inner_loops, face_reversed)
             all_faces.append(brep_face)
 
     brep._vertices = list(vertex_map.values())
-    brep._edges = all_edges
+    brep._edges = list(edge_map.values())
     brep._loops = all_loops
     brep._faces = all_faces
 
