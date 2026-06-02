@@ -78,6 +78,60 @@ All @pytest.mark.occ tests verified via CI.
 
 All acceptance criteria for issue 03 checked off.
 
+## Task: STEP-inspired JSON serialization — issue 04
+
+Replaced v3 Python-topology JSON format with a STEP-inspired format (version 4).
+
+New/changed code:
+- `occ_brep_to_data` in `conversion.py`: extracts vertices, edges (3D curves),
+  and faces (surfaces + oriented loops + pcurves) directly from the native OCC
+  shape — mirrors STEP's VERTEX_POINT / EDGE_CURVE / FACE_SURFACE entity model
+  in COMPAS/JSON syntax.
+- `brep_to_data` pluggable added to `operations.py`.
+- `brep_rebuild(brep, data)` signature changed to accept the data dict.
+- `occ_rebuild(brep, data)` in `operations.py`: decodes dict → Python topology →
+  calls `brep_to_occ`, then promotes the closed shell to a solid via
+  `BRepBuilderAPI_MakeSolid` so booleans/queries work on restored shapes.
+- `Brep.__data__` now calls `brep_to_data`; `Brep.__from_data__` calls
+  `brep_rebuild(brep, data)` directly — no silent NotImplementedError catch.
+- Removed `_deserialize_brep_data` (v3 code) from `brep.py`.
+- Fixed pre-existing F821: added `Box` to `brep.py` imports.
+
+Updated `tests/test_serialization.py`:
+- All v3 assertions replaced with v4 format checks.
+- Round-trip tests: box (exact, 0.01 tolerance), cylinder, boolean-subtracted
+  shape (5% relative tolerance for NURBS approximation error).
+- 16 serialization tests pass; 114 total OCC tests pass.
+
+All acceptance criteria for issue 04 checked off.
+
+## Task: Rhino topology sub-objects — issue 05
+
+Added `src/compas_brep/backend/rhino/topology.py` with five Rhino native-handle wrapper classes:
+- `RhinoBrepVertex` — wraps `Rhino.Geometry.BrepVertex`; `.point` lazily converts via `Location`
+- `RhinoBrepEdge` — wraps `Rhino.Geometry.BrepEdge`; `.curve` lazily calls `_extract_edge_curve`
+- `RhinoBrepTrim` — wraps `Rhino.Geometry.BrepTrim`; `.curve_2d` lazily calls `_extract_trim_curve_2d`
+- `RhinoBrepLoop` — wraps `Rhino.Geometry.BrepLoop`; holds `RhinoBrepTrim` list
+- `RhinoBrepFace` — wraps `Rhino.Geometry.BrepFace`; `.surface` lazily calls `_extract_surface`
+
+Updated `rhino_extract_topology` in `conversion.py`:
+- Builds vertex wrappers keyed by `VertexIndex` (O(1) dedup)
+- Builds edge wrappers keyed by `EdgeIndex` (replaces O(n) set scan)
+- Produces `RhinoBrepTrim` objects for each trim within each loop
+- Sorts outer/inner loops by pairing `(rhino_loop, RhinoBrepLoop)` tuples
+
+Added missing Rhino plugins in `plugins.py`:
+- Operations: `brep_transform`, `brep_flip`, `brep_copy`
+- Queries: `brep_area`, `brep_volume`, `brep_centroid`, `brep_aabb`, `brep_is_solid`, `brep_is_valid`
+- Stubs (issue 06): `brep_to_data`, `brep_rebuild(brep, data)` (fixed signature)
+
+Added `tests/test_rhino_topology_sub_objects.py` covering sub-object types, native handle access,
+COMPAS return types, property caching, and topology counts — marked `@pytest.mark.rhino`.
+
+All 114 @pytest.mark.occ tests still pass. Rhino tests require `rhinoinside` installed locally.
+
+All acceptance criteria for issue 05 checked off.
+
 ## Next
 
-- Issue 04: STEP-inspired JSON serialization
+- Issue 06: Rhino serialization parity
