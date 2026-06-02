@@ -132,6 +132,32 @@ All 114 @pytest.mark.occ tests still pass. Rhino tests require `rhinoinside` ins
 
 All acceptance criteria for issue 05 checked off.
 
-## Next
+## Task: Rhino serialization parity — issue 06
 
-- Issue 06: Rhino serialization parity
+Implemented `brep_to_data` and `brep_rebuild` for the Rhino backend.
+
+New/changed code:
+- `rhino_brep_to_data` in `conversion.py`: extracts vertices, edges (3D curves),
+  and faces (surfaces + oriented loops + pcurves) from `Rhino.Geometry.Brep`,
+  producing the same v4 STEP-inspired dict as the OCC backend.
+- `_extract_trim_pcurve` in `conversion.py`: converts `Rhino.BrepTrim.TrimCurve`
+  to a 2D NurbsCurve (UV parameter space, z=0), mirroring OCC's `_extract_pcurve`.
+- `_rhino_curve_from_loop` in `conversion.py`: builds a joined Rhino Curve from a
+  BrepLoop's trims, respecting `is_reversed` on each edge.
+- `rhino_rebuild` in `operations.py`: decodes dict → Python topology → calls
+  `brep_to_rhino`, symmetric to `occ_rebuild`.
+- Updated `brep_to_rhino` in `conversion.py`: planar faces now use
+  `_rhino_curve_from_loop` to build outer + inner boundary curves and pass all to
+  `CreatePlanarBreps`, correctly reconstructing faces with holes (e.g. from boolean
+  difference). Previously only outer loop vertices were used.
+- `plugins.py`: replaced `NotImplementedError` stubs for `brep_to_data` and
+  `brep_rebuild` with real dispatch.
+
+New test module `tests/test_rhino_serialization.py` (14 tests, `@pytest.mark.rhino`):
+- Format tests: version 4, correct entity counts for a unit box.
+- Round-trip tests: unit box (volume + topology counts) and boolean-subtracted shape
+  (5% relative volume tolerance).
+- Cross-backend test: static OCC-produced JSON payload deserializes in Rhino.
+- All 14 tests skip cleanly without rhinoinside; 114 OCC tests still pass.
+
+All acceptance criteria for issue 06 checked off.
