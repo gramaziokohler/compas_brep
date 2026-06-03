@@ -102,20 +102,7 @@ class Brep(Data):
 
     @property
     def __data__(self) -> dict:
-        data = brep_to_data(self)
-        if self.cache_tessellation:
-            # Eagerly compute tessellation if not cached but native brep is available.
-            if self._tessellation_cache is None and self._native_brep is not None:
-                self.to_tesselation()
-            if self._tessellation_cache is not None:
-                mesh, boundaries = self._tessellation_cache
-                verts, faces = mesh.to_vertices_and_faces()
-                data["tessellation"] = {
-                    "vertices": [[v[0], v[1], v[2]] for v in verts],
-                    "faces": faces,
-                    "boundaries": [[[p.x, p.y, p.z] for p in b.points] for b in boundaries],
-                }
-        return data
+        return brep_to_data(self)
 
     @classmethod
     def __from_data__(cls, data: dict) -> Brep:
@@ -950,5 +937,3 @@ class Brep(Data):
         self._native_brep = other._native_brep
         self._tessellation_cache = None
         self._topology_loaded = other._topology_loaded
-
-
