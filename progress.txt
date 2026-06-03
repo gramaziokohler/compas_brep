@@ -161,3 +161,34 @@ New test module `tests/test_rhino_serialization.py` (14 tests, `@pytest.mark.rhi
 - All 14 tests skip cleanly without rhinoinside; 114 OCC tests still pass.
 
 All acceptance criteria for issue 06 checked off.
+
+## Task: compas_occ benchmark and comparison suite — issue 07
+
+Added `examples/benchmark/` with ten files:
+- `README.md`: mamba environment setup for compas_occ with exact install commands.
+- `_bench.py`: shared utilities (arg parsing, backend loader, record helper, JSON emit).
+- `01_primitives.py`: Box, Cylinder, Sphere, Cone, Torus — volume, area, face/edge/vertex
+  counts, is_solid.
+- `02_booleans.py`: Difference Box-Cylinder, Union Box+Box, Intersection Box&Sphere —
+  volume, face count, is_solid.
+- `03_queries.py`: area, volume, centroid (x/y/z), aabb (xsize/ysize/zsize), is_solid,
+  is_valid on Box(1,1,1) and Cylinder(r=0.5,h=2).
+- `04_topology.py`: face/edge/vertex counts, COMPAS-type checks for face.surface,
+  edge.curve, vertex.point.
+- `05_transforms.py`: translate (1,2,3), rotate 45°Z, transformed(T) copy — all volume
+  invariant.
+- `06_modeling_ops.py`: fillet, trimmed, split, slice, offset, cap_planar_holes.
+- `07_io.py`: from_mesh, STEP round-trip, to_viewmesh; OCC stdout suppressed via fd dup
+  so JSON parsing is clean.
+- `08_generators.py`: from_extrusion, from_loft, from_sweep, from_pipe; sweep/pipe use
+  OCC wire path created via Brep.from_native (documented in script).
+- `run_comparison.py`: master runner — invokes each script twice (compas_brep /
+  compas_occ), compares results with tolerance table (0.1% relative volume/area, 1%
+  booleans/STEP, 1e-6 centroid/aabb, exact counts/bools), prints table, exits 0 on pass.
+
+Verified: all 8 group scripts produce clean JSON output with compas_brep backend. All
+114 @pytest.mark.occ tests still pass. Comparison against compas_occ shows SKIP (conda
+env required for compas_occ); the tolerance infrastructure is implemented and ready.
+
+Acceptance criteria 1–9 checked off; criterion 10 (file bug issues for divergences)
+deferred until the conda environment is available to run the cross-backend comparison.
