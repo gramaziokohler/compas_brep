@@ -30,18 +30,36 @@ Pin to the latest stable release of `compas_occ` available on PyPI at install ti
 Run a single group script against one backend:
 
 ```bash
-# compas_brep backend
+# compas_brep backend (from your dev environment)
 python examples/benchmark/01_primitives.py --backend compas_brep
 
-# compas_occ backend (requires the conda env activated)
+# compas_occ backend (activate the conda env first)
+mamba activate compas_occ_bench
 python examples/benchmark/01_primitives.py --backend compas_occ
 ```
 
-Run the full comparison (both backends, all groups, summary table):
+### Full comparison across two environments
+
+Because `compas_occ` is only available in the conda environment, the runner accepts
+`--occ-python` to point at the conda interpreter. You can then run everything from your
+normal dev environment in one step:
 
 ```bash
-python examples/benchmark/run_comparison.py
+# Find the conda Python path
+mamba activate compas_occ_bench && which python
+# → e.g. /opt/homebrew/Caskroom/mambaforge/base/envs/compas_occ_bench/bin/python
+
+# Run the comparison from your dev environment
+python examples/benchmark/run_comparison.py \
+    --occ-python /opt/homebrew/Caskroom/mambaforge/base/envs/compas_occ_bench/bin/python
 ```
+
+The runner invokes each group script twice — once with your current interpreter
+(`compas_brep`) and once with the conda interpreter (`compas_occ`) — then compares the
+JSON outputs within the stated tolerances.
+
+`--brep-python` is also available if your `compas_brep` interpreter is not `python` on
+your PATH.
 
 The runner exits with code 0 when all non-skipped operations pass. Operations that raise
 `NotImplementedError` in either library are reported as `SKIP`, not `FAIL`.
