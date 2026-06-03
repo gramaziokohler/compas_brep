@@ -29,6 +29,10 @@ dev = [
     "ruff>=0.11",
     "pytest>=8.0",
 ]
+docs = [
+    "zensical",
+    "mkdocstrings[python]",
+]
 
 [tool.ruff]
 line-length = 120
