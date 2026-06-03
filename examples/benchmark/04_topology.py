@@ -37,8 +37,9 @@ def _topology_records(results, Brep, label, make_fn):
         return
 
     record(results, f"{label} face_count", "count", lambda b=brep: len(b.faces))
-    record(results, f"{label} edge_count", "count", lambda b=brep: len(b.edges))
-    record(results, f"{label} vertex_count", "count", lambda b=brep: len(b.vertices))
+    # topo_count: compas_occ counts oriented/per-face entities; compas_brep counts unique.
+    record(results, f"{label} edge_count", "topo_count", lambda b=brep: len(b.edges))
+    record(results, f"{label} vertex_count", "topo_count", lambda b=brep: len(b.vertices))
 
     def _face_surface_is_compas(b=brep):
         # Accept any Data subclass with control-point-like attributes, or Plane.

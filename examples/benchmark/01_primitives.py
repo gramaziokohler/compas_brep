@@ -22,38 +22,30 @@ from compas.geometry import Box, Cone, Cylinder, Sphere, Torus
 
 def _primitive_records(results, Brep, label, make_fn):
     prefix = label
+    _TYPE = {
+        "volume": "volume",
+        "area": "area",
+        "face_count": "count",
+        "edge_count": "topo_count",  # compas_occ counts per-face occurrence; values differ by design
+        "vertex_count": "topo_count",
+        "is_solid": "bool",
+    }
     try:
         brep = make_fn(Brep)
     except (NotImplementedError, AttributeError) as exc:
-        for metric in ("volume", "area", "face_count", "edge_count", "vertex_count", "is_solid"):
-            results.append(
-                {
-                    "name": f"{prefix} {metric}",
-                    "type": metric if metric not in ("face_count", "edge_count", "vertex_count") else "count",
-                    "value": None,
-                    "status": "SKIP",
-                    "reason": str(exc),
-                }
-            )
+        for metric, mtype in _TYPE.items():
+            results.append({"name": f"{prefix} {metric}", "type": mtype, "value": None, "status": "SKIP", "reason": str(exc)})
         return
     except Exception as exc:
-        for metric in ("volume", "area", "face_count", "edge_count", "vertex_count", "is_solid"):
-            results.append(
-                {
-                    "name": f"{prefix} {metric}",
-                    "type": metric if metric not in ("face_count", "edge_count", "vertex_count") else "count",
-                    "value": None,
-                    "status": "ERROR",
-                    "reason": str(exc),
-                }
-            )
+        for metric, mtype in _TYPE.items():
+            results.append({"name": f"{prefix} {metric}", "type": mtype, "value": None, "status": "ERROR", "reason": str(exc)})
         return
 
     record(results, f"{prefix} volume", "volume", lambda b=brep: b.volume)
     record(results, f"{prefix} area", "area", lambda b=brep: b.area)
     record(results, f"{prefix} face_count", "count", lambda b=brep: len(b.faces))
-    record(results, f"{prefix} edge_count", "count", lambda b=brep: len(b.edges))
-    record(results, f"{prefix} vertex_count", "count", lambda b=brep: len(b.vertices))
+    record(results, f"{prefix} edge_count", "topo_count", lambda b=brep: len(b.edges))
+    record(results, f"{prefix} vertex_count", "topo_count", lambda b=brep: len(b.vertices))
     record(results, f"{prefix} is_solid", "bool", lambda b=brep: bool(b.is_solid))
 
 

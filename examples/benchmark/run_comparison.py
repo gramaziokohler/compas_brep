@@ -7,21 +7,25 @@ Exit code 0 when all non-skipped operations pass; non-zero otherwise.
 
 Usage::
 
+    # compas_occ in a conda/mamba environment (recommended — properly activates libraries)
+    python examples/benchmark/run_comparison.py \\
+        --occ-conda-env compas_occ_bench \\
+        --brep-python .venv/bin/python
+
     # Both backends in the same environment (compas_occ must be pip-installable there)
     python examples/benchmark/run_comparison.py
 
     # Separate environments: point --occ-python at the conda interpreter
     python examples/benchmark/run_comparison.py \\
         --occ-python /path/to/mamba/envs/compas_occ_bench/bin/python
-
-    # Find the conda Python path with:
-    #   mamba activate compas_occ_bench && which python
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -39,7 +43,7 @@ GROUP_SCRIPTS = [
     BENCH_DIR / "08_generators.py",
 ]
 
-# Tolerance table: type → ("relative"|"absolute"|"exact") and threshold
+# Tolerance table: type → ("relative"|"absolute"|"exact"|"note") and threshold
 TOLERANCES: dict[str, tuple[str, float]] = {
     "volume": ("relative", 0.001),  # 0.1% for primitives/queries
     "bool_volume": ("relative", 0.01),  # 1% for booleans / STEP round-trip
@@ -49,29 +53,54 @@ TOLERANCES: dict[str, tuple[str, float]] = {
     "count": ("exact", 0),
     "bool": ("exact", 0),
     "query": ("relative", 0.001),
+    # compas_occ enumerates edges/vertices per face occurrence; compas_brep counts unique
+    # entities. The values are informational — shown but never treated as a FAIL.
+    "topo_count": ("note", 0),
+    # Behavioral differences (e.g. auto-capping) — informational, not a correctness FAIL.
+    "note": ("note", 0),
 }
 
 
-def _run_script(script: Path, backend: str, python: str) -> list[dict]:
+def _conda_exe() -> str:
+    """Return the path to a working mamba or conda executable.
+
+    mamba/conda are often shell functions (not binaries), so shutil.which misses them
+    when called from a subprocess.  Fall back to well-known install locations.
+    """
+    candidates = ["mamba", "conda"]
+    search_roots = [
+        os.path.expanduser("~/miniforge3/bin"),
+        os.path.expanduser("~/.local/share/mamba/bin"),
+        os.path.expanduser("~/mambaforge/bin"),
+        os.path.expanduser("~/anaconda3/bin"),
+        os.path.expanduser("~/miniconda3/bin"),
+    ]
+    for name in candidates:
+        found = shutil.which(name)
+        if found:
+            return found
+        for root in search_roots:
+            candidate = os.path.join(root, name)
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+    return "conda"  # last resort — will fail with a clear error if missing
+
+
+def _run_script(script: Path, backend: str, python: str, conda_env: str | None = None) -> list[dict]:
     """Run a benchmark script with the given Python interpreter and parse its JSON output."""
+    if conda_env and backend == "compas_occ":
+        cmd = [_conda_exe(), "run", "-n", conda_env, "python", str(script), "--backend", backend]
+    else:
+        cmd = [python, str(script), "--backend", backend]
     try:
-        result = subprocess.run(
-            [python, str(script), "--backend", backend],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0 and not result.stdout.strip():
-            return [
-                {"name": "_fatal", "type": "fatal", "value": None, "status": "ERROR", "reason": result.stderr.strip()}
-            ]
+            return [{"name": "_fatal", "type": "fatal", "value": None, "status": "ERROR", "reason": result.stderr.strip()}]
         return json.loads(result.stdout)
     except subprocess.TimeoutExpired:
         return [{"name": "_fatal", "type": "fatal", "value": None, "status": "ERROR", "reason": "Timeout"}]
     except json.JSONDecodeError as exc:
-        return [
-            {"name": "_fatal", "type": "fatal", "value": None, "status": "ERROR", "reason": f"JSON parse error: {exc}"}
-        ]
+        return [{"name": "_fatal", "type": "fatal", "value": None, "status": "ERROR", "reason": f"JSON parse error: {exc}"}]
     except Exception as exc:
         return [{"name": "_fatal", "type": "fatal", "value": None, "status": "ERROR", "reason": str(exc)}]
 
@@ -82,6 +111,11 @@ def _compare(name: str, type_: str, val_a, val_b) -> tuple[str, str]:
         return "N/A", "one or both values missing"
 
     tol_kind, tol_val = TOLERANCES.get(type_, ("relative", 0.01))
+
+    if tol_kind == "note":
+        # Informational only — topology model semantics differ by design, not a correctness
+        # failure.  compas_occ counts oriented/per-face entities; compas_brep counts unique.
+        return "NOTE", f"{val_a!r} vs {val_b!r} (topology model differs by design)"
 
     if tol_kind == "exact":
         ok = val_a == val_b
@@ -112,13 +146,25 @@ def _fmt(v) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser(description="Compare compas_brep vs compas_occ across all benchmark groups.")
     parser.add_argument(
+        "--occ-conda-env",
+        default=None,
+        metavar="ENV",
+        help=(
+            "Conda/mamba environment name that has compas_occ installed "
+            "(e.g. compas_occ_bench). Scripts are run via 'mamba run -n ENV' "
+            "so that conda-installed libraries (python-occ-core) are found. "
+            "Takes precedence over --occ-python."
+        ),
+    )
+    parser.add_argument(
         "--occ-python",
         default=None,
         metavar="PATH",
         help=(
-            "Path to the Python interpreter that has compas_occ installed "
-            "(e.g. /path/to/mamba/envs/compas_occ_bench/bin/python). "
-            "Defaults to sys.executable (both backends in the same environment)."
+            "Path to the Python interpreter that has compas_occ installed. "
+            "Only used when --occ-conda-env is not set. "
+            "Note: calling a conda env's Python directly (without activation) "
+            "may fail to find conda-installed shared libraries; prefer --occ-conda-env."
         ),
     )
     parser.add_argument(
@@ -131,28 +177,31 @@ def main() -> int:
 
     brep_python = args.brep_python or sys.executable
     occ_python = args.occ_python or sys.executable
+    occ_conda_env = args.occ_conda_env
 
-    if occ_python != brep_python:
+    if occ_conda_env:
+        print(f"compas_brep interpreter : {brep_python}")
+        print(f"compas_occ  conda env   : {occ_conda_env} (via {_conda_exe()} run)")
+        print()
+    elif occ_python != brep_python:
         print(f"compas_brep interpreter : {brep_python}")
         print(f"compas_occ  interpreter : {occ_python}")
         print()
 
-    col_w = [32, 14, 14, 6, 0]  # name, brep, occ, status, detail
+    col_w = [36, 14, 14, 6, 0]  # name, brep, occ, status, detail
     header = f"{'Operation':<{col_w[0]}} {'compas_brep':>{col_w[1]}} {'compas_occ':>{col_w[2]}} {'':>{col_w[3]}} detail"
     sep = "-" * len(header)
 
     print(header)
     print(sep)
 
-    all_pass = True
     any_fail = False
 
     for script in GROUP_SCRIPTS:
         group_name = script.stem
         results_brep = _run_script(script, "compas_brep", brep_python)
-        results_occ = _run_script(script, "compas_occ", occ_python)
+        results_occ = _run_script(script, "compas_occ", occ_python, conda_env=occ_conda_env)
 
-        # Index by name
         by_name_brep = {r["name"]: r for r in results_brep}
         by_name_occ = {r["name"]: r for r in results_occ}
 
@@ -173,7 +222,6 @@ def main() -> int:
             val_occ = rec_occ.get("value")
             type_ = rec_brep.get("type") or rec_occ.get("type", "volume")
 
-            # Determine row status
             if status_brep == "SKIP" or status_occ == "SKIP" or status_brep == "missing" or status_occ == "missing":
                 row_status = "SKIP"
                 detail = rec_brep.get("reason") or rec_occ.get("reason") or "not available"
@@ -181,16 +229,13 @@ def main() -> int:
                 row_status = "ERROR"
                 detail = rec_brep.get("reason", "")
                 any_fail = True
-                all_pass = False
             elif status_occ == "ERROR":
-                # compas_occ error → treat as SKIP (not installed or op missing)
                 row_status = "SKIP"
                 detail = f"compas_occ error: {rec_occ.get('reason', '')}"
             else:
                 row_status, detail = _compare(name, type_, val_brep, val_occ)
                 if row_status == "FAIL":
                     any_fail = True
-                    all_pass = False
 
             line = (
                 f"  {name:<{col_w[0] - 2}}"
@@ -202,7 +247,7 @@ def main() -> int:
 
     print()
     print(sep)
-    if all_pass and not any_fail:
+    if not any_fail:
         print("Result: ALL PASS (non-skipped operations match within tolerance)")
         return 0
     else:

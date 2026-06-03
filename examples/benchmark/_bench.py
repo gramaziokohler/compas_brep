@@ -25,10 +25,24 @@ def load_backend(name: str):
 
         return Brep
     elif name == "compas_occ":
-        from compas_occ.brep import BRep  # noqa: PLC0415
+        from compas_occ.brep import OCCBrep  # noqa: PLC0415
 
-        return BRep
+        return OCCBrep
     raise ValueError(f"Unknown backend: {name!r}")
+
+
+def _skip_exc_types():
+    types = [NotImplementedError, AttributeError]
+    try:
+        from compas.plugins import PluginNotInstalledError
+
+        types.append(PluginNotInstalledError)
+    except ImportError:
+        pass
+    return tuple(types)
+
+
+_SKIP_EXC = _skip_exc_types()
 
 
 def record(results: list, name: str, type_: str, fn):
@@ -36,7 +50,7 @@ def record(results: list, name: str, type_: str, fn):
     try:
         value = fn()
         results.append({"name": name, "type": type_, "value": value, "status": "ok"})
-    except (NotImplementedError, AttributeError) as exc:
+    except _SKIP_EXC as exc:
         results.append({"name": name, "type": type_, "value": None, "status": "SKIP", "reason": str(exc)})
     except Exception as exc:
         results.append({"name": name, "type": type_, "value": None, "status": "ERROR", "reason": str(exc)})

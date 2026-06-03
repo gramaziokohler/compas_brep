@@ -40,29 +40,31 @@ python examples/benchmark/01_primitives.py --backend compas_occ
 
 ### Full comparison across two environments
 
-Because `compas_occ` is only available in the conda environment, the runner accepts
-`--occ-python` to point at the conda interpreter. You can then run everything from your
-normal dev environment in one step:
+Use `--occ-conda-env` to name the conda/mamba environment. The runner finds the mamba/conda
+binary automatically (including when it is only available as a shell function, not on PATH):
 
 ```bash
-# Find the conda Python path
-mamba activate compas_occ_bench && which python
-# → e.g. /opt/homebrew/Caskroom/mambaforge/base/envs/compas_occ_bench/bin/python
-
-# Run the comparison from your dev environment
 python examples/benchmark/run_comparison.py \
-    --occ-python /opt/homebrew/Caskroom/mambaforge/base/envs/compas_occ_bench/bin/python
+    --occ-conda-env compas_occ_bench \
+    --brep-python .venv/bin/python
 ```
 
-The runner invokes each group script twice — once with your current interpreter
-(`compas_brep`) and once with the conda interpreter (`compas_occ`) — then compares the
-JSON outputs within the stated tolerances.
+`--brep-python` is needed when your `compas_brep` interpreter is not the `python` on your
+PATH (e.g. when using a uv `.venv`).
 
-`--brep-python` is also available if your `compas_brep` interpreter is not `python` on
-your PATH.
+`--occ-python` is also accepted as an alternative to `--occ-conda-env`, but calling a
+conda env's Python binary directly (without activation) often fails to find conda-installed
+shared libraries — prefer `--occ-conda-env`.
 
-The runner exits with code 0 when all non-skipped operations pass. Operations that raise
-`NotImplementedError` in either library are reported as `SKIP`, not `FAIL`.
+The runner exits with code 0 when all non-skipped operations pass. Three result codes are
+used:
+
+- `PASS` — values agree within the stated tolerance.
+- `NOTE` — values differ due to a known API design difference (not a correctness bug). Rows
+  marked `NOTE` do not affect the exit code. Currently applies to edge/vertex counts
+  (compas_occ counts oriented per-face entities; compas_brep counts unique geometric
+  entities) and `from_loft is_solid` (compas_brep caps automatically; compas_occ does not).
+- `SKIP` — operation not available in one or both backends.
 
 ## Operation groups
 
