@@ -225,3 +225,75 @@ Known API differences documented as NOTE (not FAIL):
 
 Full comparison result: ALL PASS (non-skipped operations match within tolerance).
 All 114 @pytest.mark.occ tests still pass.
+
+## Task: Rhino backend operational testing — issue 08
+
+Ran comprehensive live testing of every supported Brep operation in the Rhino backend via
+the LAMCP bridge (Rhino 8 / Grasshopper). Fixed five bugs found during testing.
+
+### Bugs fixed
+
+**1. `rhino_aabb` — wrong COMPAS Box constructor API**
+`Box(Frame(...), xsize, ysize, zsize)` → `Box(xsize, ysize, zsize, frame=Frame(...))`.
+The COMPAS API changed; the old positional order raised `TypeError: 'float' object is not
+subscriptable`.
+
+**2. `rhino_volume` — negative volume for extruded shapes**
+`VolumeMassProperties.Compute.Volume` returns negative for inside-out breps.  Changed to
+`abs(mp.Volume)` so volume is always positive (consistent with OCC backend).
+
+**3. `rhino_tessellate` — `NotImplementedError`**
+Implemented `rhino_tessellate` using `Rhino.Geometry.Mesh.CreateFromBrep` with
+`MeshingParameters`.  Returns `(Mesh, list[Polyline])` matching the OCC convention.
+`to_viewmesh()` now works in the Rhino backend.
+
+**4. `rhino_to_step` / `rhino_from_step` — wrong API (`File3dm.WriteToStep` does not exist)**
+Replaced with `doc.WriteFile(path, FileWriteOptions(SuppressDialogBoxes=True, ...))` /
+`doc.ReadFile(path, FileReadOptions())`.  Note: these must be called from the Rhino/GH main
+thread — calling them from the LAMCP bridge HTTP thread blocks Rhino; STEP I/O was not
+included in bridge-based tests for this reason.
+
+**5. `brep_to_rhino` reconstruction — three separate bugs causing broken deserialization**
+
+*5a. Face breps not joined correctly:*
+The loop was appending individual face-copies to a single empty Brep then joining it against
+itself (joining only that one brep, so edges across faces were never sewn).  Changed to
+collect each face as a separate Brep and join them all in one `JoinBreps` call.
+
+*5b. `_extract_knots_mults` — too many knot copies added at clamped ends:*
+The function added `degree` copies at each end when restoring Rhino's stripped knot
+convention, but should only add 1.  Rhino stores knots with the first and last element
+stripped once (not `degree` times).  Fixed `full_kv = [first] + raw_knots + [last]`.
+This caused `IndexOutOfRangeException` when setting NURBS curve knots for circular arcs.
+
+*5c. `JoinBreps` tolerance too tight for cross-backend NURBS reconstruction:*
+`TOL.absolute` in COMPAS is `1e-9`; this caused near-coincident edges (e.g. a
+Rhino-reconstructed OCC cylindrical surface) to remain unjoined.  Changed to `1e-6`
+(Rhino standard fitting tolerance).
+
+**6. `_trim_nurbs_surface_from_2d` (new helper):**
+NURBS surfaces serialized from the Rhino backend store the full (untrimmed) surface plus 2D
+parametric trim curves.  On deserialization the surface domain needs to be restricted to the
+face boundary before calling `ToBrep()`.  The helper extracts the bounding box of all 2D
+trim curve endpoints and calls `NurbsSurface.Trim(u_interval, v_interval)`.
+
+### Test results
+
+All operations tested and passing in the Rhino backend:
+
+**Group 1 — Primitives**: Box ✓, Cylinder ✓, Sphere ✓, Cone ✓, Torus ✓
+**Group 2 — Booleans**: union ✓, difference ✓, intersection ✓
+**Group 3 — Queries**: area ✓, volume ✓, centroid ✓, aabb ✓, is_solid ✓, is_valid ✓
+**Group 4 — Topology**: face/edge/vertex counts ✓, face.surface (Plane/NurbsSurface) ✓, edge.curve (Line/NurbsCurve) ✓, vertex.point ✓, caching by identity ✓
+**Group 5 — Transforms**: transform in-place ✓, transformed copy ✓
+**Group 6 — Modeling ops**: fillet ✓, trimmed ✓, split ✓, slice ✓, cap_planar_holes ✓, fix ✓, flip ✓
+**Group 7 — I/O**: to_viewmesh ✓ (6824 vertices / 12786 faces for cylinder); STEP I/O requires main thread (not testable from bridge)
+**Group 8 — Generators**: from_extrusion ✓, from_loft ✓, from_pipe ✓, from_mesh ✓
+**Group 9 — Serialization round-trips**:
+  - Rhino → JSON → Rhino (unit box): vol=1.0, 6 faces, solid ✓
+  - Rhino → JSON → Rhino (boolean diff): vol=7.4345, 0.0% error ✓
+  - OCC → JSON → Rhino (unit box): vol=1.0, 6 faces, solid ✓
+  - OCC → JSON → Rhino (boolean diff): vol=7.4345, 0.0002% error ✓
+
+All acceptance criteria for issue 08 checked off.
+Note: `offset` is `NotImplementedError` (expected — documented in Rhino plugins.py).

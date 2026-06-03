@@ -165,7 +165,50 @@ def rhino_fix(brep):
 
 def rhino_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     """Tessellate a Brep via Rhino.Geometry — returns (Mesh, list[Polyline])."""
-    raise NotImplementedError("tessellate not yet implemented for Rhino backend")
+    import Rhino.Geometry as rg
+    from compas.datastructures import Mesh
+    from compas.geometry import Point, Polyline
+
+    rhino_brep = brep_to_rhino(brep)
+    params = rg.MeshingParameters.Default
+    params.MaximumEdgeLength = linear_deflection
+    params.GridAngle = 3.14159 / max(n * 4, 16)
+
+    meshes = rg.Mesh.CreateFromBrep(rhino_brep, params)
+    all_verts = []
+    all_faces = []
+    offset = 0
+    for rmesh in meshes:
+        rmesh.Faces.ConvertQuadsToTriangles()
+        for v in rmesh.Vertices:
+            all_verts.append([v.X, v.Y, v.Z])
+        for f in rmesh.Faces:
+            if f.IsTriangle:
+                all_faces.append([offset + f.A, offset + f.B, offset + f.C])
+            else:
+                all_faces.append([offset + f.A, offset + f.B, offset + f.C])
+                all_faces.append([offset + f.A, offset + f.C, offset + f.D])
+        offset += rmesh.Vertices.Count
+
+    mesh = Mesh.from_vertices_and_faces(all_verts, all_faces) if all_verts else Mesh()
+
+    boundaries = []
+    for i in range(rhino_brep.Edges.Count):
+        edge = rhino_brep.Edges[i]
+        crv = edge.EdgeCurve
+        if crv is None:
+            continue
+        t0 = crv.Domain.Min
+        t1 = crv.Domain.Max
+        pts = []
+        for j in range(n_curves + 1):
+            t = t0 + (t1 - t0) * j / n_curves
+            p = crv.PointAt(t)
+            pts.append(Point(p.X, p.Y, p.Z))
+        if len(pts) >= 2:
+            boundaries.append(Polyline(pts))
+
+    return mesh, boundaries
 
 
 def rhino_copy(brep):
@@ -195,7 +238,7 @@ def rhino_area(brep):
 def rhino_volume(brep):
     """Return the enclosed volume of a solid Brep."""
     mp = Rhino.Geometry.VolumeMassProperties.Compute(brep_to_rhino(brep))
-    return mp.Volume if mp is not None else 0.0
+    return abs(mp.Volume) if mp is not None else 0.0
 
 
 def rhino_centroid(brep):
@@ -214,7 +257,7 @@ def rhino_aabb(brep):
     bbox = brep_to_rhino(brep).GetBoundingBox(True)
     mn, mx = bbox.Min, bbox.Max
     cx, cy, cz = (mn.X + mx.X) / 2, (mn.Y + mx.Y) / 2, (mn.Z + mx.Z) / 2
-    return Box(Frame(Point(cx, cy, cz)), mx.X - mn.X, mx.Y - mn.Y, mx.Z - mn.Z)
+    return Box(mx.X - mn.X, mx.Y - mn.Y, mx.Z - mn.Z, frame=Frame(Point(cx, cy, cz), [1, 0, 0], [0, 1, 0]))
 
 
 def rhino_is_solid(brep):

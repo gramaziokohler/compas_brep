@@ -267,34 +267,34 @@ def _rhino_nurbs_curve_to_compas(rhino_nurbs):
     )
 
 
-def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):
+def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):  # noqa: ARG001 (order unused — kept for API compat)
     """Extract unique knots and multiplicities from Rhino's knot list.
 
-    Rhino stores knots WITHOUT the end multiplicities (missing degree+1 end knots).
-    We reconstruct the full knot vector by adding the clamped end knots, then
-    compress to unique knots + multiplicities.
+    Rhino stores knots WITHOUT the first and last element of the full clamped
+    knot vector (one element stripped from each end).  Restore the full vector
+    by prepending/appending exactly one copy, then compress to unique values
+    with their multiplicities.
 
     Parameters
     ----------
     rhino_knots : Rhino.Geometry.NurbsCurveKnotList or NurbsSurfaceKnotList
-        The Rhino knot collection.
+        The Rhino knot collection (length = n_points + degree - 1).
     order : int
-        The order (degree + 1) of the curve/surface in this direction.
+        Unused.  Kept for API compatibility with callers.
     knots_out : list
         Output list for unique knot values.
     mults_out : list
         Output list for multiplicities.
 
     """
-    # Rhino stores n_points - 2 knots (without the end clamping).
-    # Build the full knot vector by adding clamped ends.
-    degree = order - 1
+    # Rhino stores n_points+degree-1 knots — the full vector with first and last
+    # element stripped (Rhino omits one copy at each clamped end).
+    # Restore the full vector by prepending/appending exactly one copy.
     raw_knots = [rhino_knots[i] for i in range(rhino_knots.Count)]
 
-    # Build full knot vector with end clamping
     first = raw_knots[0] if raw_knots else 0.0
     last = raw_knots[-1] if raw_knots else 1.0
-    full_kv = [first] * degree + raw_knots + [last] * degree
+    full_kv = [first] + raw_knots + [last]
 
     # Compress to unique knots + multiplicities
     if not full_kv:
@@ -312,6 +312,52 @@ def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):
 # =============================================================================
 # compas_brep → Rhino conversion
 # =============================================================================
+
+
+def _trim_nurbs_surface_from_2d(rhino_surface, loop):
+    """Trim a NurbsSurface to the 2D parametric bounding box of a BrepLoop's curve_2d trims.
+
+    Collects all 2D trim curve endpoints, finds the min/max (u, v) bounding box,
+    and calls NurbsSurface.Trim() to restrict the surface domain.  Returns the
+    trimmed surface, or the original if no 2D curves are available or the domain
+    doesn't need adjustment.
+    """
+    u_vals = []
+    v_vals = []
+
+    for trim in loop.trims:
+        c2d = trim.curve_2d
+        if c2d is None:
+            continue
+        if not isinstance(c2d, NurbsCurve):
+            continue
+        rc = _compas_nurbs_curve_to_rhino(c2d)
+        for t in [rc.Domain.Min, rc.Domain.Max]:
+            pt = rc.PointAt(t)
+            u_vals.append(pt.X)
+            v_vals.append(pt.Y)
+
+    if not u_vals:
+        return rhino_surface
+
+    u_min, u_max = min(u_vals), max(u_vals)
+    v_min, v_max = min(v_vals), max(v_vals)
+
+    surf_u = rhino_surface.Domain(0)
+    surf_v = rhino_surface.Domain(1)
+
+    u_needs_trim = abs(u_min - surf_u.Min) > 1e-6 or abs(u_max - surf_u.Max) > 1e-6
+    v_needs_trim = abs(v_min - surf_v.Min) > 1e-6 or abs(v_max - surf_v.Max) > 1e-6
+
+    if not u_needs_trim and not v_needs_trim:
+        return rhino_surface
+
+    u_interval = Rhino.Geometry.Interval(u_min if u_needs_trim else surf_u.Min,
+                                          u_max if u_needs_trim else surf_u.Max)
+    v_interval = Rhino.Geometry.Interval(v_min if v_needs_trim else surf_v.Min,
+                                          v_max if v_needs_trim else surf_v.Max)
+    trimmed = rhino_surface.Trim(u_interval, v_interval)
+    return trimmed if trimmed is not None else rhino_surface
 
 
 def _rhino_curve_from_loop(loop):
@@ -377,7 +423,7 @@ def brep_to_rhino(brep):
     if brep._native_brep is not None:
         return brep._native_brep
 
-    rhino_brep = Rhino.Geometry.Brep()
+    face_breps = []
 
     for face in brep._faces:
         surface = face.surface
@@ -402,27 +448,28 @@ def brep_to_rhino(brep):
                     all_curves.append(inner_curve)
 
             planar_breps = Rhino.Geometry.Brep.CreatePlanarBreps(all_curves, TOL.absolute)
-            if planar_breps and len(planar_breps) > 0:
-                for pb in planar_breps:
-                    for pf in pb.Faces:
-                        rhino_brep.Append(pf.DuplicateFace(False))
+            if planar_breps:
+                face_breps.extend(planar_breps)
 
         elif isinstance(surface, NurbsSurface):
             rhino_surface = _compas_nurbs_surface_to_rhino(surface)
+            # Apply parametric trimming from 2D loop curves if the surface domain
+            # is larger than the actual face boundary (e.g. a cylinder trimmed by a box).
+            if face._outer_loop and face._outer_loop.trims:
+                rhino_surface = _trim_nurbs_surface_from_2d(rhino_surface, face._outer_loop)
             face_brep = rhino_surface.ToBrep()
             if face_brep:
-                for f in face_brep.Faces:
-                    rhino_brep.Append(f.DuplicateFace(False))
+                face_breps.append(face_brep)
 
-    # Join the individual face breps
-    joined = Rhino.Geometry.Brep.JoinBreps(
-        [rhino_brep],
-        TOL.absolute,
-    )
-    if joined and len(joined) > 0:
-        result = joined[0]
-    else:
-        result = rhino_brep
+    if not face_breps:
+        brep._native_brep = Rhino.Geometry.Brep()
+        return brep._native_brep
+
+    # Join individual face breps into one solid — sews shared edges.
+    # Use 1e-6 rather than TOL.absolute (1e-9): a tighter tolerance leaves
+    # near-coincident edges unjoined in cross-backend NURBS reconstruction.
+    joined = Rhino.Geometry.Brep.JoinBreps(face_breps, 1e-6)
+    result = joined[0] if joined and len(joined) > 0 else face_breps[0]
 
     brep._native_brep = result
     return result
