@@ -7,11 +7,20 @@ Exit code 0 when all non-skipped operations pass; non-zero otherwise.
 
 Usage::
 
+    # Both backends in the same environment (compas_occ must be pip-installable there)
     python examples/benchmark/run_comparison.py
+
+    # Separate environments: point --occ-python at the conda interpreter
+    python examples/benchmark/run_comparison.py \\
+        --occ-python /path/to/mamba/envs/compas_occ_bench/bin/python
+
+    # Find the conda Python path with:
+    #   mamba activate compas_occ_bench && which python
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -43,11 +52,11 @@ TOLERANCES: dict[str, tuple[str, float]] = {
 }
 
 
-def _run_script(script: Path, backend: str) -> list[dict]:
-    """Run a benchmark script and parse its JSON output."""
+def _run_script(script: Path, backend: str, python: str) -> list[dict]:
+    """Run a benchmark script with the given Python interpreter and parse its JSON output."""
     try:
         result = subprocess.run(
-            [sys.executable, str(script), "--backend", backend],
+            [python, str(script), "--backend", backend],
             capture_output=True,
             text=True,
             timeout=120,
@@ -101,6 +110,33 @@ def _fmt(v) -> str:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Compare compas_brep vs compas_occ across all benchmark groups.")
+    parser.add_argument(
+        "--occ-python",
+        default=None,
+        metavar="PATH",
+        help=(
+            "Path to the Python interpreter that has compas_occ installed "
+            "(e.g. /path/to/mamba/envs/compas_occ_bench/bin/python). "
+            "Defaults to sys.executable (both backends in the same environment)."
+        ),
+    )
+    parser.add_argument(
+        "--brep-python",
+        default=None,
+        metavar="PATH",
+        help="Path to the Python interpreter that has compas_brep installed. Defaults to sys.executable.",
+    )
+    args = parser.parse_args()
+
+    brep_python = args.brep_python or sys.executable
+    occ_python = args.occ_python or sys.executable
+
+    if occ_python != brep_python:
+        print(f"compas_brep interpreter : {brep_python}")
+        print(f"compas_occ  interpreter : {occ_python}")
+        print()
+
     col_w = [32, 14, 14, 6, 0]  # name, brep, occ, status, detail
     header = f"{'Operation':<{col_w[0]}} {'compas_brep':>{col_w[1]}} {'compas_occ':>{col_w[2]}} {'':>{col_w[3]}} detail"
     sep = "-" * len(header)
@@ -113,8 +149,8 @@ def main() -> int:
 
     for script in GROUP_SCRIPTS:
         group_name = script.stem
-        results_brep = _run_script(script, "compas_brep")
-        results_occ = _run_script(script, "compas_occ")
+        results_brep = _run_script(script, "compas_brep", brep_python)
+        results_occ = _run_script(script, "compas_occ", occ_python)
 
         # Index by name
         by_name_brep = {r["name"]: r for r in results_brep}
@@ -147,7 +183,7 @@ def main() -> int:
                 any_fail = True
                 all_pass = False
             elif status_occ == "ERROR":
-                # OCC error → treat as SKIP (occ not installed or op missing)
+                # compas_occ error → treat as SKIP (not installed or op missing)
                 row_status = "SKIP"
                 detail = f"compas_occ error: {rec_occ.get('reason', '')}"
             else:
