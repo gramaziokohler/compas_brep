@@ -29,6 +29,20 @@ Run a comprehensive end-to-end test of every supported Brep operation in the **R
 - [ ] No operation returns a `list` where a `Brep` is expected (fix the existing `_native_brep` error on list)
 - [ ] All fixes committed; progress.txt updated
 
+## Rhino Development Workflow
+
+Grasshopper/Rhino is accessible via the **lamcp MCP server** (tools prefixed `mcp__lamcp__`).
+
+After modifying library code, reinstall into the Rhino venv and reload:
+
+```bash
+~/.rhinocode/py39-rh8/python3.9 -m pip install . \
+  --target ~/.rhinocode/py39-rh8/site-envs/compas_brep_occ-7LvK83j1 \
+  --force-reinstall --no-deps --upgrade
+```
+
+Then call `mcp__lamcp__unload_python_modules` so Rhino picks up the new code. The Rhino-side venv is named `compas_brep_occ`.
+
 ## Blocked by
 
 - 06-rhino-serialization-parity.md (already done)

@@ -80,6 +80,42 @@ All 110+ OCC tests must pass before committing. Do not rely on CI as the only te
 
 ---
 
+## Rhino Development Workflow
+
+Grasshopper/Rhino is accessible via the **lamcp MCP server** (tools prefixed `mcp__lamcp__`).
+
+After modifying library code, reinstall into the Rhino venv and reload:
+
+```bash
+~/.rhinocode/py39-rh8/python3.9 -m pip install . \
+  --target ~/.rhinocode/py39-rh8/site-envs/compas_brep_occ-7LvK83j1 \
+  --force-reinstall --no-deps --upgrade
+```
+
+Then, via the LAMCP bridge, delete stale bytecode and clear the module cache:
+
+```python
+import os, sys, shutil
+
+pycache = os.path.expanduser(
+    "~/.rhinocode/py39-rh8/site-envs/compas_brep_occ-7LvK83j1/compas_brep"
+)
+for root, dirs, files in os.walk(pycache):
+    if '__pycache__' in dirs:
+        shutil.rmtree(os.path.join(root, '__pycache__'))
+for k in list(sys.modules):
+    if 'compas_brep' in k:
+        del sys.modules[k]
+```
+
+Then call `mcp__lamcp__solve_grasshopper(expire_all=True)` to recompute all GH components.
+
+**Why both steps are needed**: GH script components run in isolated Python environments that do not share `sys.modules` with the LAMCP bridge. Deleting `__pycache__` forces every environment to recompile from the updated `.py` files on the next import.
+
+The Rhino-side virtual environment is named `compas_brep_occ`.
+
+---
+
 ## Backends
 
 | Backend | Module | Activated when |

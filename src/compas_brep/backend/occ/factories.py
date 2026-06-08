@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from compas.geometry import Point
+from warnings import warn
 
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBuilderAPI import (
@@ -112,6 +113,9 @@ def make_from_mesh(mesh):
 def make_extrusion(curve_or_profile, vector, cap_ends=True):
     """Create a Brep by extruding a curve/profile along a vector."""
     from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
+
+    if cap_ends:
+        warn("cap_ends parameter is not implemented in OCC backend")
 
     vec = gp_Vec(vector.x, vector.y, vector.z)
 

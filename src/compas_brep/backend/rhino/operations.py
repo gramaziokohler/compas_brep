@@ -14,6 +14,9 @@ from compas_brep.backend.rhino.conversion import brep_to_rhino, rhino_to_brep
 # =============================================================================
 
 
+_RHINO_TOL = 1e-6  # Rhino boolean ops require at least 1e-6; TOL.absolute (1e-9) is too tight
+
+
 def boolean_difference(brep_a, brep_b):
     """Boolean subtraction: A - B."""
     shape_a = brep_to_rhino(brep_a)
@@ -21,7 +24,7 @@ def boolean_difference(brep_a, brep_b):
     results = Rhino.Geometry.Brep.CreateBooleanDifference(
         [shape_a],
         [shape_b],
-        TOL.absolute,
+        max(TOL.absolute, _RHINO_TOL),
     )
     if not results:
         raise RuntimeError("Boolean difference ended with no result")
@@ -34,7 +37,7 @@ def boolean_union(brep_a, brep_b):
     shape_b = brep_to_rhino(brep_b)
     results = Rhino.Geometry.Brep.CreateBooleanUnion(
         [shape_a, shape_b],
-        TOL.absolute,
+        max(TOL.absolute, _RHINO_TOL),
     )
     if not results:
         raise RuntimeError("Boolean union ended with no result")
@@ -48,7 +51,7 @@ def boolean_intersection(brep_a, brep_b):
     results = Rhino.Geometry.Brep.CreateBooleanIntersection(
         [shape_a],
         [shape_b],
-        TOL.absolute,
+        max(TOL.absolute, _RHINO_TOL),
     )
     if not results:
         raise RuntimeError("Boolean intersection ended with no result")

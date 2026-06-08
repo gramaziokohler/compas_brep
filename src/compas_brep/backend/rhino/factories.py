@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
+from typing import Union
+
 import Rhino  # type: ignore
-from compas.geometry import Polyline
+from compas.geometry import Polygon, Polyline, Curve, Vector
 from compas.tolerance import TOL
-from compas_rhino.conversions import (
-    box_to_rhino,
-    cone_to_rhino,
-    cylinder_to_rhino,
-    mesh_to_rhino,
-    sphere_to_rhino,
-    torus_to_rhino,
-    vector_to_rhino,
-)
+from compas_rhino.conversions import box_to_rhino, cone_to_rhino, cylinder_to_rhino, mesh_to_rhino, sphere_to_rhino, torus_to_rhino, vector_to_rhino, polyline_to_rhino_curve
 
 from compas_brep.backend.rhino.conversion import (
     _compas_nurbs_curve_to_rhino,
@@ -62,17 +56,21 @@ def make_from_mesh(mesh):
     return rhino_to_brep(Rhino.Geometry.Brep.CreateFromMesh(rhino_mesh, True))
 
 
-def make_extrusion(curve_or_profile, vector):
-    """Create a Brep by extruding a curve/profile along a vector."""
-    from compas_rhino.conversions import polyline_to_rhino_curve
-
-    if hasattr(curve_or_profile, "points"):
-        points = list(curve_or_profile.points)
+def _to_rhino_curve(curve_or_profile: Union[Polyline, Polygon, Curve]):
+    if isinstance(curve_or_profile, (Polyline, Polygon)):
+        points = curve_or_profile.points  # type: ignore
         polyline = Polyline(points + [points[0]])
-        rhino_curve = polyline_to_rhino_curve(polyline)
-    else:
-        raise NotImplementedError("Extrusion currently supports polygon profiles only")
+        return polyline_to_rhino_curve(polyline)
+    elif hasattr(curve_or_profile, "native_curve"):
+        return curve_or_profile.native_curve  # type: ignore
 
+    raise TypeError(f"No idea what to do with a: {type(curve_or_profile)}")
+
+
+def make_extrusion(curve_or_profile: Union[Polyline, Polygon, Curve], vector: Vector, cap_ends: bool = True):
+    """Create a Brep by extruding a curve/profile along a vector."""
+
+    rhino_curve = _to_rhino_curve(curve_or_profile)
     extrusion = Rhino.Geometry.Surface.CreateExtrusion(
         rhino_curve,
         vector_to_rhino(vector),
@@ -81,9 +79,10 @@ def make_extrusion(curve_or_profile, vector):
         raise RuntimeError("Failed to create extrusion")
 
     rhino_brep = extrusion.ToBrep()
-    capped = rhino_brep.CapPlanarHoles(TOL.absolute)
-    if capped:
-        rhino_brep = capped
+    if cap_ends:
+        capped = rhino_brep.CapPlanarHoles(TOL.absolute)
+        if capped:
+            rhino_brep = capped
 
     return rhino_to_brep(rhino_brep)
 

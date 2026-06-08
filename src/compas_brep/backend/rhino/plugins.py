@@ -48,10 +48,10 @@ def make_from_mesh(mesh):
 
 
 @plugin(category="brep-factories", requires=["Rhino"])
-def make_extrusion(face_or_curve, vector):
+def make_extrusion(face_or_curve, vector, cap_planar_holes=True):
     from compas_brep.backend.rhino.factories import make_extrusion as _impl
 
-    return _impl(face_or_curve, vector)
+    return _impl(face_or_curve, vector, cap_planar_holes)
 
 
 @plugin(category="brep-factories", requires=["Rhino"])
@@ -98,8 +98,18 @@ def make_from_breps(breps):
 
 @plugin(category="brep-factories", requires=["Rhino"])
 def make_from_surface(surface, domain_u=None, domain_v=None):
-    # Rhino backend: create face from surface using brep_to_rhino round-trip
-    raise NotImplementedError("from_surface not yet implemented for Rhino backend")
+    import Rhino.Geometry as rg
+    from compas_brep.backend.rhino.conversion import _compas_nurbs_surface_to_rhino, rhino_to_brep
+
+    rhino_surface = _compas_nurbs_surface_to_rhino(surface)
+    if domain_u is not None:
+        rhino_surface.SetDomain(0, rg.Interval(domain_u[0], domain_u[1]))
+    if domain_v is not None:
+        rhino_surface.SetDomain(1, rg.Interval(domain_v[0], domain_v[1]))
+    native = rg.Brep.CreateFromSurface(rhino_surface)
+    if native is None:
+        raise RuntimeError("Rhino failed to create Brep from NurbsSurface")
+    return rhino_to_brep(native)
 
 
 # --- brep-operations ---
@@ -203,7 +213,9 @@ def brep_offset(brep, distance):
 
 @plugin(category="brep-operations", requires=["Rhino"])
 def brep_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
-    raise NotImplementedError("overlap not yet implemented for Rhino backend")
+    from compas_brep.backend.rhino.operations import boolean_intersection
+
+    return boolean_intersection(brep_a, brep_b)
 
 
 @plugin(category="brep-operations", requires=["Rhino"])
