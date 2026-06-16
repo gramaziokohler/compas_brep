@@ -3,6 +3,10 @@
 from compas_brep.brep import Brep
 from compas_brep.curves.nurbs import NurbsCurve
 from compas_brep.edge import BrepEdge
+from compas_brep.errors import BrepError
+from compas_brep.errors import BrepFilletError
+from compas_brep.errors import BrepInvalidError
+from compas_brep.errors import BrepTrimmingError
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
 from compas_brep.surfaces.nurbs import NurbsSurface
@@ -24,4 +28,8 @@ __all__ = [
     "BrepTrim",
     "NurbsCurve",
     "NurbsSurface",
+    "BrepError",
+    "BrepInvalidError",
+    "BrepTrimmingError",
+    "BrepFilletError",
 ]

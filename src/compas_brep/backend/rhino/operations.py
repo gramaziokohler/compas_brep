@@ -8,6 +8,8 @@ from compas.tolerance import TOL
 from compas_rhino.conversions import plane_to_rhino
 
 from compas_brep.backend.rhino.conversion import brep_to_rhino, rhino_to_brep
+from compas_brep.errors import BrepFilletError
+from compas_brep.errors import BrepTrimmingError
 
 # =============================================================================
 # Boolean operations
@@ -69,7 +71,7 @@ def rhino_trimmed(brep, plane):
     rhino_plane = plane_to_rhino(plane)
     results = shape.Trim(rhino_plane, TOL.absolute)
     if not results:
-        raise RuntimeError("Trim operation ended with no result")
+        raise BrepTrimmingError("Trim operation ended with no result")
     result = results[0]
     capped = result.CapPlanarHoles(TOL.absolute)
     if capped:
@@ -129,7 +131,7 @@ def rhino_fillet(brep, radius, edges=None):
     )
     if fillets and len(fillets) > 0:
         return rhino_to_brep(fillets[0])
-    raise RuntimeError("Fillet operation failed")
+    raise BrepFilletError("Fillet operation failed")
 
 
 def rhino_cap_planar_holes(brep):
