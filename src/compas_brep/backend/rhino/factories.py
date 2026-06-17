@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import Union
 
 import Rhino  # type: ignore
-from compas.geometry import Polygon, Polyline, Curve, Vector
+from compas.geometry import Curve, Polygon, Polyline, Vector
 from compas.tolerance import TOL
-from compas_rhino.conversions import box_to_rhino, cone_to_rhino, cylinder_to_rhino, mesh_to_rhino, sphere_to_rhino, torus_to_rhino, vector_to_rhino, polyline_to_rhino_curve
+from compas_rhino.conversions import box_to_rhino, cone_to_rhino, cylinder_to_rhino, mesh_to_rhino, polyline_to_rhino_curve, sphere_to_rhino, torus_to_rhino, vector_to_rhino
 
 from compas_brep.backend.rhino.conversion import (
-    _compas_nurbs_curve_to_rhino,
     brep_to_rhino,
+    nurbs_curve_to_rhino,
     rhino_to_brep,
 )
 
@@ -94,7 +94,7 @@ def make_loft(profiles):
     rhino_curves = []
     for profile in profiles:
         if hasattr(profile, "_knots"):
-            rhino_curves.append(_compas_nurbs_curve_to_rhino(profile))
+            rhino_curves.append(nurbs_curve_to_rhino(profile))
         else:
             rhino_curves.append(curve_to_rhino(profile))
 
@@ -169,7 +169,7 @@ def rhino_from_curves(curves):
         from compas_brep.curves.nurbs import NurbsCurve as _NC
 
         if isinstance(curve, _NC):
-            rhino_curves.append(_compas_nurbs_curve_to_rhino(curve))
+            rhino_curves.append(nurbs_curve_to_rhino(curve))
         else:
             # Line
             p0 = rg.Point3d(curve.start.x, curve.start.y, curve.start.z)

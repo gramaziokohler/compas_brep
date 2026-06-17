@@ -331,7 +331,7 @@ def _trim_nurbs_surface_from_2d(rhino_surface, loop):
             continue
         if not isinstance(c2d, NurbsCurve):
             continue
-        rc = _compas_nurbs_curve_to_rhino(c2d)
+        rc = nurbs_curve_to_rhino(c2d)
         for t in [rc.Domain.Min, rc.Domain.Max]:
             pt = rc.PointAt(t)
             u_vals.append(pt.X)
@@ -373,7 +373,7 @@ def _rhino_curve_from_loop(loop):
             sp = edge.first_vertex.point
             ep = edge.last_vertex.point
             if isinstance(curve, NurbsCurve):
-                rc = _compas_nurbs_curve_to_rhino(curve)
+                rc = nurbs_curve_to_rhino(curve)
                 if trim.is_reversed:
                     rc.Reverse()
                 curves.append(rc)
@@ -393,7 +393,7 @@ def _rhino_curve_from_loop(loop):
             sp = edge.first_vertex.point
             ep = edge.last_vertex.point
             if isinstance(curve, NurbsCurve):
-                curves.append(_compas_nurbs_curve_to_rhino(curve))
+                curves.append(nurbs_curve_to_rhino(curve))
             else:
                 p0 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
                 p1 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
@@ -452,7 +452,7 @@ def brep_to_rhino(brep):
                 face_breps.extend(planar_breps)
 
         elif isinstance(surface, NurbsSurface):
-            rhino_surface = _compas_nurbs_surface_to_rhino(surface)
+            rhino_surface = nurbs_surface_to_rhino(surface)
             # Apply parametric trimming from 2D loop curves if the surface domain
             # is larger than the actual face boundary (e.g. a cylinder trimmed by a box).
             if face._outer_loop and face._outer_loop.trims:
@@ -475,7 +475,7 @@ def brep_to_rhino(brep):
     return result
 
 
-def _compas_nurbs_surface_to_rhino(surface):
+def nurbs_surface_to_rhino(surface):
     """Convert a compas_brep NurbsSurface to a Rhino.Geometry.NurbsSurface.
 
     Parameters
@@ -528,7 +528,7 @@ def _compas_nurbs_surface_to_rhino(surface):
     return rhino_surface
 
 
-def _compas_nurbs_curve_to_rhino(curve):
+def nurbs_curve_to_rhino(curve):
     """Convert a compas_brep NurbsCurve to a Rhino.Geometry.NurbsCurve.
 
     Parameters
