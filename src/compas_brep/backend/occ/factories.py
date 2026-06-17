@@ -9,9 +9,11 @@ from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBuilderAPI import (
     BRepBuilderAPI_MakeEdge,
     BRepBuilderAPI_MakeFace,
+    BRepBuilderAPI_MakeSolid,
     BRepBuilderAPI_MakeWire,
     BRepBuilderAPI_Sewing,
 )
+from OCP.TopoDS import TopoDS
 from OCP.BRepPrimAPI import (
     BRepPrimAPI_MakeBox,
     BRepPrimAPI_MakeCone,
@@ -96,7 +98,10 @@ def make_torus(torus):
 
 
 def make_from_mesh(mesh):
-    """Create a Brep from a COMPAS Mesh by sewing polygon faces."""
+    """Create a Brep from a COMPAS Mesh by sewing polygon faces.
+
+    Returns a solid if the mesh is closed, otherwise a shell.
+    """
     sewing = BRepBuilderAPI_Sewing(1e-6)
 
     for fkey in mesh.faces():
@@ -107,7 +112,14 @@ def make_from_mesh(mesh):
         sewing.Add(face)
 
     sewing.Perform()
-    return occ_to_brep(sewing.SewedShape())
+    sewn = sewing.SewedShape()
+    try:
+        solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewn))
+        if solid.IsDone():
+            return occ_to_brep(solid.Shape())
+    except Exception:
+        pass
+    return occ_to_brep(sewn)
 
 
 def make_extrusion(curve_or_profile, vector, cap_ends=True):
