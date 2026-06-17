@@ -135,4 +135,6 @@ Plugin discovery: `__all_plugins__` in `compas_brep.__init__` lists both backend
 - `src/compas_brep/curves/nurbs.py`, `surfaces/nurbs.py` — pure-Python COMPAS value types
 - `src/compas_brep/backend/occ/` — OCC backend implementation
 - `src/compas_brep/backend/rhino/` — Rhino backend implementation
-- `src/compas_brep/scene/` — COMPAS viewer integration
+- `src/compas_brep/scene/__init__.py` — one `@plugin(requires=...)` per context; no top-level context imports
+- `src/compas_brep/scene/viewer/` — `compas_viewer` scene objects (`BrepObject`, `NurbsCurveObject`, `NurbsSurfaceObject`)
+- `src/compas_brep/scene/rhino/` — Rhino scene objects (`RhinoBrepObject`, `RhinoNurbsCurveObject`, `RhinoNurbsSurfaceObject`); bakes geometry into `scriptcontext.doc`
