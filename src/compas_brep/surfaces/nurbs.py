@@ -7,13 +7,15 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from compas.data import Data
-from compas.geometry import Frame, Point, Vector
+from compas.geometry import Frame
+from compas.geometry import Point
+from compas.geometry import Vector
 from scipy.interpolate import BSpline
+
+from compas_brep.curves import NurbsCurve
 
 if TYPE_CHECKING:
     from compas.geometry import Transformation
-
-    from compas_brep.curves.nurbs import NurbsCurve
 
 
 # ---------------------------------------------------------------------------
@@ -450,11 +452,9 @@ class NurbsSurface(Data):
         NurbsSurface
 
         """
-        from compas_brep.curves.nurbs import NurbsCurve as _NC  # noqa: N813
-
         n_samples = 20
 
-        def _sample_curve(crv: _NC, n: int) -> list[Point]:
+        def _sample_curve(crv: NurbsCurve, n: int) -> list[Point]:
             a, b = crv.domain
             return [crv.point_at(a + (b - a) * i / n) for i in range(n + 1)]
 
@@ -637,7 +637,6 @@ class NurbsSurface(Data):
             A curve parameterised in V.
 
         """
-        from compas_brep.curves.nurbs import NurbsCurve
 
         kv_u = np.array(self.knotvector_u, dtype=float)
         nu = len(self._points)
@@ -677,7 +676,6 @@ class NurbsSurface(Data):
             A curve parameterised in U.
 
         """
-        from compas_brep.curves.nurbs import NurbsCurve
 
         kv_v = np.array(self.knotvector_v, dtype=float)
         nu = len(self._points)

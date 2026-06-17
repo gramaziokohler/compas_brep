@@ -1,12 +1,17 @@
 """Tests for OCC native-handle topology sub-object wrappers (issue 02)."""
 
 import pytest
-from compas.geometry import Plane, Point
+from compas.geometry import Plane
+from compas.geometry import Point
 
 from compas_brep import Brep
-from compas_brep.backend.occ.topology import OccBrepEdge, OccBrepFace, OccBrepLoop, OccBrepTrim, OccBrepVertex
-from compas_brep.curves.nurbs import NurbsCurve
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.backend import OccBrepEdge
+from compas_brep.backend import OccBrepFace
+from compas_brep.backend import OccBrepLoop
+from compas_brep.backend import OccBrepTrim
+from compas_brep.backend import OccBrepVertex
+from compas_brep.curves import NurbsCurve
+from compas_brep.surfaces import NurbsSurface
 
 pytestmark = pytest.mark.occ
 

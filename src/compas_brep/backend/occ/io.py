@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-from compas_brep.backend.occ.conversion import brep_to_occ, occ_to_brep
+from .conversion import brep_to_occ
+from .conversion import occ_to_brep
 
 
 def occ_to_step(brep, filepath, **kwargs):
     """Export a Brep to a STEP file."""
     from OCP.IFSelect import IFSelect_RetDone
-    from OCP.STEPControl import STEPControl_AsIs, STEPControl_Writer
+    from OCP.STEPControl import STEPControl_AsIs
+    from OCP.STEPControl import STEPControl_Writer
 
     shape = brep_to_occ(brep)
     writer = STEPControl_Writer()

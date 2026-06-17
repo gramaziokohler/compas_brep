@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from compas.geometry import Line, Point
+from compas.geometry import Line
+from compas.geometry import Point
 from compas.itertools import pairwise
 from compas.scene import GeometryObject
-from compas_viewer.scene.geometryobject import GeometryObject as ViewerGeometryObject
+from compas_viewer.scene import GeometryObject as ViewerGeometryObject
 
-from compas_brep.curves.nurbs import NurbsCurve
+from compas_brep.curves import NurbsCurve
 
 
 class NurbsCurveObject(ViewerGeometryObject, GeometryObject):

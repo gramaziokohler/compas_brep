@@ -7,11 +7,18 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from compas.data import Data
-from compas.geometry import Frame, Line, Point, Polyline, Vector
-from scipy.interpolate import BSpline, make_interp_spline
+from compas.geometry import Frame
+from compas.geometry import Line
+from compas.geometry import Point
+from compas.geometry import Polyline
+from compas.geometry import Vector
+from scipy.interpolate import BSpline
+from scipy.interpolate import make_interp_spline
 
 if TYPE_CHECKING:
-    from compas.geometry import Circle, Ellipse, Transformation
+    from compas.geometry import Circle
+    from compas.geometry import Ellipse
+    from compas.geometry import Transformation
 
 
 def _knotvector_from_knots_mults(knots: list[float], mults: list[int]) -> list[float]:

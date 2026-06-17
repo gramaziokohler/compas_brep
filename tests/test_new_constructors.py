@@ -4,7 +4,12 @@ import math
 
 import pytest
 from compas.datastructures import Mesh
-from compas.geometry import Box, Cylinder, Plane, Point, Sphere, Vector
+from compas.geometry import Box
+from compas.geometry import Cylinder
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Sphere
+from compas.geometry import Vector
 
 from compas_brep import Brep
 

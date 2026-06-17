@@ -55,7 +55,7 @@ class RhinoBrepEdge(BrepEdge):
     @property
     def curve(self):
         if self._curve is None:
-            from compas_brep.backend.rhino.conversion import _extract_edge_curve
+            from .conversion import _extract_edge_curve
 
             self._curve = _extract_edge_curve(self._rhino_edge)
         return self._curve
@@ -141,7 +141,7 @@ class RhinoBrepFace(BrepFace):
     @property
     def surface(self):
         if self._surface is None:
-            from compas_brep.backend.rhino.conversion import _extract_surface
+            from .conversion import _extract_surface
 
             self._surface = _extract_surface(self._rhino_face)
         return self._surface
@@ -173,7 +173,7 @@ class RhinoBrepFace(BrepFace):
 
 def _extract_trim_curve_2d(rhino_trim):
     """Extract the 2D parametric curve from a Rhino BrepTrim, returning NurbsCurve or None."""
-    from compas_brep.backend.rhino.conversion import _rhino_nurbs_curve_to_compas
+    from .conversion import _rhino_nurbs_curve_to_compas
 
     curve = rhino_trim.TrimCurve
     if curve is None:

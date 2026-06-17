@@ -2,14 +2,48 @@
 
 from __future__ import annotations
 
-from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut, BRepAlgoAPI_Fuse
-from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace, BRepBuilderAPI_Sewing
-from OCP.gp import gp_Dir, gp_Pln, gp_Pnt
+from compas.geometry import Line
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Polyline
+from compas.geometry import Vector
+from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
+from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepClass3d import BRepClass3d_SolidClassifier
+from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
+from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeHalfSpace
+from OCP.gp import gp_Dir
+from OCP.gp import gp_Pln
+from OCP.gp import gp_Pnt
+from OCP.gp import gp_Trsf
+from OCP.ShapeFix import ShapeFix_Shape
 from OCP.TopAbs import TopAbs_EDGE
+from OCP.TopAbs import TopAbs_IN
+from OCP.TopAbs import TopAbs_ON
+from OCP.TopAbs import TopAbs_SHELL
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 
-from compas_brep.backend.occ.conversion import brep_to_occ, occ_to_brep
+from compas_brep.curves import NurbsCurve
+from compas_brep.edge import BrepEdge
+from compas_brep.face import BrepFace
+from compas_brep.loop import BrepLoop
+from compas_brep.surfaces import NurbsSurface
+from compas_brep.trim import BrepTrim
+from compas_brep.vertex import BrepVertex
+
+from .conversion import brep_to_occ
+from .conversion import occ_to_brep
 
 # =============================================================================
 # Boolean operations
@@ -47,8 +81,6 @@ def boolean_intersection(brep_a, brep_b):
 
 def occ_trimmed(brep, plane):
     """OCC implementation of brep.trimmed(plane)."""
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
-    from OCP.BRepPrimAPI import BRepPrimAPI_MakeHalfSpace
 
     shape = brep_to_occ(brep)
     occ_pln = gp_Pln(
@@ -73,9 +105,6 @@ def occ_split(brep, cutter):
     (open surface), the split is performed via two half-space cuts so that
     both sides of the cutting plane are returned.
     """
-    from compas.geometry import Plane
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Common, BRepAlgoAPI_Cut
-    from OCP.BRepPrimAPI import BRepPrimAPI_MakeHalfSpace
 
     shape = brep_to_occ(brep)
 
@@ -113,8 +142,6 @@ def occ_split(brep, cutter):
         result_b = occ_to_brep(BRepAlgoAPI_Cut(shape, halfspace_neg).Shape())
     else:
         # Generic case: cut by the cutter shape in both directions
-        from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
-
         cutter_shape = brep_to_occ(cutter)
         result_a = occ_to_brep(BRepAlgoAPI_Cut(shape, cutter_shape).Shape())
         result_b = occ_to_brep(BRepAlgoAPI_Common(shape, cutter_shape).Shape())
@@ -133,12 +160,6 @@ def occ_split(brep, cutter):
 
 def occ_slice(brep, plane):
     """OCC implementation of brep.slice(plane) — returns intersection polylines."""
-    from compas.geometry import Point as _Point
-    from compas.geometry import Polyline
-    from OCP.BRepAdaptor import BRepAdaptor_Curve as _BRepAdaptor_Curve
-    from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
-    from OCP.TopExp import TopExp_Explorer as _TopExp_Explorer
-    from OCP.TopoDS import TopoDS as _TopoDS
 
     shape = brep_to_occ(brep)
     pln = gp_Pln(
@@ -151,17 +172,17 @@ def occ_slice(brep, plane):
     result_shape = section.Shape()
 
     polylines = []
-    edge_exp = _TopExp_Explorer(result_shape, TopAbs_EDGE)
+    edge_exp = TopExp_Explorer(result_shape, TopAbs_EDGE)
     while edge_exp.More():
-        edge = _TopoDS.Edge_s(edge_exp.Current())
-        adaptor = _BRepAdaptor_Curve(edge)
+        edge = TopoDS.Edge_s(edge_exp.Current())
+        adaptor = BRepAdaptor_Curve(edge)
         t0, t1 = adaptor.FirstParameter(), adaptor.LastParameter()
         n_pts = 32
         pts = []
         for i in range(n_pts + 1):
             t = t0 + (t1 - t0) * i / n_pts
             p = adaptor.Value(t)
-            pts.append(_Point(p.X(), p.Y(), p.Z()))
+            pts.append(Point(p.X(), p.Y(), p.Z()))
         polylines.append(Polyline(pts))
         edge_exp.Next()
     return polylines
@@ -169,7 +190,6 @@ def occ_slice(brep, plane):
 
 def occ_fillet(brep, radius, edges=None):
     """Fillet edges of a Brep. If edges is None, fillet all edges."""
-    from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
 
     shape = brep_to_occ(brep)
     fillet = BRepFilletAPI_MakeFillet(shape)
@@ -197,7 +217,6 @@ def occ_fillet(brep, radius, edges=None):
 
 def occ_offset(brep, distance):
     """Offset a Brep by a distance."""
-    from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
 
     shape = brep_to_occ(brep)
     offset = BRepOffsetAPI_MakeOffsetShape()
@@ -207,8 +226,6 @@ def occ_offset(brep, distance):
 
 def occ_contains(brep, point):
     """Check if a point is contained inside a solid Brep."""
-    from OCP.BRepClass3d import BRepClass3d_SolidClassifier
-    from OCP.TopAbs import TopAbs_IN, TopAbs_ON
 
     shape = brep_to_occ(brep)
     classifier = BRepClass3d_SolidClassifier(shape, gp_Pnt(point.x, point.y, point.z), 1e-6)
@@ -218,7 +235,6 @@ def occ_contains(brep, point):
 
 def occ_cap_planar_holes(brep):
     """Cap planar holes in a Brep."""
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 
     shape = brep_to_occ(brep)
     sewing = BRepBuilderAPI_Sewing()
@@ -243,7 +259,6 @@ def occ_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
 
 def occ_fix(brep):
     """Fix a Brep shape using ShapeFix."""
-    from OCP.ShapeFix import ShapeFix_Shape
 
     shape = brep_to_occ(brep)
     fixer = ShapeFix_Shape(shape)
@@ -253,7 +268,6 @@ def occ_fix(brep):
 
 def occ_heal(brep):
     """Heal a Brep shape (fix + sew)."""
-    from OCP.ShapeFix import ShapeFix_Shape
 
     shape = brep_to_occ(brep)
     fixer = ShapeFix_Shape(shape)
@@ -277,7 +291,6 @@ def occ_sew(brep):
 
 def occ_make_solid(brep):
     """Convert a shell Brep to a solid."""
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 
     shape = brep_to_occ(brep)
     solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(shape))
@@ -286,8 +299,6 @@ def occ_make_solid(brep):
 
 def occ_transform(brep, transformation):
     """Transform a Brep by a COMPAS Transformation."""
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-    from OCP.gp import gp_Trsf
 
     shape = brep_to_occ(brep)
     m = transformation.matrix
@@ -317,7 +328,6 @@ def occ_flip(brep):
 
 def occ_copy(brep):
     """Create a deep copy of a Brep."""
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
 
     shape = brep_to_occ(brep)
     return occ_to_brep(BRepBuilderAPI_Copy(shape).Shape())
@@ -329,15 +339,7 @@ def occ_rebuild(brep, data: dict) -> None:
     Constructs Python topology from the data, then calls brep_to_occ to build
     the native OCC shape, which is cached on brep._native_brep.
     """
-    from compas.geometry import Line, Plane, Point, Vector
 
-    from compas_brep.curves.nurbs import NurbsCurve
-    from compas_brep.edge import BrepEdge
-    from compas_brep.face import BrepFace
-    from compas_brep.loop import BrepLoop
-    from compas_brep.surfaces.nurbs import NurbsSurface
-    from compas_brep.trim import BrepTrim
-    from compas_brep.vertex import BrepVertex
 
     vertices = [BrepVertex(Point(*xyz)) for xyz in data["vertices"]]
 
@@ -396,14 +398,11 @@ def occ_rebuild(brep, data: dict) -> None:
 
     # Attempt to promote a closed shell to a solid so that boolean operations
     # and solid queries work on the reconstructed shape.
-    from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid as _MakeSolid
-    from OCP.TopAbs import TopAbs_SHELL as _TopAbs_SHELL
-    from OCP.TopoDS import TopoDS as _TopoDS
 
     shape = brep._native_brep
-    if shape.ShapeType() == _TopAbs_SHELL:
+    if shape.ShapeType() == TopAbs_SHELL:
         try:
-            solid = _MakeSolid(_TopoDS.Shell_s(shape))
+            solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(shape))
             if solid.IsDone():
                 brep._native_brep = solid.Shape()
         except Exception:

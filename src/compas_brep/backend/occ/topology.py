@@ -56,7 +56,7 @@ class OccBrepEdge(BrepEdge):
     @property
     def curve(self):
         if self._curve is None:
-            from compas_brep.backend.occ.conversion import _extract_edge_curve
+            from .conversion import _extract_edge_curve
 
             self._curve = _extract_edge_curve(self._occ_edge)
         return self._curve
@@ -87,7 +87,7 @@ class OccBrepTrim(BrepTrim):
     @property
     def curve_2d(self):
         if self._curve_2d is None:
-            from compas_brep.backend.occ.conversion import _extract_pcurve
+            from .conversion import _extract_pcurve
 
             self._curve_2d = _extract_pcurve(self._occ_edge, self._occ_face)
         return self._curve_2d
@@ -145,7 +145,7 @@ class OccBrepFace(BrepFace):
     @property
     def surface(self):
         if self._surface is None:
-            from compas_brep.backend.occ.conversion import _extract_surface
+            from .conversion import _extract_surface
 
             self._surface = _extract_surface(self._occ_face)
         return self._surface

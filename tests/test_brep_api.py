@@ -2,7 +2,13 @@
 
 import pytest
 from compas.datastructures import Mesh
-from compas.geometry import Box, Frame, Plane, Point, Polygon, Translation, Vector
+from compas.geometry import Box
+from compas.geometry import Frame
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Polygon
+from compas.geometry import Translation
+from compas.geometry import Vector
 
 from compas_brep import Brep
 

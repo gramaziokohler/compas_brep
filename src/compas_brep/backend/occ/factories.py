@@ -2,40 +2,39 @@
 
 from __future__ import annotations
 
-from compas.geometry import Point
 from warnings import warn
 
+from compas.geometry import Point
 from OCP.BRepAdaptor import BRepAdaptor_Curve
-from OCP.BRepBuilderAPI import (
-    BRepBuilderAPI_MakeEdge,
-    BRepBuilderAPI_MakeFace,
-    BRepBuilderAPI_MakeSolid,
-    BRepBuilderAPI_MakeWire,
-    BRepBuilderAPI_Sewing,
-)
-from OCP.TopoDS import TopoDS
-from OCP.BRepPrimAPI import (
-    BRepPrimAPI_MakeBox,
-    BRepPrimAPI_MakeCone,
-    BRepPrimAPI_MakeCylinder,
-    BRepPrimAPI_MakeSphere,
-    BRepPrimAPI_MakeTorus,
-)
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pnt, gp_Vec
-from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_WIRE
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeWire
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeBox
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeCone
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeCylinder
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeSphere
+from OCP.BRepPrimAPI import BRepPrimAPI_MakeTorus
+from OCP.gp import gp_Ax2
+from OCP.gp import gp_Dir
+from OCP.gp import gp_Pnt
+from OCP.gp import gp_Vec
+from OCP.TopAbs import TopAbs_EDGE
+from OCP.TopAbs import TopAbs_FACE
+from OCP.TopAbs import TopAbs_WIRE
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 
-from compas_brep.backend.occ.conversion import (
-    _frame_to_ax2,
-    _loop_to_occ_wire,
-    _nurbs_curve_to_occ,
-    _nurbs_surface_to_occ,
-    _points_to_occ_wire,
-    brep_to_occ,
-    occ_to_brep,
-)
+from compas_brep.curves import NurbsCurve
 
+from .conversion import _frame_to_ax2
+from .conversion import _loop_to_occ_wire
+from .conversion import _nurbs_curve_to_occ
+from .conversion import _nurbs_surface_to_occ
+from .conversion import _points_to_occ_wire
+from .conversion import brep_to_occ
+from .conversion import occ_to_brep
 
 # =============================================================================
 # Primitive constructors
@@ -260,11 +259,9 @@ def occ_pipe(path, radius):
 
 def occ_from_curves(curves):
     """Create a Brep from planar boundary curves."""
-    from compas_brep.curves.nurbs import NurbsCurve as _NC
-
     wire_builder = BRepBuilderAPI_MakeWire()
     for curve in curves:
-        if isinstance(curve, _NC):
+        if isinstance(curve, NurbsCurve):
             occ_curve = _nurbs_curve_to_occ(curve)
             edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
         else:

@@ -5,15 +5,27 @@ from __future__ import annotations
 from typing import Union
 
 import Rhino  # type: ignore
-from compas.geometry import Curve, Polygon, Polyline, Vector
+import Rhino.Geometry as rg  # type: ignore
+from compas.geometry import Curve
+from compas.geometry import Polygon
+from compas.geometry import Polyline
+from compas.geometry import Vector
 from compas.tolerance import TOL
-from compas_rhino.conversions import box_to_rhino, cone_to_rhino, cylinder_to_rhino, mesh_to_rhino, polyline_to_rhino_curve, sphere_to_rhino, torus_to_rhino, vector_to_rhino
+from compas_rhino.conversions import box_to_rhino
+from compas_rhino.conversions import cone_to_rhino
+from compas_rhino.conversions import curve_to_rhino
+from compas_rhino.conversions import cylinder_to_rhino
+from compas_rhino.conversions import mesh_to_rhino
+from compas_rhino.conversions import polyline_to_rhino_curve
+from compas_rhino.conversions import sphere_to_rhino
+from compas_rhino.conversions import torus_to_rhino
+from compas_rhino.conversions import vector_to_rhino
 
-from compas_brep.backend.rhino.conversion import (
-    brep_to_rhino,
-    nurbs_curve_to_rhino,
-    rhino_to_brep,
-)
+from compas_brep.curves import NurbsCurve
+
+from .conversion import brep_to_rhino
+from .conversion import nurbs_curve_to_rhino
+from .conversion import rhino_to_brep
 
 # =============================================================================
 # Primitive constructors
@@ -89,8 +101,6 @@ def make_extrusion(curve_or_profile: Union[Polyline, Polygon, Curve], vector: Ve
 
 def make_loft(profiles):
     """Create a Brep by lofting through curves."""
-    from compas_rhino.conversions import curve_to_rhino
-
     rhino_curves = []
     for profile in profiles:
         if hasattr(profile, "_knots"):
@@ -127,8 +137,6 @@ def from_native(native_brep):
 
 def rhino_sweep(profile, path):
     """Create a Brep by sweeping a profile along a path."""
-    import Rhino.Geometry as rg
-
     profile_brep = brep_to_rhino(profile)
     path_brep = brep_to_rhino(path)
 
@@ -148,8 +156,6 @@ def rhino_sweep(profile, path):
 
 def rhino_pipe(path, radius):
     """Create a pipe by sweeping a circle along a path."""
-    import Rhino.Geometry as rg
-
     path_brep = brep_to_rhino(path)
     path_curves = [path_brep.Edges[i].EdgeCurve for i in range(path_brep.Edges.Count)]
     path_curve = path_curves[0] if len(path_curves) == 1 else rg.Curve.JoinCurves(path_curves)[0]
@@ -162,13 +168,9 @@ def rhino_pipe(path, radius):
 
 def rhino_from_curves(curves):
     """Create a Brep from planar boundary curves."""
-    import Rhino.Geometry as rg
-
     rhino_curves = []
     for curve in curves:
-        from compas_brep.curves.nurbs import NurbsCurve as _NC
-
-        if isinstance(curve, _NC):
+        if isinstance(curve, NurbsCurve):
             rhino_curves.append(nurbs_curve_to_rhino(curve))
         else:
             # Line
@@ -184,8 +186,6 @@ def rhino_from_curves(curves):
 
 def rhino_from_breps(breps):
     """Join multiple Breps into one by sewing overlapping edges."""
-    import Rhino.Geometry as rg
-
     rhino_breps = [brep_to_rhino(b) for b in breps]
     joined = rg.Brep.JoinBreps(rhino_breps, 0.001)
     if joined and len(joined) > 0:

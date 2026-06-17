@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from compas.geometry import Line, Point
+from compas.geometry import Line
+from compas.geometry import Point
 
-from compas_brep.curves.nurbs import NurbsCurve
+from compas_brep.curves import NurbsCurve
 from compas_brep.vertex import BrepVertex
 
 

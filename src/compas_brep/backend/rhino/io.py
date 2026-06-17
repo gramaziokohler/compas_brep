@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from compas_brep.backend.rhino.conversion import brep_to_rhino, rhino_to_brep
+import Rhino  # type: ignore
+import Rhino.FileIO as rio  # type: ignore
+import System  # type: ignore
+
+from .conversion import brep_to_rhino
+from .conversion import rhino_to_brep
 
 
 def _invoke_on_ui(fn):
     """Run fn on the Rhino UI thread and return its result (or raise its exception)."""
-    import System
-    import Rhino
-
     result = [None]
     error = [None]
 
@@ -32,9 +34,6 @@ def rhino_to_step(brep, filepath, **kwargs):
     the actual Rhino document write is marshalled to the UI thread via
     InvokeOnUiThread.
     """
-    import Rhino
-    import Rhino.FileIO as rio
-
     rhino_brep = brep_to_rhino(brep)
 
     def _write():
@@ -61,9 +60,6 @@ def rhino_from_step(filepath):
 
     Safe to call from any thread — the doc read is marshalled to the UI thread.
     """
-    import Rhino
-    import Rhino.FileIO as rio
-
     result_breps = []
 
     def _read():

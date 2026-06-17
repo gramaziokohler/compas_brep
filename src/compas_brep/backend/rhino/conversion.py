@@ -9,11 +9,20 @@ All COMPAS↔Rhino conversion logic lives here:
 from __future__ import annotations
 
 import Rhino  # type: ignore
-from compas.geometry import Line, Plane, Point, Vector
+from compas.geometry import Line
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Vector
 from compas.tolerance import TOL
 
-from compas_brep.curves.nurbs import NurbsCurve
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.curves import NurbsCurve
+from compas_brep.surfaces import NurbsSurface
+
+from .topology import RhinoBrepEdge
+from .topology import RhinoBrepFace
+from .topology import RhinoBrepLoop
+from .topology import RhinoBrepTrim
+from .topology import RhinoBrepVertex
 
 # =============================================================================
 # Rhino → compas_brep conversion
@@ -57,14 +66,6 @@ def rhino_extract_topology(brep) -> None:
         A Brep whose ``_native_brep`` is a Rhino.Geometry.Brep.
 
     """
-    from compas_brep.backend.rhino.topology import (
-        RhinoBrepEdge,
-        RhinoBrepFace,
-        RhinoBrepLoop,
-        RhinoBrepTrim,
-        RhinoBrepVertex,
-    )
-
     rhino_brep = brep._native_brep
 
     # Build vertex wrappers keyed by Rhino vertex index

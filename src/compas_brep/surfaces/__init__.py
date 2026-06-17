@@ -1,4 +1,4 @@
-from compas_brep.surfaces.nurbs import NurbsSurface
+from .nurbs import NurbsSurface
 
 __all__ = [
     "NurbsSurface",

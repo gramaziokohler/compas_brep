@@ -2,20 +2,36 @@
 
 from __future__ import annotations
 
-from compas.geometry import Box, Frame, Point
+import math
 
-from OCP.TopAbs import TopAbs_COMPSOLID, TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED, TopAbs_SOLID
+from compas.datastructures import Mesh
+from compas.geometry import Box
+from compas.geometry import Frame
+from compas.geometry import Point
+from compas.geometry import Polyline
+from OCP.Bnd import Bnd_Box
+from OCP.BRep import BRep_Tool
+from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepBndLib import BRepBndLib
+from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepGProp import BRepGProp
+from OCP.BRepMesh import BRepMesh_IncrementalMesh
+from OCP.gp import gp_Pnt
+from OCP.GProp import GProp_GProps
+from OCP.TopAbs import TopAbs_COMPSOLID
+from OCP.TopAbs import TopAbs_EDGE
+from OCP.TopAbs import TopAbs_FACE
+from OCP.TopAbs import TopAbs_REVERSED
+from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopExp import TopExp_Explorer
+from OCP.TopLoc import TopLoc_Location
 from OCP.TopoDS import TopoDS
 
-from compas_brep.backend.occ.conversion import brep_to_occ
+from .conversion import brep_to_occ
 
 
 def occ_area(brep):
     """Compute the surface area of a Brep."""
-    from OCP.BRepGProp import BRepGProp
-    from OCP.GProp import GProp_GProps
-
     shape = brep_to_occ(brep)
     props = GProp_GProps()
     BRepGProp.SurfaceProperties_s(shape, props)
@@ -24,9 +40,6 @@ def occ_area(brep):
 
 def occ_volume(brep):
     """Compute the volume of a Brep."""
-    from OCP.BRepGProp import BRepGProp
-    from OCP.GProp import GProp_GProps
-
     shape = brep_to_occ(brep)
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, props)
@@ -35,9 +48,6 @@ def occ_volume(brep):
 
 def occ_centroid(brep):
     """Compute the centroid of a Brep."""
-    from OCP.BRepGProp import BRepGProp
-    from OCP.GProp import GProp_GProps
-
     shape = brep_to_occ(brep)
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, props)
@@ -47,9 +57,6 @@ def occ_centroid(brep):
 
 def occ_aabb(brep):
     """Compute the axis-aligned bounding box of a Brep."""
-    from OCP.Bnd import Bnd_Box
-    from OCP.BRepBndLib import BRepBndLib
-
     shape = brep_to_occ(brep)
     bbox = Bnd_Box()
     BRepBndLib.Add_s(shape, bbox)
@@ -75,8 +82,6 @@ def occ_is_solid(brep):
 
 def occ_is_valid(brep):
     """Check if the Brep is geometrically valid."""
-    from OCP.BRepCheck import BRepCheck_Analyzer
-
     shape = brep_to_occ(brep)
     return BRepCheck_Analyzer(shape).IsValid()
 
@@ -98,18 +103,6 @@ def occ_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     -------
     tuple[Mesh, list[Polyline]]
     """
-    import math
-
-    from OCP.BRep import BRep_Tool
-    from OCP.BRepAdaptor import BRepAdaptor_Curve
-    from OCP.BRepMesh import BRepMesh_IncrementalMesh
-    from OCP.TopAbs import TopAbs_EDGE, TopAbs_FACE, TopAbs_REVERSED
-    from OCP.TopExp import TopExp_Explorer
-    from OCP.TopLoc import TopLoc_Location
-    from OCP.TopoDS import TopoDS
-    from compas.datastructures import Mesh
-    from compas.geometry import Point, Polyline
-
     shape = brep_to_occ(brep)
     ang_def = math.pi / max(n * 4, 16)
     BRepMesh_IncrementalMesh(shape, linear_deflection, True, ang_def).Perform()
@@ -129,8 +122,6 @@ def occ_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
             for i in range(1, tri.NbNodes() + 1):
                 node = tri.Node(i)
                 if trsf is not None:
-                    from OCP.gp import gp_Pnt
-
                     pnt = gp_Pnt(node.X(), node.Y(), node.Z())
                     pnt.Transform(trsf)
                     all_verts.append([pnt.X(), pnt.Y(), pnt.Z()])

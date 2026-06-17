@@ -4,7 +4,9 @@ import json
 import math
 
 import pytest
-from compas.geometry import Box, Cylinder, Sphere
+from compas.geometry import Box
+from compas.geometry import Cylinder
+from compas.geometry import Sphere
 
 from compas_brep import Brep
 

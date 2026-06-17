@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 import Rhino  # type: ignore
-from compas.geometry import Point, Polyline
+import Rhino.Geometry as rg  # type: ignore
+from compas.datastructures import Mesh
+from compas.geometry import Box
+from compas.geometry import Frame
+from compas.geometry import Line
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Polyline
+from compas.geometry import Vector
 from compas.tolerance import TOL
 from compas_rhino.conversions import plane_to_rhino
 
-from compas_brep.backend.rhino.conversion import brep_to_rhino, rhino_to_brep
+from compas_brep.curves import NurbsCurve
+from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepFilletError
 from compas_brep.errors import BrepTrimmingError
+from compas_brep.face import BrepFace
+from compas_brep.loop import BrepLoop
+from compas_brep.surfaces import NurbsSurface
+from compas_brep.trim import BrepTrim
+from compas_brep.vertex import BrepVertex
+
+from .conversion import brep_to_rhino
+from .conversion import rhino_to_brep
 
 # =============================================================================
 # Boolean operations
@@ -112,8 +129,6 @@ def rhino_slice(brep, plane):
 
 def rhino_fillet(brep, radius, edges=None):
     """Fillet edges of a Brep."""
-    import Rhino.Geometry as rg
-
     rhino_brep = brep_to_rhino(brep)
     if edges is not None:
         edge_indices = edges
@@ -145,8 +160,6 @@ def rhino_cap_planar_holes(brep):
 
 def rhino_contains(brep, point):
     """Check if a point is contained inside a solid Brep."""
-    import Rhino.Geometry as rg
-
     rhino_brep = brep_to_rhino(brep)
     if not rhino_brep.IsSolid:
         return False
@@ -170,10 +183,6 @@ def rhino_fix(brep):
 
 def rhino_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     """Tessellate a Brep via Rhino.Geometry — returns (Mesh, list[Polyline])."""
-    import Rhino.Geometry as rg
-    from compas.datastructures import Mesh
-    from compas.geometry import Point, Polyline
-
     rhino_brep = brep_to_rhino(brep)
     params = rg.MeshingParameters.Default
     params.MaximumEdgeLength = linear_deflection
@@ -257,8 +266,6 @@ def rhino_centroid(brep):
 
 def rhino_aabb(brep):
     """Return the axis-aligned bounding box of a Brep as a COMPAS Box."""
-    from compas.geometry import Box, Frame
-
     bbox = brep_to_rhino(brep).GetBoundingBox(True)
     mn, mx = bbox.Min, bbox.Max
     cx, cy, cz = (mn.X + mx.X) / 2, (mn.Y + mx.Y) / 2, (mn.Z + mx.Z) / 2
@@ -282,16 +289,6 @@ def rhino_rebuild(brep, data: dict) -> None:
     occ_rebuild), then calls brep_to_rhino to build the native Rhino shape which
     is cached on brep._native_brep.
     """
-    from compas.geometry import Line, Plane, Point, Vector
-
-    from compas_brep.curves.nurbs import NurbsCurve
-    from compas_brep.edge import BrepEdge
-    from compas_brep.face import BrepFace
-    from compas_brep.loop import BrepLoop
-    from compas_brep.surfaces.nurbs import NurbsSurface
-    from compas_brep.trim import BrepTrim
-    from compas_brep.vertex import BrepVertex
-
     vertices = [BrepVertex(Point(*xyz)) for xyz in data["vertices"]]
 
     edges = []

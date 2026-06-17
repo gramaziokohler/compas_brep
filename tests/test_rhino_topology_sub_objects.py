@@ -1,18 +1,17 @@
 """Tests for Rhino native-handle topology sub-object wrappers (issue 05)."""
 
 import pytest
-from compas.geometry import Plane, Point
+from compas.geometry import Plane
+from compas.geometry import Point
 
 from compas_brep import Brep
-from compas_brep.backend.rhino.topology import (
-    RhinoBrepEdge,
-    RhinoBrepFace,
-    RhinoBrepLoop,
-    RhinoBrepTrim,
-    RhinoBrepVertex,
-)
-from compas_brep.curves.nurbs import NurbsCurve
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.backend import RhinoBrepEdge
+from compas_brep.backend import RhinoBrepFace
+from compas_brep.backend import RhinoBrepLoop
+from compas_brep.backend import RhinoBrepTrim
+from compas_brep.backend import RhinoBrepVertex
+from compas_brep.curves import NurbsCurve
+from compas_brep.surfaces import NurbsSurface
 
 pytestmark = pytest.mark.rhino
 

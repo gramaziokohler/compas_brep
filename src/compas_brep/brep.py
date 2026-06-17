@@ -11,60 +11,66 @@ from __future__ import annotations
 
 from compas.data import Data
 from compas.datastructures import Mesh
-from compas.geometry import Box, Cylinder, Frame, Plane, Point, Polygon, Polyline, Sphere, Vector
+from compas.geometry import Box
+from compas.geometry import Cylinder
+from compas.geometry import Frame
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Polygon
+from compas.geometry import Polyline
+from compas.geometry import Sphere
+from compas.geometry import Vector
 
 from compas_brep.edge import BrepEdge
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
-from compas_brep.operations import (
-    boolean_difference,
-    boolean_intersection,
-    boolean_union,
-    brep_aabb,
-    brep_area,
-    brep_cap_planar_holes,
-    brep_centroid,
-    brep_contains,
-    brep_copy,
-    brep_extract_topology,
-    brep_fillet,
-    brep_fix,
-    brep_flip,
-    brep_from_iges,
-    brep_from_step,
-    brep_heal,
-    brep_is_solid,
-    brep_is_valid,
-    brep_make_solid,
-    brep_offset,
-    brep_overlap,
-    brep_rebuild,
-    brep_sew,
-    brep_slice,
-    brep_split,
-    brep_tessellate,
-    brep_to_data,
-    brep_to_iges,
-    brep_to_step,
-    brep_to_stl,
-    brep_transform,
-    brep_trimmed,
-    brep_volume,
-    make_box,
-    make_cone,
-    make_cylinder,
-    make_extrusion,
-    make_from_breps,
-    make_from_curves,
-    make_from_mesh,
-    make_from_native,
-    make_from_surface,
-    make_loft,
-    make_pipe,
-    make_sphere,
-    make_sweep,
-    make_torus,
-)
+from compas_brep.operations import boolean_difference
+from compas_brep.operations import boolean_intersection
+from compas_brep.operations import boolean_union
+from compas_brep.operations import brep_aabb
+from compas_brep.operations import brep_area
+from compas_brep.operations import brep_cap_planar_holes
+from compas_brep.operations import brep_centroid
+from compas_brep.operations import brep_contains
+from compas_brep.operations import brep_copy
+from compas_brep.operations import brep_extract_topology
+from compas_brep.operations import brep_fillet
+from compas_brep.operations import brep_fix
+from compas_brep.operations import brep_flip
+from compas_brep.operations import brep_from_iges
+from compas_brep.operations import brep_from_step
+from compas_brep.operations import brep_heal
+from compas_brep.operations import brep_is_solid
+from compas_brep.operations import brep_is_valid
+from compas_brep.operations import brep_make_solid
+from compas_brep.operations import brep_offset
+from compas_brep.operations import brep_overlap
+from compas_brep.operations import brep_rebuild
+from compas_brep.operations import brep_sew
+from compas_brep.operations import brep_slice
+from compas_brep.operations import brep_split
+from compas_brep.operations import brep_tessellate
+from compas_brep.operations import brep_to_data
+from compas_brep.operations import brep_to_iges
+from compas_brep.operations import brep_to_step
+from compas_brep.operations import brep_to_stl
+from compas_brep.operations import brep_transform
+from compas_brep.operations import brep_trimmed
+from compas_brep.operations import brep_volume
+from compas_brep.operations import make_box
+from compas_brep.operations import make_cone
+from compas_brep.operations import make_cylinder
+from compas_brep.operations import make_extrusion
+from compas_brep.operations import make_from_breps
+from compas_brep.operations import make_from_curves
+from compas_brep.operations import make_from_mesh
+from compas_brep.operations import make_from_native
+from compas_brep.operations import make_from_surface
+from compas_brep.operations import make_loft
+from compas_brep.operations import make_pipe
+from compas_brep.operations import make_sphere
+from compas_brep.operations import make_sweep
+from compas_brep.operations import make_torus
 from compas_brep.vertex import BrepVertex
 
 

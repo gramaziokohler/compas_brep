@@ -1,7 +1,10 @@
 """Tests for boolean operations on Brep."""
 
 import pytest
-from compas.geometry import Box, Frame, Point, Vector
+from compas.geometry import Box
+from compas.geometry import Frame
+from compas.geometry import Point
+from compas.geometry import Vector
 
 from compas_brep import Brep
 

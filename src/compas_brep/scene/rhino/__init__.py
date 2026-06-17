@@ -2,7 +2,7 @@ from compas.plugins import plugin
 from compas.scene import register
 
 from compas_brep.brep import Brep
-from compas_brep.curves.nurbs import NurbsCurve
+from compas_brep.curves import NurbsCurve
 from compas_brep.surfaces import NurbsSurface
 
 from .brepobject import RhinoBrepObject

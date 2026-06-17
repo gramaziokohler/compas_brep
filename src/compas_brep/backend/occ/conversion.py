@@ -10,34 +10,60 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from compas.geometry import Line, Plane, Point, Vector
+from compas.geometry import Line
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Vector
+from OCP.BRep import BRep_Builder
 from OCP.BRep import BRep_Tool
-from OCP.BRepAdaptor import BRepAdaptor_Curve, BRepAdaptor_Surface
-from OCP.BRepBuilderAPI import (
-    BRepBuilderAPI_MakeEdge,
-    BRepBuilderAPI_MakeFace,
-    BRepBuilderAPI_MakeWire,
-    BRepBuilderAPI_Sewing,
-)
-from OCP.BRepTools import BRepTools, BRepTools_WireExplorer
-from OCP.Geom import Geom_BSplineCurve, Geom_BSplineSurface, Geom_RectangularTrimmedSurface
+from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepAdaptor import BRepAdaptor_Surface
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeWire
+from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+from OCP.BRepTools import BRepTools
+from OCP.BRepTools import BRepTools_WireExplorer
+from OCP.Geom import Geom_BSplineCurve
+from OCP.Geom import Geom_BSplineSurface
+from OCP.Geom import Geom_RectangularTrimmedSurface
 from OCP.Geom2d import Geom2d_BSplineCurve
+from OCP.Geom2d import Geom2d_Line
 from OCP.Geom2dConvert import Geom2dConvert
-from OCP.GeomAbs import GeomAbs_Line, GeomAbs_Plane
+from OCP.GeomAbs import GeomAbs_Line
+from OCP.GeomAbs import GeomAbs_Plane
 from OCP.GeomConvert import GeomConvert
-from OCP.gp import gp_Ax2, gp_Dir, gp_Pln, gp_Pnt, gp_Pnt2d, gp_Vec  # noqa: F401
+from OCP.gp import gp_Ax2  # noqa: F401
+from OCP.gp import gp_Dir  # noqa: F401
+from OCP.gp import gp_Pln  # noqa: F401
+from OCP.gp import gp_Pnt  # noqa: F401
+from OCP.gp import gp_Pnt2d  # noqa: F401
+from OCP.gp import gp_Vec  # noqa: F401
 from OCP.ShapeConstruct import ShapeConstruct_Curve
-from OCP.TColgp import TColgp_Array1OfPnt, TColgp_Array1OfPnt2d, TColgp_Array2OfPnt
-from OCP.TColStd import TColStd_Array1OfInteger, TColStd_Array1OfReal, TColStd_Array2OfReal
-from OCP.TopAbs import TopAbs_FACE, TopAbs_REVERSED, TopAbs_VERTEX, TopAbs_WIRE
-from OCP.TopExp import TopExp, TopExp_Explorer
+from OCP.TColgp import TColgp_Array1OfPnt
+from OCP.TColgp import TColgp_Array1OfPnt2d
+from OCP.TColgp import TColgp_Array2OfPnt
+from OCP.TColStd import TColStd_Array1OfInteger
+from OCP.TColStd import TColStd_Array1OfReal
+from OCP.TColStd import TColStd_Array2OfReal
+from OCP.TopAbs import TopAbs_FACE
+from OCP.TopAbs import TopAbs_REVERSED
+from OCP.TopAbs import TopAbs_VERTEX
+from OCP.TopAbs import TopAbs_WIRE
+from OCP.TopExp import TopExp
+from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
-from compas_brep.backend.occ.topology import OccBrepEdge, OccBrepFace, OccBrepLoop, OccBrepTrim, OccBrepVertex
-from compas_brep.curves.nurbs import NurbsCurve
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.curves import NurbsCurve
+from compas_brep.surfaces import NurbsSurface
+
+from .topology import OccBrepEdge
+from .topology import OccBrepFace
+from .topology import OccBrepLoop
+from .topology import OccBrepTrim
+from .topology import OccBrepVertex
 
 if TYPE_CHECKING:
     from OCP.TopoDS import TopoDS_Shape
@@ -46,8 +72,6 @@ if TYPE_CHECKING:
 # =============================================================================
 # OCC → compas_brep conversion
 # =============================================================================
-
-
 def occ_to_brep(shape: TopoDS_Shape):
     """Wrap an OCC TopoDS_Shape in a compas_brep.Brep.
 
@@ -189,12 +213,10 @@ def _extract_pcurve(occ_edge, occ_face):
 
     Handles both BSpline and Line 2D curves from OCC.
     """
-    from OCP.BRepAdaptor import BRepAdaptor_Curve as _BRepAdaptor_Curve
-    from OCP.Geom2d import Geom2d_Line as _Geom2d_Line
 
     try:
         # Get parameter range from the 3D curve
-        adaptor = _BRepAdaptor_Curve(occ_edge)
+        adaptor = BRepAdaptor_Curve(occ_edge)
         first_param = adaptor.FirstParameter()
         last_param = adaptor.LastParameter()
 
@@ -206,7 +228,7 @@ def _extract_pcurve(occ_edge, occ_face):
         # Handle Geom2d_Line: create degree-1 NurbsCurve from endpoints.
         # Knots must match the 3D edge parameter range so OCC can reconstruct
         # the pcurve with correct parameterization.
-        if isinstance(curve_2d, _Geom2d_Line):
+        if isinstance(curve_2d, Geom2d_Line):
             p0 = curve_2d.Value(first_param)
             p1 = curve_2d.Value(last_param)
             return NurbsCurve.from_parameters(
@@ -443,7 +465,6 @@ def occ_brep_to_data(brep) -> dict:
     (EDGE_CURVE with 3D curve + vertex refs), faces (FACE_SURFACE with surface +
     oriented loops + pcurves).
     """
-    from compas.geometry import Line, Plane
 
     shape = brep._native_brep
 
@@ -674,9 +695,8 @@ def _build_nurbs_face(occ_surface, face):
     Falls back to domain-bounded or wire-based construction when pcurves
     are not available.
     """
-    from OCP.BRep import BRep_Builder as _BRep_Builder
 
-    builder = _BRep_Builder()
+    builder = BRep_Builder()
 
     # Check if all trims have pcurves
     all_have_pcurves = (

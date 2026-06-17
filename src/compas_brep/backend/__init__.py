@@ -23,3 +23,28 @@ corresponding kernel is available (``requires=["OCP"]`` or ``requires=["Rhino"]`
 They are **not** imported at package level so that ``compas_brep`` remains
 importable in any environment.
 """
+
+from .occ.topology import OccBrepEdge
+from .occ.topology import OccBrepFace
+from .occ.topology import OccBrepLoop
+from .occ.topology import OccBrepTrim
+from .occ.topology import OccBrepVertex
+from .rhino.topology import RhinoBrepEdge
+from .rhino.topology import RhinoBrepFace
+from .rhino.topology import RhinoBrepLoop
+from .rhino.topology import RhinoBrepTrim
+from .rhino.topology import RhinoBrepVertex
+
+try:
+    from .occ.conversion import brep_to_occ
+    from .occ.conversion import occ_to_brep
+except ImportError:
+    pass
+
+try:
+    from .rhino.conversion import brep_to_rhino
+    from .rhino.conversion import nurbs_curve_to_rhino
+    from .rhino.conversion import nurbs_surface_to_rhino
+    from .rhino.conversion import rhino_to_brep
+except ImportError:
+    pass

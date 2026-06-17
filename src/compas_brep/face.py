@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from compas.geometry import Plane, Point, Polygon
+from compas.geometry import Plane
+from compas.geometry import Point
+from compas.geometry import Polygon
+from compas.geometry import Vector
+from compas.tolerance import TOL
 
 from compas_brep.edge import BrepEdge
 from compas_brep.loop import BrepLoop
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.surfaces import NurbsSurface
 from compas_brep.vertex import BrepVertex
 
 
@@ -148,9 +152,6 @@ class BrepFace:
 
 def _plane_from_points(points: list[Point]) -> Plane:
     """Compute plane from polygon vertices using Newell's method."""
-    from compas.geometry import Vector
-    from compas.tolerance import TOL
-
     n = len(points)
     nx, ny, nz = 0.0, 0.0, 0.0
     for i in range(n):

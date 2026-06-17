@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-from compas.geometry import Line, Point, Polyline
+from compas.datastructures import Mesh
+from compas.geometry import Line
+from compas.geometry import Point
+from compas.geometry import Polyline
 from compas.itertools import pairwise
 from compas.scene import GeometryObject
-from compas_viewer.scene.geometryobject import GeometryObject as ViewerGeometryObject
+from compas_viewer.scene import GeometryObject as ViewerGeometryObject
 
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.surfaces import NurbsSurface
 
 
 class NurbsSurfaceObject(ViewerGeometryObject, GeometryObject):
@@ -32,8 +35,6 @@ class NurbsSurfaceObject(ViewerGeometryObject, GeometryObject):
 
     def _tessellate(self):
         """Tessellate the surface into a mesh and boundary polylines."""
-        from compas.datastructures import Mesh
-
         surface = self.geometry
         u_params = surface.space_u(self._n_u)
         v_params = surface.space_v(self._n_v)

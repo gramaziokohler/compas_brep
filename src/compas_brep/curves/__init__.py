@@ -1,4 +1,4 @@
-from compas_brep.curves.nurbs import NurbsCurve
+from .nurbs import NurbsCurve
 
 __all__ = [
     "NurbsCurve",

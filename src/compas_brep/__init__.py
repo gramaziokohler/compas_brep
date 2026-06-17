@@ -1,12 +1,15 @@
 """compas_brep: Pure Python Brep implementation based on the COMPAS framework."""
 
 from compas_brep.brep import Brep
-from compas_brep.curves.nurbs import NurbsCurve
+from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
-from compas_brep.errors import BrepError, BrepFilletError, BrepInvalidError, BrepTrimmingError
+from compas_brep.errors import BrepError
+from compas_brep.errors import BrepFilletError
+from compas_brep.errors import BrepInvalidError
+from compas_brep.errors import BrepTrimmingError
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
-from compas_brep.surfaces.nurbs import NurbsSurface
+from compas_brep.surfaces import NurbsSurface
 from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 

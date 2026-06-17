@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import scriptcontext as sc  # type: ignore
-
 from compas.scene import GeometryObject
 from compas_rhino.conversions import transformation_to_rhino  # type: ignore
-from compas_rhino.scene.sceneobject import RhinoSceneObject  # type: ignore
+from compas_rhino.scene import RhinoSceneObject  # type: ignore
 
-from compas_brep.backend.rhino.conversion import nurbs_surface_to_rhino
+from compas_brep.backend import nurbs_surface_to_rhino
 
 
 class RhinoNurbsSurfaceObject(RhinoSceneObject, GeometryObject):

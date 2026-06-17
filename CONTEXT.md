@@ -127,6 +127,30 @@ Plugin discovery: `__all_plugins__` in `compas_brep.__init__` lists both backend
 
 ---
 
+## Import Style Rules
+
+These rules are enforced by ruff (`isort.force-single-line = true`) and must be followed in all source and test files.
+
+1. **One name per import line.** Never `from X import A, B`. Always:
+   ```python
+   from X import A
+   from X import B
+   ```
+
+2. **No multi-line parenthesized imports.** Every import must fit on a single line.
+
+3. **At most 2nd-level depth for `compas_brep` imports.** The module path after `compas_brep` may have at most one component:
+   - ✓ `from compas_brep.curves import NurbsCurve`
+   - ✗ `from compas_brep.curves.nurbs import NurbsCurve`
+   - ✗ `from compas_brep.backend.occ.topology import OccBrepEdge`
+   - If a name is only defined deeper, re-export it from the nearest 2nd-level `__init__.py`.
+
+4. **Internal cross-file imports use relative imports.** Files within `backend/occ/`, `backend/rhino/` etc. use `from .sibling import X`, not absolute `from compas_brep.backend.occ.sibling import X`.
+
+5. **Prefer module-level imports.** Only use function-level imports when there is an unavoidable circular dependency or a conditional availability that cannot be handled with try/except at module level.
+
+---
+
 ## Key Files
 
 - `src/compas_brep/brep.py` — public `Brep` interface
