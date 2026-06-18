@@ -14,28 +14,35 @@ dependencies = [
     "scipy",
 ]
 
+[project.urls]
+Repository = "https://github.com/GKR/compas_brep"
+
 [project.optional-dependencies]
 occ = ["cadquery-ocp-novtk>=7.8; python_version >= '3.10'", "compas_viewer>=1.0"]
 
-[project.urls]
-Repository = "https://github.com/GKR/compas_brep"
+[dependency-groups]
+dev = [
+    "invoke",
+    "ruff",
+    "pytest",
+    "compas_invocations2[mkdocs]",
+    "bump-my-version",
+    "twine",
+    "wheel",
+    "build",
+]
+docs = [
+    #"zensical",  # TODO: this works, need to figure our how to use with mike and add to compas-actions.
+    "mkdocstrings[python]",
+]
 
 [build-system]
 requires = ["uv_build>=0.10.2,<0.11.0"]
 build-backend = "uv_build"
 
-[dependency-groups]
-dev = [
-    "ruff>=0.11",
-    "pytest>=8.0",
-]
-docs = [
-    "zensical",
-    "mkdocstrings[python]",
-]
 
 [tool.ruff]
-line-length = 120
+line-length = 179
 target-version = "py313"
 
 [tool.ruff.lint]
