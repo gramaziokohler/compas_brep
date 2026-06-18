@@ -1,0 +1,21 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+jobs:
+  build:
+    if: "!contains(github.event.pull_request.labels.*.name, 'docs-only')"
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: compas-dev/compas-actions.build@v5
+        with:
+          python: "3.13"
+          invoke_lint: true
+          invoke_test: true
+          extras: "occ,dev"

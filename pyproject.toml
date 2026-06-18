@@ -19,8 +19,6 @@ Repository = "https://github.com/GKR/compas_brep"
 
 [project.optional-dependencies]
 occ = ["cadquery-ocp-novtk>=7.8; python_version >= '3.10'", "compas_viewer>=1.0"]
-
-[dependency-groups]
 dev = [
     "invoke",
     "ruff",
@@ -56,3 +54,4 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+addopts = "-m occ"
