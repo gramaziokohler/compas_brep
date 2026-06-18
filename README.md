@@ -1,6 +1,6 @@
 # compas_brep
 
-[![Github Actions Build Status](https://github.com/gramaziokohler/compas_brep/workflows/build/badge.svg)](https://github.com/gramaziokohler/compas_brep/actions)
+[![Github Actions Build Status](https://github.com/gramaziokohler/compas_brep/actions/workflows/build.yml/badge.svg)](https://github.com/gramaziokohler/compas_brep/actions)
 [![License](https://img.shields.io/github/license/gramaziokohler/compas_brep.svg)](https://pypi.python.org/pypi/compas-brep)
 [![PyPI Package latest release](https://img.shields.io/pypi/v/compas-brep.svg)](https://pypi.python.org/pypi/compas-brep)
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/compas-brep.svg)](https://pypi.python.org/pypi/compas-brep)
@@ -15,13 +15,13 @@ Provides a single `Brep` class with a stable public interface. The backend (OCC 
 **Base (no backend):**
 
 ```bash
-pip install compas-brep
+pip install compas_brep
 ```
 
 **With OCC backend:**
 
 ```bash
-pip install "compas-brep[occ]"
+pip install "compas_brep[occ]"
 ```
 
 The Rhino backend is available automatically when running inside Rhino or with `rhinoinside` installed.
