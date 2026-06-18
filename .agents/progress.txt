@@ -298,40 +298,7 @@ All operations tested and passing in the Rhino backend:
 All acceptance criteria for issue 08 checked off.
 Note: `offset` is `NotImplementedError` (expected — documented in Rhino plugins.py).
 
-## Task: Centralize surface codec — surface-type-support issue 01
+## surface-type-support feature
 
-Pure refactor collapsing the duplicated surface `{"type", "data"}` encode/decode
-logic into a single backend-neutral codec. No new surface types, no behavior change.
-
-New/changed code:
-- `src/compas_brep/surfaces/_codec.py` (new): `surface_to_data(surface) -> dict`
-  and `surface_from_data(data) -> surface`. `Plane` keeps its hand-rolled
-  `{"point", "normal"}` payload for backward compat; `NurbsSurface` round-trips
-  via `__data__`/`__from_data__`. `surface_from_data` reads both v4 (plane/nurbs)
-  and v5. Unknown types raise loudly. Structured so analytic types slot in later.
-- `src/compas_brep/surfaces/__init__.py`: re-exports `surface_to_data` /
-  `surface_from_data` per the 2nd-level import-depth rule.
-- Replaced the inline `"type"` dispatch in all five sites with codec calls:
-  - serialize: `face.py` `__data__`, OCC `occ_brep_to_data`, Rhino conversion
-  - deserialize: OCC `occ_rebuild`, Rhino operations
-- Bumped serialization `"version"` 4 → 5 in OCC `occ_brep_to_data` and the Rhino
-  equivalent.
-- Dropped now-unused `Vector` import from OCC/Rhino operations; `NurbsSurface`
-  import replaced by codec import in both operations modules.
-
-Tests (`tests/test_serialization.py`):
-- Updated the three `data["version"] == 4` assertions to 5.
-- Added `test_deserialize_v4_document`: writes a boolean-diff Brep (plane + nurbs
-  faces), forces `version` back to 4, round-trips through JSON, asserts face count
-  and surface types preserved — verifies v4 read compatibility.
-
-Verification: `pytest -m occ -q` → 114 passed, 37 deselected. `ruff` clean on all
-changed files. (Pre-existing E402 in `src/compas_brep/__init__.py` is unrelated WIP
-and was left untouched/uncommitted.)
-
-Commit scope: only the issue-01 refactor was staged. Pre-existing uncommitted WIP
-in the working tree (the `_extract_surface` periodic-bounds clamping in
-`conversion.py` — belongs to issue 06 — plus `CONTEXT.md`, `README.md`,
-`__init__.py` DATA dir, `src/compas_brep/data/`) was deliberately excluded.
-
-All acceptance criteria for surface-type-support issue 01 checked off.
+Progress for the surface-type-support feature is tracked separately in
+`.agents/issues/surface-type-support/progress.txt`.
