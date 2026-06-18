@@ -47,3 +47,49 @@ failure path in `_extract_surface` (occ/conversion.py) no longer returns a dummy
 `Plane(0,0,0)`; it now raises `BrepError`. This belongs to issue 06 territory;
 made early because the dummy plane directly contradicts the codec rework. Left
 unstaged with the rest of the conversion.py WIP block.
+
+## Task: Cylinder surfaces end-to-end — issue 02
+
+Full end-to-end support for `CylindricalSurface` across extraction, codec,
+BrepFace API, rebuild, and viewer tessellation.
+
+New/changed code:
+- `src/compas_brep/backend/occ/conversion.py`: Added `_ax3_to_frame` /
+  `_frame_to_ax3` helpers; `_extract_surface` now returns `CylindricalSurface`
+  for GeomAbs_Cylinder faces; renamed `_build_nurbs_face` →
+  `_build_trimmed_face` and made it accept any `Geom_Surface`; added
+  `_analytic_surface_to_occ`; `brep_to_occ` handles `CylindricalSurface`.
+- `src/compas_brep/surfaces/_codec.py`: Added `"cylinder"` tag round-tripping
+  `CylindricalSurface.__data__` / `__from_data__`.
+- `src/compas_brep/face.py`: Added `surface_type` (str property), `is_cylinder`
+  (bool property), updated `__repr__` to use `surface_type`; widened type
+  annotations to include `CylindricalSurface`.
+- `src/compas_brep/backend/occ/topology.py`: Updated `OccBrepFace.__repr__`
+  to use `surface_type`.
+- `src/compas_brep/scene/viewer/surfaceobject.py`: Extracted
+  `_tessellate_parametric_surface` helper; added `AnalyticSurfaceObject` for
+  `CylindricalSurface` (and any analytic surface with space_u/space_v/point_at).
+- `src/compas_brep/scene/viewer/__init__.py`: Registered `CylindricalSurface →
+  AnalyticSurfaceObject` in Viewer context.
+
+Tests (`tests/test_cylinder_surfaces.py`) — new file:
+- Cylinder face returns `CylindricalSurface` with correct radius and frame.
+- Geometric accuracy: COMPAS `point_at` vs OCC adaptor Value at 4 sample
+  points (mapping u_compas = u_occ / 2π), all within 1e-6.
+- `surface_type == "cylinder"`, `is_cylinder`, `is_nurbs == False`, `__repr__`.
+- JSON round-trip preserves cylinder type, face count, and volume (< 0.01).
+- `to_viewmesh()` non-empty after round-trip.
+- `_tessellate_parametric_surface` helper produces non-empty mesh + 4 boundaries.
+
+Updated existing tests:
+- `test_serialization.py`: Updated cylinder test to check "cylinder" (not
+  "nurbs"); updated `test_serialize_boolean_result` and
+  `test_deserialize_v4_document` to use box−sphere (plane+nurbs) since
+  box−cylinder now produces plane+cylinder.
+- `test_topology_sub_objects.py`: Added `sphere_brep` fixture; updated
+  `test_face_surface_nurbs_returns_nurbs` and `test_trim_curve_2d_cached` to use
+  sphere (still nurbs); added `test_face_surface_cylinder_returns_cylindrical`.
+
+Verification: `pytest -m occ -q` → 134 passed, 37 deselected.
+
+All acceptance criteria for issue 02 checked off.
