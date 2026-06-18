@@ -59,6 +59,7 @@ from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
 from compas_brep.curves import NurbsCurve
 from compas_brep.surfaces import NurbsSurface
+from compas_brep.surfaces import surface_to_data
 
 from .topology import OccBrepEdge
 from .topology import OccBrepFace
@@ -542,16 +543,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
         is_reversed = occ_face.Orientation() == TopAbs_REVERSED
 
         surface = _extract_surface(occ_face)
-        if isinstance(surface, Plane):
-            surface_data = {
-                "type": "plane",
-                "data": {
-                    "point": [surface.point.x, surface.point.y, surface.point.z],
-                    "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
-                },
-            }
-        else:
-            surface_data = {"type": "nurbs", "data": surface.__data__}
+        surface_data = surface_to_data(surface)
 
         loops = []
         wire_exp = TopExp_Explorer(occ_face, TopAbs_WIRE)
@@ -590,7 +582,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
         face_exp.Next()
 
     return {
-        "version": 4,
+        "version": 5,
         "vertices": vertex_list,
         "edges": edge_list,
         "faces": face_list,

@@ -8,7 +8,6 @@ from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polyline
-from compas.geometry import Vector
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Common
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
@@ -39,7 +38,7 @@ from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
-from compas_brep.surfaces import NurbsSurface
+from compas_brep.surfaces import surface_from_data
 from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
@@ -363,12 +362,7 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
     all_loops = []
     faces = []
     for fd in data["faces"]:
-        sd = fd["surface"]
-        if sd["type"] == "plane":
-            pd = sd["data"]
-            surface = Plane(Point(*pd["point"]), Vector(*pd["normal"]))
-        else:
-            surface = NurbsSurface.__from_data__(sd["data"])
+        surface = surface_from_data(fd["surface"])
 
         face_loops = []
         for loop_data in fd["loops"]:

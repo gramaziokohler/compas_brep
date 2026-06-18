@@ -14,12 +14,12 @@ pytestmark = pytest.mark.occ
 
 
 def test_serialize_step_format_box():
-    """__data__ produces STEP-inspired JSON (version 4) with correct entity counts."""
+    """__data__ produces STEP-inspired JSON (version 5) with correct entity counts."""
     box = Box(2.0, 2.0, 2.0)
     brep = Brep.from_box(box)
     data = brep.__data__
 
-    assert data["version"] == 4
+    assert data["version"] == 5
     assert "vertices" in data
     assert "edges" in data
     assert "faces" in data
@@ -73,7 +73,7 @@ def test_serialize_step_format_cylinder():
     brep = Brep.from_cylinder(cyl)
     data = brep.__data__
 
-    assert data["version"] == 4
+    assert data["version"] == 5
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "nurbs" in surface_types
 
@@ -111,13 +111,32 @@ def test_serialize_boolean_result():
     result = box - cyl
 
     data = result.__data__
-    assert data["version"] == 4
+    assert data["version"] == 5
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "plane" in surface_types
     assert "nurbs" in surface_types
 
     restored = Brep.__from_data__(data)
     assert len(restored.faces) == len(result.faces)
+
+
+def test_deserialize_v4_document():
+    """A stored v4 document (plane + nurbs only) still deserializes correctly."""
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    cyl = Brep.from_cylinder(Cylinder(0.3, 4.0))
+    result = box - cyl
+
+    data = result.__data__
+    # Simulate an older document written before the version bump. The plane/nurbs
+    # payloads are unchanged between v4 and v5, so the codec must still read it.
+    data["version"] = 4
+    json_str = json.dumps(data)
+    restored = Brep.__from_data__(json.loads(json_str))
+
+    assert len(restored.faces) == len(result.faces)
+    surface_types = [f["surface"]["type"] for f in data["faces"]]
+    assert "plane" in surface_types
+    assert "nurbs" in surface_types
 
 
 def test_viewmesh_box():

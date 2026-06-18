@@ -17,6 +17,7 @@ from compas.tolerance import TOL
 
 from compas_brep.curves import NurbsCurve
 from compas_brep.surfaces import NurbsSurface
+from compas_brep.surfaces import surface_to_data
 
 from .topology import RhinoBrepEdge
 from .topology import RhinoBrepFace
@@ -629,16 +630,7 @@ def rhino_brep_to_data(brep) -> dict:
     face_list = []
     for rf in rhino_brep.Faces:
         surface = _extract_surface(rf)
-        if isinstance(surface, Plane):
-            surface_data = {
-                "type": "plane",
-                "data": {
-                    "point": [surface.point.x, surface.point.y, surface.point.z],
-                    "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
-                },
-            }
-        else:
-            surface_data = {"type": "nurbs", "data": surface.__data__}
+        surface_data = surface_to_data(surface)
 
         loops = []
         for rl in rf.Loops:
@@ -671,7 +663,7 @@ def rhino_brep_to_data(brep) -> dict:
             )
 
     return {
-        "version": 4,
+        "version": 5,
         "vertices": vertex_list,
         "edges": edge_list,
         "faces": face_list,

@@ -9,6 +9,7 @@ from compas.tolerance import TOL
 from compas_brep.edge import BrepEdge
 from compas_brep.loop import BrepLoop
 from compas_brep.surfaces import NurbsSurface
+from compas_brep.surfaces import surface_to_data
 from compas_brep.vertex import BrepVertex
 
 
@@ -122,17 +123,7 @@ class BrepFace:
 
     @property
     def __data__(self) -> dict:
-        surface = self.surface
-        if isinstance(surface, NurbsSurface):
-            surface_data = {"type": "nurbs", "data": surface.__data__}
-        else:
-            surface_data = {
-                "type": "plane",
-                "data": {
-                    "point": [surface.point.x, surface.point.y, surface.point.z],
-                    "normal": [surface.normal.x, surface.normal.y, surface.normal.z],
-                },
-            }
+        surface_data = surface_to_data(self.surface)
 
         face_data = {
             "surface": surface_data,
