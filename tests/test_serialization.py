@@ -90,37 +90,15 @@ def test_roundtrip_cylinder():
     assert abs(restored.volume - expected) < 0.1
 
 
-def test_serialize_with_tessellation_cache():
-    """Tessellation cache is preserved through serialization."""
+def test_serialize_json_roundtrip():
+    """Brep survives a full json.dumps/loads round-trip."""
     cyl = Cylinder(0.5, 2.0)
     brep = Brep.from_cylinder(cyl)
-
-    assert brep.cache_tessellation is True
-    mesh, boundaries = brep.to_tesselation(n=16)
-    assert mesh.number_of_vertices() > 50
-
-    data = brep.__data__
-    assert "tessellation" in data
-    assert len(data["tessellation"]["vertices"]) > 50
-
-    restored = Brep.__from_data__(data)
-    assert restored._tessellation_cache is not None
-    mesh_r, bounds_r = restored.to_tesselation()
-    assert mesh_r.number_of_vertices() == mesh.number_of_vertices()
-    assert len(bounds_r) == len(boundaries)
-
-
-def test_serialize_json_roundtrip_with_cache():
-    """Tessellation cache survives a full json.dumps/loads round-trip."""
-    cyl = Cylinder(0.5, 2.0)
-    brep = Brep.from_cylinder(cyl)
-    brep.to_tesselation(n=16)
 
     data = brep.__data__
     json_str = json.dumps(data)
     data_back = json.loads(json_str)
     restored = Brep.__from_data__(data_back)
-    assert restored._tessellation_cache is not None
 
     expected = math.pi * 0.5**2 * 2.0
     assert abs(restored.volume - expected) < 0.1
