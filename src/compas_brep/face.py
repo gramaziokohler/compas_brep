@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from compas.geometry import CylindricalSurface
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polygon
@@ -16,14 +17,14 @@ from compas_brep.vertex import BrepVertex
 class BrepFace:
     """A Brep face defined by a surface and boundary loops.
 
-    The surface can be a Plane (planar face) or a NurbsSurface (curved face).
+    The surface can be a Plane, CylindricalSurface, or NurbsSurface.
     The outer loop defines the face boundary; inner loops define holes.
     """
 
     def __init__(
         self,
         outer_loop: BrepLoop,
-        surface: Plane | NurbsSurface | None = None,
+        surface: Plane | CylindricalSurface | NurbsSurface | None = None,
         is_reversed: bool = False,
         domain_u: tuple[float, float] | None = None,
         domain_v: tuple[float, float] | None = None,
@@ -41,12 +42,23 @@ class BrepFace:
         return _plane_from_points(points)
 
     @property
-    def surface(self) -> Plane | NurbsSurface:
+    def surface(self) -> Plane | CylindricalSurface | NurbsSurface:
         return self._surface
 
     @surface.setter
-    def surface(self, value: Plane | NurbsSurface) -> None:
+    def surface(self, value: Plane | CylindricalSurface | NurbsSurface) -> None:
         self._surface = value
+
+    @property
+    def surface_type(self) -> str:
+        """Return the surface type as a string: 'plane', 'cylinder', or 'nurbs'."""
+        if isinstance(self.surface, Plane):
+            return "plane"
+        if isinstance(self.surface, CylindricalSurface):
+            return "cylinder"
+        if isinstance(self.surface, NurbsSurface):
+            return "nurbs"
+        return type(self.surface).__name__.lower()
 
     @property
     def domain_u(self) -> tuple[float, float] | None:
@@ -67,6 +79,10 @@ class BrepFace:
     @property
     def is_nurbs(self) -> bool:
         return isinstance(self.surface, NurbsSurface)
+
+    @property
+    def is_cylinder(self) -> bool:
+        return isinstance(self.surface, CylindricalSurface)
 
     @property
     def loops(self) -> list[BrepLoop]:
@@ -137,8 +153,7 @@ class BrepFace:
         return face_data
 
     def __repr__(self) -> str:
-        surface_type = "plane" if self.is_planar else "nurbs"
-        return f"BrepFace({len(self.vertices)} vertices, {surface_type})"
+        return f"BrepFace({len(self.vertices)} vertices, {self.surface_type})"
 
 
 def _plane_from_points(points: list[Point]) -> Plane:

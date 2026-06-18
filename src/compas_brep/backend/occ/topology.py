@@ -194,5 +194,4 @@ class OccBrepFace(BrepFace):
         self._domain_v = (vmin, vmax)
 
     def __repr__(self) -> str:
-        surface_type = "plane" if self.is_planar else "nurbs"
-        return f"OccBrepFace({len(self.vertices)} vertices, {surface_type})"
+        return f"OccBrepFace({len(self.vertices)} vertices, {self.surface_type})"

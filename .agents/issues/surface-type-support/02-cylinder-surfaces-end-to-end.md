@@ -41,17 +41,17 @@ viewer object.
 
 ## Acceptance criteria
 
-- [ ] `face.surface` for a `BRepPrimAPI_MakeCylinder` face is a
+- [x] `face.surface` for a `BRepPrimAPI_MakeCylinder` face is a
       `CylindricalSurface` with correct `radius` and `frame` (within `TOL`)
-- [ ] Sampling `face.surface.point_at(u, v)` over the face domain matches the
+- [x] Sampling `face.surface.point_at(u, v)` over the face domain matches the
       native surface evaluated at the same parameters (≤ 1e-6)
-- [ ] `BrepFace` exposes `surface_type` and `is_cylinder`; `__repr__` reports it
-- [ ] JSON round-trip preserves the `CylindricalSurface` type and parameters
-- [ ] After round-trip, the rebuilt Brep has the same face count, passes
+- [x] `BrepFace` exposes `surface_type` and `is_cylinder`; `__repr__` reports it
+- [x] JSON round-trip preserves the `CylindricalSurface` type and parameters
+- [x] After round-trip, the rebuilt Brep has the same face count, passes
       `BRepCheck`, and `to_viewmesh()` returns a non-empty mesh
-- [ ] The generic analytic-surface viewer object tessellates a
+- [x] The generic analytic-surface viewer object tessellates a
       `CylindricalSurface` into a non-empty mesh
-- [ ] All `@pytest.mark.occ` tests pass
+- [x] All `@pytest.mark.occ` tests pass
 
 ## Blocked by
 

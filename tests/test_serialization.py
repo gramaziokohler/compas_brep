@@ -68,14 +68,14 @@ def test_roundtrip_boolean_difference():
 
 
 def test_serialize_step_format_cylinder():
-    """Cylinder __data__ contains NURBS surface data in STEP format."""
+    """Cylinder __data__ contains cylinder surface data in STEP format (not NURBS approximation)."""
     cyl = Cylinder(0.5, 2.0)
     brep = Brep.from_cylinder(cyl)
     data = brep.__data__
 
     assert data["version"] == 5
     surface_types = [f["surface"]["type"] for f in data["faces"]]
-    assert "nurbs" in surface_types
+    assert "cylinder" in surface_types
 
 
 def test_roundtrip_cylinder():
@@ -107,8 +107,8 @@ def test_serialize_json_roundtrip_cylinder():
 def test_serialize_boolean_result():
     """Boolean result with mixed planar+NURBS faces serializes correctly."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
-    cyl = Brep.from_cylinder(Cylinder(0.3, 4.0))
-    result = box - cyl
+    sph = Brep.from_sphere(Sphere(0.3))
+    result = box - sph
 
     data = result.__data__
     assert data["version"] == 5
@@ -123,8 +123,8 @@ def test_serialize_boolean_result():
 def test_deserialize_v4_document():
     """A stored v4 document (plane + nurbs only) still deserializes correctly."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
-    cyl = Brep.from_cylinder(Cylinder(0.3, 4.0))
-    result = box - cyl
+    sph = Brep.from_sphere(Sphere(0.3))
+    result = box - sph
 
     data = result.__data__
     # Simulate an older document written before the version bump. The plane/nurbs
