@@ -9,7 +9,9 @@ All COMPAS↔OCC conversion logic lives here:
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import Any
 
+from compas.geometry import Frame
 from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
@@ -66,13 +68,15 @@ from .topology import OccBrepTrim
 from .topology import OccBrepVertex
 
 if TYPE_CHECKING:
-    from OCP.TopoDS import TopoDS_Shape
+    from compas_brep.brep import Brep
+    from compas_brep.face import BrepFace
+    from compas_brep.loop import BrepLoop
 
 
 # =============================================================================
 # OCC → compas_brep conversion
 # =============================================================================
-def occ_to_brep(shape: TopoDS_Shape):
+def occ_to_brep(shape: Any) -> Brep:
     """Wrap an OCC TopoDS_Shape in a compas_brep.Brep.
 
     Returns a thin Brep with ``_native_brep`` set but no topology extracted yet.
@@ -86,7 +90,7 @@ def occ_to_brep(shape: TopoDS_Shape):
     return brep
 
 
-def occ_extract_topology(brep) -> None:
+def occ_extract_topology(brep: Brep) -> None:
     """Populate a Brep's topology lists in-place from its cached OCC native shape.
 
     Produces native-handle wrapper objects (OccBrepVertex, OccBrepEdge, etc.)
@@ -205,7 +209,7 @@ def occ_extract_topology(brep) -> None:
     brep._faces = all_faces
 
 
-def _extract_pcurve(occ_edge, occ_face):
+def _extract_pcurve(occ_edge: Any, occ_face: Any) -> NurbsCurve | None:
     """Extract the 2D parametric curve (pcurve) of an edge on a face.
 
     Returns a NurbsCurve with 2D control points (z=0) representing the
@@ -299,7 +303,7 @@ def _extract_pcurve(occ_edge, occ_face):
         return None
 
 
-def _extract_surface(occ_face):
+def _extract_surface(occ_face: Any) -> Plane | NurbsSurface:
     """Extract surface data from an OCC face, returning Plane or NurbsSurface."""
     adaptor = BRepAdaptor_Surface(occ_face)
     stype = adaptor.GetType()
@@ -324,7 +328,7 @@ def _extract_surface(occ_face):
     return _bspline_surface_to_nurbs(bspline)
 
 
-def _bspline_surface_to_nurbs(bspline):
+def _bspline_surface_to_nurbs(bspline: Any) -> NurbsSurface:
     """Convert an OCC Geom_BSplineSurface to a compas_brep NurbsSurface.
 
     Converts periodic B-splines to non-periodic open form first, so that
@@ -373,7 +377,7 @@ def _bspline_surface_to_nurbs(bspline):
     )
 
 
-def _extract_edge_curve(occ_edge):
+def _extract_edge_curve(occ_edge: Any) -> Line | NurbsCurve:
     """Extract 3D curve from an OCC edge, returning Line or NurbsCurve."""
     adaptor = BRepAdaptor_Curve(occ_edge)
     ctype = adaptor.GetType()
@@ -422,7 +426,7 @@ def _extract_edge_curve(occ_edge):
     )
 
 
-def _bspline_curve_to_nurbs(bspline):
+def _bspline_curve_to_nurbs(bspline: Any) -> NurbsCurve:
     """Convert an OCC Geom_BSplineCurve to a compas_brep NurbsCurve.
 
     Converts periodic B-splines to non-periodic open form first.
@@ -458,7 +462,7 @@ def _bspline_curve_to_nurbs(bspline):
 # =============================================================================
 
 
-def occ_brep_to_data(brep) -> dict:
+def occ_brep_to_data(brep: Brep) -> dict:
     """Extract a STEP-inspired JSON dict from a native OCC shape.
 
     Entity types mirror STEP semantics: vertices (CARTESIAN_POINT), edges
@@ -600,7 +604,7 @@ def occ_brep_to_data(brep) -> dict:
 # =============================================================================
 
 
-def brep_to_occ(brep) -> TopoDS_Shape:
+def brep_to_occ(brep: Brep) -> Any:
     """Convert a canonical compas_brep.Brep to an OCC TopoDS_Shape.
 
     If the brep has a cached native shape that is not dirty, returns it directly.
@@ -651,7 +655,7 @@ def brep_to_occ(brep) -> TopoDS_Shape:
     return shape
 
 
-def _points_to_occ_wire(points):
+def _points_to_occ_wire(points: list[Point]) -> Any:
     """Create an OCC wire from a list of 3D points (closed polygon)."""
     wire_builder = BRepBuilderAPI_MakeWire()
     n = len(points)
@@ -666,7 +670,7 @@ def _points_to_occ_wire(points):
     return wire_builder.Wire()
 
 
-def _pcurve_to_geom2d(pcurve):
+def _pcurve_to_geom2d(pcurve: NurbsCurve) -> Any:
     """Convert a compas_brep NurbsCurve (2D, z=0) to an OCC Geom2d_BSplineCurve."""
     pts = pcurve._points
     wts = pcurve._weights
@@ -685,7 +689,7 @@ def _pcurve_to_geom2d(pcurve):
     return Geom2d_BSplineCurve(poles, weights, knots, mults, pcurve._degree)
 
 
-def _build_nurbs_face(occ_surface, face):
+def _build_nurbs_face(occ_surface: Any, face: BrepFace) -> Any:
     """Build an OCC face from a NURBS surface with pcurve-based trimming.
 
     Constructs edges with pcurves attached so that OCC correctly handles
@@ -729,9 +733,10 @@ def _build_nurbs_face(occ_surface, face):
                 else:
                     occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
 
-                # Attach pcurve to this face
-                geom2d = _pcurve_to_geom2d(trim.curve_2d)
-                builder.UpdateEdge(occ_edge, geom2d, occ_face, 1e-6)
+                # Attach pcurve to this face (all_have_pcurves guarantees not None)
+                if trim.curve_2d is not None:
+                    geom2d = _pcurve_to_geom2d(trim.curve_2d)
+                    builder.UpdateEdge(occ_edge, geom2d, occ_face, 1e-6)
 
                 if trim.is_reversed:
                     occ_edge.Reverse()
@@ -743,8 +748,11 @@ def _build_nurbs_face(occ_surface, face):
         return occ_face
 
     # Fallback: use domain bounds for untrimmed faces
-    du = face.domain_u or face.surface.domain_u
-    dv = face.domain_v or face.surface.domain_v
+    _surf = face.surface
+    _surf_du = _surf.domain_u if isinstance(_surf, NurbsSurface) else None
+    _surf_dv = _surf.domain_v if isinstance(_surf, NurbsSurface) else None
+    du = face.domain_u or _surf_du
+    dv = face.domain_v or _surf_dv
     if du is not None and dv is not None:
         return BRepBuilderAPI_MakeFace(occ_surface, du[0], du[1], dv[0], dv[1], 1e-6).Face()
 

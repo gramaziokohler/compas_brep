@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from typing import TYPE_CHECKING
 
 from compas.datastructures import Mesh
 from compas.geometry import Box
@@ -29,8 +30,11 @@ from OCP.TopoDS import TopoDS
 
 from .conversion import brep_to_occ
 
+if TYPE_CHECKING:
+    from compas_brep.brep import Brep
 
-def occ_area(brep):
+
+def occ_area(brep: Brep) -> float:
     """Compute the surface area of a Brep."""
     shape = brep_to_occ(brep)
     props = GProp_GProps()
@@ -38,7 +42,7 @@ def occ_area(brep):
     return props.Mass()
 
 
-def occ_volume(brep):
+def occ_volume(brep: Brep) -> float:
     """Compute the volume of a Brep."""
     shape = brep_to_occ(brep)
     props = GProp_GProps()
@@ -46,7 +50,7 @@ def occ_volume(brep):
     return abs(props.Mass())
 
 
-def occ_centroid(brep):
+def occ_centroid(brep: Brep) -> Point:
     """Compute the centroid of a Brep."""
     shape = brep_to_occ(brep)
     props = GProp_GProps()
@@ -55,7 +59,7 @@ def occ_centroid(brep):
     return Point(c.X(), c.Y(), c.Z())
 
 
-def occ_aabb(brep):
+def occ_aabb(brep: Brep) -> Box:
     """Compute the axis-aligned bounding box of a Brep."""
     shape = brep_to_occ(brep)
     bbox = Bnd_Box()
@@ -70,7 +74,7 @@ def occ_aabb(brep):
     return Box(dx, dy, dz, Frame(Point(cx, cy, cz), [1, 0, 0], [0, 1, 0]))
 
 
-def occ_is_solid(brep):
+def occ_is_solid(brep: Brep) -> bool:
     """Check if the Brep is a solid."""
     shape = brep_to_occ(brep)
     t = shape.ShapeType()
@@ -80,28 +84,25 @@ def occ_is_solid(brep):
     return solid_exp.More()
 
 
-def occ_is_valid(brep):
+def occ_is_valid(brep: Brep) -> bool:
     """Check if the Brep is geometrically valid."""
     shape = brep_to_occ(brep)
     return BRepCheck_Analyzer(shape).IsValid()
 
 
-def occ_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
+def occ_tessellate(brep: Brep, linear_deflection: float = 0.1, n: int = 16, n_curves: int = 64) -> tuple[Mesh, list[Polyline]]:
     """Tessellate a Brep into a mesh and edge polylines using OCC.
 
     Parameters
     ----------
-    brep : Brep
-    linear_deflection : float
+    brep
+        The Brep to tessellate.
+    linear_deflection
         Linear deflection for BRepMesh.
-    n : int
+    n
         Angular resolution parameter.
-    n_curves : int
+    n_curves
         Number of segments per curved edge for boundary polylines.
-
-    Returns
-    -------
-    tuple[Mesh, list[Polyline]]
     """
     shape = brep_to_occ(brep)
     ang_def = math.pi / max(n * 4, 16)

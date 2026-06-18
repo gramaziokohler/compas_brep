@@ -13,17 +13,17 @@ class BrepEdge:
     The curve can be a Line (straight edge) or a NurbsCurve (curved edge).
     """
 
-    def __init__(self, start: BrepVertex, end: BrepVertex, curve: Line | None = None):
+    def __init__(self, start: BrepVertex, end: BrepVertex, curve: Line | NurbsCurve | None = None) -> None:
         self._start = start
         self._end = end
-        self._curve = curve or Line(start.point, end.point)
+        self._curve: Line | NurbsCurve = curve or Line(start.point, end.point)
 
     @property
-    def curve(self):
+    def curve(self) -> Line | NurbsCurve:
         return self._curve
 
     @curve.setter
-    def curve(self, value):
+    def curve(self, value: Line | NurbsCurve) -> None:
         self._curve = value
 
     @property
@@ -76,10 +76,13 @@ class BrepEdge:
 
     @property
     def length(self) -> float:
-        return self.curve.length
+        curve = self.curve
+        if isinstance(curve, NurbsCurve):
+            return curve.length()
+        return curve.length
 
     @property
-    def native_edge(self):
+    def native_edge(self) -> BrepEdge:
         return self
 
     def to_line(self) -> Line:
@@ -111,11 +114,11 @@ class BrepEdge:
 
         Parameters
         ----------
-        data : dict
+        data
             Serialized edge data.
-        start : BrepVertex
+        start
             The start vertex (from shared vertex pool).
-        end : BrepVertex
+        end
             The end vertex (from shared vertex pool).
         """
         curve_info = data["curve"]
@@ -137,12 +140,8 @@ class BrepEdge:
 
         Parameters
         ----------
-        n : int, optional
+        n
             Number of segments for curved edges. Defaults to 64.
-
-        Returns
-        -------
-        list[Point]
         """
         curve = self.curve
         if isinstance(curve, NurbsCurve):
@@ -159,6 +158,6 @@ class BrepEdge:
             return [sp, ep]
         return []
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         curve_type = "line" if self.is_line else "nurbs"
         return f"BrepEdge({self._start.point} -> {self._end.point}, {curve_type})"

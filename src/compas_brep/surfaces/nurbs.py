@@ -28,16 +28,10 @@ def _generate_knotvector(n_points: int, degree: int) -> tuple[list[float], list[
 
     Parameters
     ----------
-    n_points : int
+    n_points
         Number of control points.
-    degree : int
+    degree
         Polynomial degree (will be clamped to ``n_points - 1``).
-
-    Returns
-    -------
-    tuple[list[float], list[int]]
-        Unique knot values and their multiplicities.
-
     """
     degree = min(degree, n_points - 1)
     n_internal = n_points - degree - 1
@@ -72,7 +66,7 @@ class ControlPointGrid:
     Modifications through ``grid[i, j] = point`` invalidate the parent surface's caches.
     """
 
-    def __init__(self, data: list[list[Point]], surface: NurbsSurface | None = None):
+    def __init__(self, data: list[list[Point]], surface: NurbsSurface | None = None) -> None:
         self._data = data
         self._surface = surface
 
@@ -91,13 +85,13 @@ class ControlPointGrid:
         if self._surface is not None:
             self._surface._invalidate_cache()
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self._data)
 
     def __iter__(self):
         return iter(self._data)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return repr(self._data)
 
 
@@ -106,12 +100,11 @@ class NurbsSurface(Data):
 
     Parameters
     ----------
-    name : str, optional
+    name
         The name of the surface.
-
     """
 
-    def __init__(self, name: str | None = None):
+    def __init__(self, name: str | None = None) -> None:
         super().__init__(name=name)
         self._points: list[list[Point]] = []
         self._weights: list[list[float]] = []
@@ -291,27 +284,22 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        points : list[list[Point]]
+        points
             2-D grid of control points (nu x nv).
-        weights : list[list[float]]
+        weights
             2-D grid of weights.
-        knots_u : list[float]
+        knots_u
             Unique knot values in U direction.
-        knots_v : list[float]
+        knots_v
             Unique knot values in V direction.
-        mults_u : list[int]
+        mults_u
             Multiplicities in U direction.
-        mults_v : list[int]
+        mults_v
             Multiplicities in V direction.
-        degree_u : int
+        degree_u
             Degree in U direction.
-        degree_v : int
+        degree_v
             Degree in V direction.
-
-        Returns
-        -------
-        NurbsSurface
-
         """
         surface = cls()
         surface._points = [[Point(p.x, p.y, p.z) for p in row] for row in points]
@@ -333,17 +321,12 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        points : list[list[Point]]
+        points
             2-D grid (nu x nv) of control points.
-        degree_u : int
+        degree_u
             Desired degree in U direction.
-        degree_v : int
+        degree_v
             Desired degree in V direction.
-
-        Returns
-        -------
-        NurbsSurface
-
         """
         nu = len(points)
         nv = len(points[0])
@@ -362,15 +345,10 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        nu : int
+        nu
             Number of control points in U.
-        nv : int
+        nv
             Number of control points in V.
-
-        Returns
-        -------
-        NurbsSurface
-
         """
         points = [[Point(float(i), float(j), 0.0) for j in range(nv)] for i in range(nu)]
         degree_u = min(3, nu - 1)
@@ -385,15 +363,10 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        curve : NurbsCurve
+        curve
             The profile curve.
-        vector : Vector
+        vector
             The extrusion direction.
-
-        Returns
-        -------
-        NurbsSurface
-
         """
         # Two rows of control points: original and offset
         pts_u0 = curve.points
@@ -436,21 +409,16 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        curve1 : NurbsCurve
+        curve1
             First boundary curve.
-        curve2 : NurbsCurve
+        curve2
             Second boundary curve (opposite to curve1).
-        curve3 : NurbsCurve, optional
+        curve3
             Third boundary curve.
-        curve4 : NurbsCurve, optional
+        curve4
             Fourth boundary curve.
-        style : str
+        style
             Fill style (currently only "stretch" is supported).
-
-        Returns
-        -------
-        NurbsSurface
-
         """
         n_samples = 20
 
@@ -509,15 +477,10 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        u : float
+        u
             Parameter in U direction.
-        v : float
+        v
             Parameter in V direction.
-
-        Returns
-        -------
-        Point
-
         """
         kv_u = np.array(self.knotvector_u, dtype=float)
         kv_v = np.array(self.knotvector_v, dtype=float)
@@ -543,15 +506,10 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        u : float
+        u
             Parameter in U direction.
-        v : float
+        v
             Parameter in V direction.
-
-        Returns
-        -------
-        Vector
-
         """
         eps = 1e-7
         du_lo, du_hi = self.domain_u
@@ -581,15 +539,10 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        u : float
+        u
             Parameter in U direction.
-        v : float
+        v
             Parameter in V direction.
-
-        Returns
-        -------
-        Frame
-
         """
         eps = 1e-7
         du_lo, du_hi = self.domain_u
@@ -628,16 +581,9 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        u : float
+        u
             Fixed U parameter.
-
-        Returns
-        -------
-        NurbsCurve
-            A curve parameterised in V.
-
         """
-
         kv_u = np.array(self.knotvector_u, dtype=float)
         nu = len(self._points)
         nv = len(self._points[0])
@@ -667,16 +613,9 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        v : float
+        v
             Fixed V parameter.
-
-        Returns
-        -------
-        NurbsCurve
-            A curve parameterised in U.
-
         """
-
         kv_v = np.array(self.knotvector_v, dtype=float)
         nu = len(self._points)
         nv = len(self._points[0])
@@ -706,13 +645,8 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        n : int
+        n
             Number of intervals.
-
-        Returns
-        -------
-        list[float]
-
         """
         a, b = self.domain_u
         return [a + (b - a) * i / n for i in range(n + 1)]
@@ -722,13 +656,8 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        n : int
+        n
             Number of intervals.
-
-        Returns
-        -------
-        list[float]
-
         """
         a, b = self.domain_v
         return [a + (b - a) * i / n for i in range(n + 1)]
@@ -742,9 +671,8 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        transformation : Transformation
+        transformation
             The transformation to apply.
-
         """
         for row in self._points:
             for pt in row:
@@ -756,26 +684,15 @@ class NurbsSurface(Data):
 
         Parameters
         ----------
-        transformation : Transformation
+        transformation
             The transformation to apply.
-
-        Returns
-        -------
-        NurbsSurface
-
         """
         s = self.copy()
         s.transform(transformation)
         return s
 
     def copy(self) -> NurbsSurface:
-        """Return a deep copy.
-
-        Returns
-        -------
-        NurbsSurface
-
-        """
+        """Return a deep copy."""
         return NurbsSurface.from_parameters(
             deepcopy(self._points),
             deepcopy(self._weights),

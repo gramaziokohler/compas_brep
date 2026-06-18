@@ -27,7 +27,7 @@ class BrepObject(ViewerGeometryObject, GeometryObject):
 
     geometry: Brep
 
-    def __init__(self, **kwargs):
+    def __init__(self, **kwargs) -> None:
         super().__init__(**kwargs)
         self._viewmesh, self._boundaries = self.geometry.to_tesselation(TOL.lineardeflection)
 

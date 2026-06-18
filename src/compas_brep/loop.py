@@ -12,7 +12,7 @@ class BrepLoop:
     When trims are present, edges are derived from them.
     """
 
-    def __init__(self, edges: list[BrepEdge] | None = None, trims: list[BrepTrim] | None = None):
+    def __init__(self, edges: list[BrepEdge] | None = None, trims: list[BrepTrim] | None = None) -> None:
         self._trims: list[BrepTrim] = list(trims) if trims else []
         # Legacy: store edges directly when no trims are provided
         self._edges: list[BrepEdge] = list(edges) if edges and not trims else []
@@ -57,7 +57,7 @@ class BrepLoop:
         return n >= 1  # A single closed curve (circle) is valid
 
     @property
-    def native_loop(self):
+    def native_loop(self) -> BrepLoop:
         return self
 
     # =========================================================================
@@ -68,7 +68,7 @@ class BrepLoop:
     def __data__(self) -> list[dict]:
         return [trim.__data__ for trim in self._trims]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         if self._trims:
             return f"BrepLoop({len(self._trims)} trims)"
         return f"BrepLoop({len(self._edges)} edges)"

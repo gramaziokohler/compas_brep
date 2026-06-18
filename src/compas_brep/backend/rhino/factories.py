@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Union
+from typing import TYPE_CHECKING
+from typing import Any
 
 import Rhino  # type: ignore
 import Rhino.Geometry as rg  # type: ignore
@@ -27,48 +28,57 @@ from .conversion import brep_to_rhino
 from .conversion import nurbs_curve_to_rhino
 from .conversion import rhino_to_brep
 
+if TYPE_CHECKING:
+    from compas.geometry import Box
+    from compas.geometry import Cone
+    from compas.geometry import Cylinder
+    from compas.datastructures import Mesh
+    from compas.geometry import Sphere
+    from compas.geometry import Torus
+    from compas_brep.brep import Brep
+
 # =============================================================================
 # Primitive constructors
 # =============================================================================
 
 
-def make_box(box):
+def make_box(box: Box) -> Brep:
     """Create a Brep from a COMPAS Box using Rhino."""
     rhino_box = box_to_rhino(box)
     return rhino_to_brep(rhino_box.ToBrep())
 
 
-def make_cylinder(cylinder):
+def make_cylinder(cylinder: Cylinder) -> Brep:
     """Create a Brep from a COMPAS Cylinder using Rhino."""
     rhino_cylinder = cylinder_to_rhino(cylinder)
     return rhino_to_brep(rhino_cylinder.ToBrep(True, True))
 
 
-def make_sphere(sphere):
+def make_sphere(sphere: Sphere) -> Brep:
     """Create a Brep from a COMPAS Sphere using Rhino."""
     rhino_sphere = sphere_to_rhino(sphere)
     return rhino_to_brep(rhino_sphere.ToBrep())
 
 
-def make_cone(cone):
+def make_cone(cone: Cone) -> Brep:
     """Create a Brep from a COMPAS Cone using Rhino."""
     rhino_cone = cone_to_rhino(cone)
     return rhino_to_brep(rhino_cone.ToBrep(True))
 
 
-def make_torus(torus):
+def make_torus(torus: Torus) -> Brep:
     """Create a Brep from a COMPAS Torus using Rhino."""
     rhino_torus = torus_to_rhino(torus)
     return rhino_to_brep(rhino_torus.ToBrep())
 
 
-def make_from_mesh(mesh):
+def make_from_mesh(mesh: Mesh) -> Brep:
     """Create a Brep from a COMPAS Mesh using Rhino."""
     rhino_mesh = mesh_to_rhino(mesh)
     return rhino_to_brep(Rhino.Geometry.Brep.CreateFromMesh(rhino_mesh, True))
 
 
-def _to_rhino_curve(curve_or_profile: Union[Polyline, Polygon, Curve]):
+def _to_rhino_curve(curve_or_profile: Polyline | Polygon | Curve) -> Any:
     if isinstance(curve_or_profile, (Polyline, Polygon)):
         points = curve_or_profile.points  # type: ignore
         polyline = Polyline(points + [points[0]])
@@ -79,7 +89,7 @@ def _to_rhino_curve(curve_or_profile: Union[Polyline, Polygon, Curve]):
     raise TypeError(f"No idea what to do with a: {type(curve_or_profile)}")
 
 
-def make_extrusion(curve_or_profile: Union[Polyline, Polygon, Curve], vector: Vector, cap_ends: bool = True):
+def make_extrusion(curve_or_profile: Polyline | Polygon | Curve, vector: Vector, cap_ends: bool = True) -> Brep:
     """Create a Brep by extruding a curve/profile along a vector."""
 
     rhino_curve = _to_rhino_curve(curve_or_profile)
@@ -99,7 +109,7 @@ def make_extrusion(curve_or_profile: Union[Polyline, Polygon, Curve], vector: Ve
     return rhino_to_brep(rhino_brep)
 
 
-def make_loft(profiles):
+def make_loft(profiles: list[Any]) -> Brep:
     """Create a Brep by lofting through curves."""
     rhino_curves = []
     for profile in profiles:
@@ -125,7 +135,7 @@ def make_loft(profiles):
     return rhino_to_brep(results[0])
 
 
-def from_native(native_brep):
+def from_native(native_brep: Any) -> Brep:
     """Create a Brep from a native Rhino.Geometry.Brep."""
     return rhino_to_brep(native_brep)
 
@@ -135,7 +145,7 @@ def from_native(native_brep):
 # =============================================================================
 
 
-def rhino_sweep(profile, path):
+def rhino_sweep(profile: Brep, path: Brep) -> Brep:
     """Create a Brep by sweeping a profile along a path."""
     profile_brep = brep_to_rhino(profile)
     path_brep = brep_to_rhino(path)
@@ -154,7 +164,7 @@ def rhino_sweep(profile, path):
     raise RuntimeError("Sweep operation failed")
 
 
-def rhino_pipe(path, radius):
+def rhino_pipe(path: Brep, radius: float) -> Brep:
     """Create a pipe by sweeping a circle along a path."""
     path_brep = brep_to_rhino(path)
     path_curves = [path_brep.Edges[i].EdgeCurve for i in range(path_brep.Edges.Count)]
@@ -166,7 +176,7 @@ def rhino_pipe(path, radius):
     raise RuntimeError("Pipe operation failed")
 
 
-def rhino_from_curves(curves):
+def rhino_from_curves(curves: list[Any]) -> Brep:
     """Create a Brep from planar boundary curves."""
     rhino_curves = []
     for curve in curves:
@@ -184,7 +194,7 @@ def rhino_from_curves(curves):
     raise RuntimeError("Failed to create Brep from curves")
 
 
-def rhino_from_breps(breps):
+def rhino_from_breps(breps: list[Brep]) -> Brep:
     """Join multiple Breps into one by sewing overlapping edges."""
     rhino_breps = [brep_to_rhino(b) for b in breps]
     joined = rg.Brep.JoinBreps(rhino_breps, 0.001)

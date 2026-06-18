@@ -49,11 +49,11 @@ class NurbsCurve(Data):
 
     Parameters
     ----------
-    name : str, optional
+    name
         The name of the curve.
     """
 
-    def __init__(self, name: str | None = None):
+    def __init__(self, name: str | None = None) -> None:
         super().__init__(name=name)
         self._points: list[Point] = []
         self._weights: list[float] = []
@@ -181,21 +181,16 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        points : list[Point]
+        points
             Control points.
-        weights : list[float]
+        weights
             Weights per control point.
-        knots : list[float]
+        knots
             Unique knot values.
-        mults : list[int]
+        mults
             Multiplicities per knot.
-        degree : int
+        degree
             Curve degree.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         if mults is None:
             mults = multiplicities
@@ -215,15 +210,10 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        points : list[Point]
+        points
             Control points.
-        degree : int
+        degree
             Curve degree.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         n = len(points)
         if n <= degree:
@@ -246,15 +236,10 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        points : list[Point]
+        points
             Points to interpolate.
-        degree : int
+        degree
             Curve degree.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         pts = np.array([[p.x, p.y, p.z] for p in points], dtype=float)
         n = len(points)
@@ -281,13 +266,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        line : Line
+        line
             The line.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         pts = [Point(line.start.x, line.start.y, line.start.z), Point(line.end.x, line.end.y, line.end.z)]
         return cls.from_parameters(pts, [1.0, 1.0], [0.0, 1.0], [2, 2], degree=1)
@@ -298,13 +278,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        circle : Circle
+        circle
             The circle.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         return cls._conic_from_radii(circle.radius, circle.radius, circle.frame)
 
@@ -314,13 +289,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        ellipse : Ellipse
+        ellipse
             The ellipse.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         return cls._conic_from_radii(ellipse.major, ellipse.minor, ellipse.frame)
 
@@ -362,13 +332,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        t : float
+        t
             Parameter value.
-
-        Returns
-        -------
-        Point
-
         """
         xyz = self._evaluate_one(t)
         return Point(float(xyz[0]), float(xyz[1]), float(xyz[2]))
@@ -380,13 +345,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        t : float
+        t
             Parameter value.
-
-        Returns
-        -------
-        Vector
-
         """
         a, b = self.domain
         h = (b - a) * 1e-7
@@ -402,13 +362,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        t : float
+        t
             Parameter value.
-
-        Returns
-        -------
-        Frame
-
         """
         pt = self.point_at(t)
         tan = self.tangent_at(t)
@@ -430,13 +385,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        n : int
+        n
             Number of segments.
-
-        Returns
-        -------
-        Polyline
-
         """
         a, b = self.domain
         ts = np.linspace(a, b, n + 1)
@@ -448,13 +398,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        n : int
+        n
             Number of segments.
-
-        Returns
-        -------
-        list[Line]
-
         """
         poly = self.to_polyline(n)
         lines: list[Line] = []
@@ -472,9 +417,8 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        transformation : Transformation
+        transformation
             The transformation to apply.
-
         """
         for pt in self._points:
             pt.transform(transformation)
@@ -485,26 +429,15 @@ class NurbsCurve(Data):
 
         Parameters
         ----------
-        transformation : Transformation
+        transformation
             The transformation to apply.
-
-        Returns
-        -------
-        NurbsCurve
-
         """
         c = self.copy()
         c.transform(transformation)
         return c
 
     def copy(self) -> NurbsCurve:
-        """Return a deep copy.
-
-        Returns
-        -------
-        NurbsCurve
-
-        """
+        """Return a deep copy."""
         curve = NurbsCurve()
         curve._points = [Point(p.x, p.y, p.z) for p in self._points]
         curve._weights = list(self._weights)

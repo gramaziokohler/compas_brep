@@ -9,18 +9,23 @@ All public interface inputs and outputs are COMPAS types — no backend types le
 
 from __future__ import annotations
 
+from typing import Any
+
 from compas.data import Data
 from compas.datastructures import Mesh
 from compas.geometry import Box
 from compas.geometry import Cylinder
 from compas.geometry import Frame
+from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polygon
 from compas.geometry import Polyline
 from compas.geometry import Sphere
+from compas.geometry import Transformation
 from compas.geometry import Vector
 
+from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
@@ -71,6 +76,8 @@ from compas_brep.operations import make_pipe
 from compas_brep.operations import make_sphere
 from compas_brep.operations import make_sweep
 from compas_brep.operations import make_torus
+from compas_brep.surfaces import NurbsSurface
+from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 
@@ -85,7 +92,7 @@ class Brep(Data):
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls)
 
-    def __init__(self, name=None):
+    def __init__(self, name: str | None = None) -> None:
         super().__init__(name=name)
         self._vertices: list[BrepVertex] = []
         self._edges: list[BrepEdge] = []
@@ -95,7 +102,7 @@ class Brep(Data):
         self._frame: Frame = Frame.worldXY()
         # Native backend object cache — set by the active backend (OCC/Rhino)
         # after every constructor or operation. Always the source of truth.
-        self._native_brep = None
+        self._native_brep: Any = None
         # Tessellation cache — populated by to_tesselation(), serialized
         # alongside the Brep data so visualization works without a backend.
         # Set cache_tessellation=False to exclude it from serialization.
@@ -123,23 +130,17 @@ class Brep(Data):
         brep._loops = []
         brep._faces = []
         brep._topology_loaded = False
-        # Restore tessellation cache if present (avoids re-tessellation).
-        tess = data.get("tessellation")
-        if tess is not None:
-            mesh = Mesh.from_vertices_and_faces(tess["vertices"], tess["faces"])
-            boundaries = [Polyline([Point(*p) for p in b]) for b in tess["boundaries"]]
-            brep._tessellation_cache = (mesh, boundaries)
         return brep
 
     # =========================================================================
     # Dunder methods
     # =========================================================================
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         self._ensure_topology()
         return f"Brep(vertices={len(self._vertices)}, edges={len(self._edges)}, faces={len(self._faces)})"
 
-    def __str__(self):
+    def __str__(self) -> str:
         self._ensure_topology()
         return (
             "Brep\n"
@@ -196,17 +197,17 @@ class Brep(Data):
         return [v.point for v in self._vertices]
 
     @property
-    def curves(self):
+    def curves(self) -> list[Line | NurbsCurve]:
         self._ensure_topology()
         return [e.curve for e in self._edges]
 
     @property
-    def surfaces(self):
+    def surfaces(self) -> list[Plane | NurbsSurface]:
         self._ensure_topology()
         return [f.surface for f in self._faces]
 
     @property
-    def trims(self):
+    def trims(self) -> list[BrepTrim]:
         self._ensure_topology()
         all_trims = []
         for face in self._faces:
@@ -285,33 +286,28 @@ class Brep(Data):
         return False
 
     @property
-    def native_brep(self):
+    def native_brep(self) -> Any:
         return self._native_brep
 
     @property
-    def orientation(self):
+    def orientation(self) -> int:
         return 0  # FORWARD
 
     @property
-    def type(self):
+    def type(self) -> int:
         return 7  # SHAPE
 
     @property
-    def shells(self):
+    def shells(self) -> list[Brep]:
         return [self]
 
     @property
-    def solids(self):
+    def solids(self) -> list[Brep]:
         return [self] if self.is_solid else []
 
     @property
-    def aabb(self):
-        """Axis-aligned bounding box as a :class:`compas.geometry.Box`.
-
-        Returns
-        -------
-        :class:`compas.geometry.Box`
-        """
+    def aabb(self) -> Box:
+        """Axis-aligned bounding box of this Brep."""
         return brep_aabb(self)
 
     # =========================================================================
@@ -348,21 +344,21 @@ class Brep(Data):
         return make_sphere(sphere)
 
     @classmethod
-    def from_torus(cls, torus) -> Brep:
+    def from_torus(cls, torus: Any) -> Brep:
         """Create a Brep from a COMPAS Torus."""
         return make_torus(torus)
 
     @classmethod
-    def from_extrusion(cls, profile, vector: Vector, cap_ends: bool = True) -> Brep:
+    def from_extrusion(cls, profile: Any, vector: Vector, cap_ends: bool = True) -> Brep:
         """Create a Brep by extruding a profile along a vector.
 
         Parameters
         ----------
-        profile : BrepFace, Polygon, or curve
-            The profile to extrude.
-        vector : Vector
+        profile
+            The profile to extrude (BrepFace, Polygon, or curve).
+        vector
             The extrusion direction and magnitude.
-        cap_ends : bool, optional
+        cap_ends
             If True, cap the top and bottom. Passed to the backend where supported.
         """
         return make_extrusion(profile, vector)
@@ -414,98 +410,98 @@ class Brep(Data):
         return cls.from_polygons([Polygon(corners)])
 
     @classmethod
-    def from_loft(cls, curves) -> Brep:
+    def from_loft(cls, curves: list[Any]) -> Brep:
         """Create a Brep by lofting between profile curves.
 
         Delegates to the active backend (OCC or Rhino) for exact NURBS lofting.
 
         Parameters
         ----------
-        curves : list
+        curves
             List of NurbsCurve profiles.
         """
         return make_loft(curves)
 
     @classmethod
-    def from_cone(cls, cone) -> Brep:
-        """Create a Brep from a COMPAS Cone.
-
-        Parameters
-        ----------
-        cone : :class:`compas.geometry.Cone`
-        """
+    def from_cone(cls, cone: Any) -> Brep:
+        """Create a Brep from a COMPAS Cone."""
         return make_cone(cone)
 
     @classmethod
-    def from_native(cls, native_brep) -> Brep:
+    def from_native(cls, native_brep: Any) -> Brep:
         """Create a Brep from a native backend object (OCC TopoDS_Shape or Rhino.Geometry.Brep).
 
         Parameters
         ----------
-        native_brep : object
+        native_brep
             A native OCC or Rhino brep object.
         """
         return make_from_native(native_brep)
 
     @classmethod
-    def from_sweep(cls, profile, path) -> Brep:
+    def from_sweep(cls, profile: Brep, path: Brep) -> Brep:
         """Create a Brep by sweeping a profile along a path.
 
         Parameters
         ----------
-        profile : Brep
+        profile
             The profile to sweep.
-        path : Brep
+        path
             The path to sweep along.
         """
         return make_sweep(profile, path)
 
     @classmethod
-    def from_pipe(cls, path, radius: float) -> Brep:
+    def from_pipe(cls, path: Brep, radius: float) -> Brep:
         """Create a pipe Brep by sweeping a circle along a path.
 
         Parameters
         ----------
-        path : Brep
+        path
             The path curve (as a Brep with edges).
-        radius : float
+        radius
             The pipe radius.
         """
         return make_pipe(path, radius)
 
     @classmethod
-    def from_curves(cls, curves) -> Brep:
+    def from_curves(cls, curves: list[Any]) -> Brep:
         """Create a Brep from planar boundary curves.
 
         Parameters
         ----------
-        curves : list
+        curves
             List of curves defining a planar face boundary.
         """
         return make_from_curves(curves)
 
     @classmethod
-    def from_breps(cls, breps) -> Brep:
+    def from_breps(cls, breps: list[Brep]) -> Brep:
         """Join multiple Breps into one by sewing overlapping edges.
 
         Parameters
         ----------
-        breps : list[Brep]
+        breps
             Breps to join.
         """
         return make_from_breps(breps)
 
     @classmethod
-    def from_surface(cls, surface, domain_u=None, domain_v=None) -> Brep:
+    def from_surface(
+        cls,
+        surface: NurbsSurface,
+        domain_u: tuple[float, float] | None = None,
+        domain_v: tuple[float, float] | None = None,
+    ) -> Brep:
         """Create a Brep from a NURBS surface.
 
         Parameters
         ----------
-        surface : :class:`compas_brep.surfaces.nurbs.NurbsSurface`
+        surface
             The surface.
-        domain_u : tuple[float, float], optional
+        domain_u
             U parameter domain.
-        domain_v : tuple[float, float], optional
+        domain_v
             V parameter domain.
         """
         return make_from_surface(surface, domain_u, domain_v)
@@ -516,7 +512,7 @@ class Brep(Data):
 
         Parameters
         ----------
-        filepath : str
+        filepath
             Path to the .step or .stp file.
         """
         return brep_from_step(filepath)
@@ -527,7 +523,7 @@ class Brep(Data):
 
         Parameters
         ----------
-        filepath : str
+        filepath
             Path to the .igs or .iges file.
         """
         return brep_from_iges(filepath)
@@ -541,13 +537,8 @@ class Brep(Data):
 
         Parameters
         ----------
-        plane : Plane
+        plane
             The cutting plane.
-
-        Returns
-        -------
-        list[Polyline]
-            Intersection polylines.
         """
         return brep_slice(self, plane)
 
@@ -556,13 +547,8 @@ class Brep(Data):
 
         Parameters
         ----------
-        cutter : Brep
+        cutter
             The cutting Brep.
-
-        Returns
-        -------
-        list[Brep]
-            List of resulting Brep parts.
         """
         return brep_split(self, cutter)
 
@@ -571,13 +557,8 @@ class Brep(Data):
 
         Parameters
         ----------
-        plane : Plane
+        plane
             The trimming plane. The side the normal points away from is kept.
-
-        Returns
-        -------
-        Brep
-            The trimmed Brep.
         """
         return brep_trimmed(self, plane)
 
@@ -586,50 +567,42 @@ class Brep(Data):
 
         Parameters
         ----------
-        plane : Plane
+        plane
             The trimming plane.
         """
         self._replace_from(self.trimmed(plane))
 
-    def contains(self, obj) -> bool:
+    def contains(self, obj: Point) -> bool:
         """Check if a point is contained inside this solid Brep.
 
         Parameters
         ----------
-        obj : Point
+        obj
             The point to test.
-
-        Returns
-        -------
-        bool
         """
         return brep_contains(self, obj)
 
-    def fillet(self, radius: float, edges=None) -> None:
+    def fillet(self, radius: float, edges: list[int] | None = None) -> None:
         """Fillet edges in-place.
 
         Parameters
         ----------
-        radius : float
+        radius
             The fillet radius.
-        edges : list[int], optional
+        edges
             Indices of edges to fillet. If None, fillets all edges.
         """
         self._replace_from(self.filleted(radius, edges))
 
-    def filleted(self, radius: float, edges=None) -> Brep:
+    def filleted(self, radius: float, edges: list[int] | None = None) -> Brep:
         """Return a filleted copy of this Brep.
 
         Parameters
         ----------
-        radius : float
+        radius
             The fillet radius.
-        edges : list[int], optional
+        edges
             Indices of edges to fillet. If None, fillets all edges.
-
-        Returns
-        -------
-        Brep
         """
         return brep_fillet(self, radius, edges)
 
@@ -638,31 +611,22 @@ class Brep(Data):
 
         Parameters
         ----------
-        distance : float
+        distance
             The offset distance (positive = outward, negative = inward).
-
-        Returns
-        -------
-        Brep
         """
         return brep_offset(self, distance)
 
-    def overlap(self, other: Brep, deflection=None, tolerance: float = 0.0):
+    def overlap(self, other: Brep, deflection: float | None = None, tolerance: float = 0.0) -> Brep:
         """Compute the overlap between this Brep and another.
 
         Parameters
         ----------
-        other : Brep
+        other
             The other Brep.
-        deflection : float, optional
+        deflection
             Linear deflection for mesh approximation.
-        tolerance : float, optional
+        tolerance
             Tolerance for overlap detection.
-
-        Returns
-        -------
-        Brep
-            The overlapping region.
         """
         return brep_overlap(self, other, deflection, tolerance)
 
@@ -690,39 +654,30 @@ class Brep(Data):
         """Flip face orientations of this Brep in-place."""
         self._replace_from(brep_flip(self))
 
-    def transform(self, matrix) -> None:
+    def transform(self, matrix: Transformation) -> None:
         """Transform this Brep in-place by a transformation matrix.
 
         Parameters
         ----------
-        matrix : :class:`compas.geometry.Transformation`
+        matrix
             The transformation to apply.
         """
         self._replace_from(brep_transform(self, matrix))
 
-    def transformed(self, matrix) -> Brep:
+    def transformed(self, matrix: Transformation) -> Brep:
         """Return a transformed copy of this Brep.
 
         Parameters
         ----------
-        matrix : :class:`compas.geometry.Transformation`
+        matrix
             The transformation to apply.
-
-        Returns
-        -------
-        Brep
         """
         copy = self.copy()
         copy.transform(matrix)
         return copy
 
     def copy(self) -> Brep:
-        """Return a deep copy of this Brep.
-
-        Returns
-        -------
-        Brep
-        """
+        """Return a deep copy of this Brep."""
         return brep_copy(self)
 
     def contours(self, planes: list[Plane]) -> list[list[Polyline]]:
@@ -730,13 +685,8 @@ class Brep(Data):
 
         Parameters
         ----------
-        planes : list[Plane]
+        planes
             The slicing planes.
-
-        Returns
-        -------
-        list[list[Polyline]]
-            For each plane, a list of intersection polylines.
         """
         return [self.slice(plane) for plane in planes]
 
@@ -749,7 +699,7 @@ class Brep(Data):
 
         Parameters
         ----------
-        filepath : str
+        filepath
             Path to the output .step or .stp file.
         """
         brep_to_step(self, filepath, **kwargs)
@@ -759,7 +709,7 @@ class Brep(Data):
 
         Parameters
         ----------
-        filepath : str
+        filepath
             Path to the output .stl file.
         """
         brep_to_stl(self, filepath, **kwargs)
@@ -769,7 +719,7 @@ class Brep(Data):
 
         Parameters
         ----------
-        filepath : str
+        filepath
             Path to the output .igs or .iges file.
         """
         brep_to_iges(self, filepath)
@@ -799,12 +749,8 @@ class Brep(Data):
 
         Parameters
         ----------
-        *breps : Brep
+        *breps
             Two or more Breps to union.
-
-        Returns
-        -------
-        Brep
         """
         if len(breps) < 2:
             raise ValueError("Need at least 2 breps")
@@ -824,9 +770,9 @@ class Brep(Data):
 
         Parameters
         ----------
-        u : int, optional
+        u
             Resolution for tessellation.
-        v : int, optional
+        v
             Unused, kept for interface compatibility.
         """
         mesh, _ = brep_tessellate(self, n=u)
@@ -840,9 +786,9 @@ class Brep(Data):
 
         Parameters
         ----------
-        precision : float, optional
+        precision
             Unused, kept for interface compatibility.
-        n : int, optional
+        n
             Resolution for tessellation.
         """
         if self._tessellation_cache is not None:
@@ -855,7 +801,12 @@ class Brep(Data):
         """Convert each face to a Polygon."""
         return [face.to_polygon() for face in self.faces]
 
-    def to_tesselation(self, linear_deflection: float = 0.1, n: int = 16, n_curves: int = 64) -> tuple[Mesh, list[Polyline]]:
+    def to_tesselation(
+        self,
+        linear_deflection: float = 0.1,
+        n: int = 16,
+        n_curves: int = 64,
+    ) -> tuple[Mesh, list[Polyline]]:
         """Create a tessellation of the Brep for visualization.
 
         Returns a triangulated mesh and a list of boundary polylines.
@@ -866,17 +817,12 @@ class Brep(Data):
 
         Parameters
         ----------
-        linear_deflection : float, optional
+        linear_deflection
             Linear deflection passed to the backend tessellator.
-        n : int, optional
+        n
             Resolution for face tessellation.
-        n_curves : int, optional
+        n_curves
             Number of samples per curved edge for boundary polylines.
-
-        Returns
-        -------
-        tuple[Mesh, list[Polyline]]
-            A triangulated mesh and edge boundary polylines.
         """
         if self._tessellation_cache is not None:
             return self._tessellation_cache
@@ -888,7 +834,7 @@ class Brep(Data):
     # Topology queries
     # =========================================================================
 
-    def vertex_neighbors(self, vertex):
+    def vertex_neighbors(self, vertex: BrepVertex) -> list[BrepVertex]:
         neighbors = set()
         for edge in self.edges:
             if edge.first_vertex is vertex:
@@ -897,31 +843,28 @@ class Brep(Data):
                 neighbors.add(edge.first_vertex)
         return list(neighbors)
 
-    def vertex_edges(self, vertex):
+    def vertex_edges(self, vertex: BrepVertex) -> list[BrepEdge]:
         return [e for e in self.edges if e.first_vertex is vertex or e.last_vertex is vertex]
 
-    def vertex_faces(self, vertex):
+    def vertex_faces(self, vertex: BrepVertex) -> list[BrepFace]:
         return [f for f in self.faces if vertex in f.vertices]
 
-    def edge_faces(self, edge):
+    def edge_faces(self, edge: BrepEdge) -> list[BrepFace]:
         return [f for f in self.faces if edge in f.edges]
 
-    def edge_loop(self, edge):
+    def edge_loop(self, edge: BrepEdge) -> BrepLoop | None:
         for loop in self.loops:
             if edge in loop.edges:
                 return loop
         return None
 
-    def edge_loops(self, edge):
+    def edge_loops(self, edge: BrepEdge) -> list[BrepLoop]:
         """Get all loops that contain this edge.
 
         Parameters
         ----------
-        edge : BrepEdge
-
-        Returns
-        -------
-        list[BrepLoop]
+        edge
+            The edge to query.
         """
         return [loop for loop in self.loops if edge in loop.edges]
 
@@ -929,7 +872,7 @@ class Brep(Data):
     # Internal helpers
     # =========================================================================
 
-    def _invalidate_native(self):
+    def _invalidate_native(self) -> None:
         """Clear the native cache (e.g. after deserialization before rebuild)."""
         self._native_brep = None
         self._tessellation_cache = None

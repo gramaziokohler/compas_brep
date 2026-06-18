@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from typing import Any
 from warnings import warn
 
+from compas.datastructures import Mesh
 from compas.geometry import Point
+from compas.geometry import Vector
 from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
@@ -28,6 +32,15 @@ from OCP.TopoDS import TopoDS
 
 from compas_brep.curves import NurbsCurve
 
+if TYPE_CHECKING:
+    from compas.geometry import Box
+    from compas.geometry import Cone
+    from compas.geometry import Cylinder
+    from compas.geometry import Sphere
+    from compas.geometry import Torus
+    from compas_brep.brep import Brep
+    from compas_brep.surfaces import NurbsSurface
+
 from .conversion import _frame_to_ax2
 from .conversion import _loop_to_occ_wire
 from .conversion import _nurbs_curve_to_occ
@@ -41,7 +54,7 @@ from .conversion import occ_to_brep
 # =============================================================================
 
 
-def make_box(box):
+def make_box(box: Box) -> Brep:
     """Create a Brep from a COMPAS Box using OCC.
 
     COMPAS Box is centered at its frame. OCC's MakeBox builds from a corner point
@@ -58,7 +71,7 @@ def make_box(box):
     return occ_to_brep(shape)
 
 
-def make_cylinder(cylinder):
+def make_cylinder(cylinder: Cylinder) -> Brep:
     """Create a Brep from a COMPAS Cylinder using OCC.
 
     COMPAS Cylinder is centered at its frame. OCC's MakeCylinder builds from
@@ -75,28 +88,28 @@ def make_cylinder(cylinder):
     return occ_to_brep(shape)
 
 
-def make_sphere(sphere):
+def make_sphere(sphere: Sphere) -> Brep:
     """Create a Brep from a COMPAS Sphere using OCC."""
     center = sphere.frame.point
     shape = BRepPrimAPI_MakeSphere(gp_Pnt(center.x, center.y, center.z), sphere.radius).Shape()
     return occ_to_brep(shape)
 
 
-def make_cone(cone):
+def make_cone(cone: Cone) -> Brep:
     """Create a Brep from a COMPAS Cone using OCC."""
     ax2 = _frame_to_ax2(cone.frame)
     shape = BRepPrimAPI_MakeCone(ax2, cone.radius, 0.0, cone.height).Shape()
     return occ_to_brep(shape)
 
 
-def make_torus(torus):
+def make_torus(torus: Torus) -> Brep:
     """Create a Brep from a COMPAS Torus using OCC."""
     ax2 = _frame_to_ax2(torus.frame)
     shape = BRepPrimAPI_MakeTorus(ax2, torus.radius_axis, torus.radius_pipe).Shape()
     return occ_to_brep(shape)
 
 
-def make_from_mesh(mesh):
+def make_from_mesh(mesh: Mesh) -> Brep:
     """Create a Brep from a COMPAS Mesh by sewing polygon faces.
 
     Returns a solid if the mesh is closed, otherwise a shell.
@@ -105,8 +118,8 @@ def make_from_mesh(mesh):
 
     for fkey in mesh.faces():
         vertices = mesh.face_vertices(fkey)
-        points = [mesh.vertex_coordinates(v) for v in vertices]
-        wire = _points_to_occ_wire([Point(*p) for p in points])
+        raw = [mesh.vertex_coordinates(v) for v in vertices]
+        wire = _points_to_occ_wire([Point(*p) for p in raw if p is not None])
         face = BRepBuilderAPI_MakeFace(wire, True).Face()
         sewing.Add(face)
 
@@ -121,7 +134,7 @@ def make_from_mesh(mesh):
     return occ_to_brep(sewn)
 
 
-def make_extrusion(curve_or_profile, vector, cap_ends=True):
+def make_extrusion(curve_or_profile: Any, vector: Vector, cap_ends: bool = True) -> Brep:
     """Create a Brep by extruding a curve/profile along a vector."""
     from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
 
@@ -155,7 +168,7 @@ def make_extrusion(curve_or_profile, vector, cap_ends=True):
     return occ_to_brep(shape)
 
 
-def make_loft(curves):
+def make_loft(curves: list[Any]) -> Brep:
     """Create a Brep by lofting through curves."""
     from OCP.BRepOffsetAPI import BRepOffsetAPI_ThruSections
 
@@ -177,7 +190,7 @@ def make_loft(curves):
     return occ_to_brep(loft.Shape())
 
 
-def from_native(native_shape):
+def from_native(native_shape: Any) -> Brep:
     """Create a Brep from a native OCC TopoDS_Shape."""
     return occ_to_brep(native_shape)
 
@@ -187,7 +200,7 @@ def from_native(native_shape):
 # =============================================================================
 
 
-def occ_sweep(profile, path):
+def occ_sweep(profile: Brep, path: Brep) -> Brep:
     """Create a Brep by sweeping a profile along a path."""
     from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipe
 
@@ -219,7 +232,7 @@ def occ_sweep(profile, path):
     return occ_to_brep(pipe.Shape())
 
 
-def occ_pipe(path, radius):
+def occ_pipe(path: Brep, radius: float) -> Brep:
     """Create a pipe by sweeping a circle along a path."""
     from OCP.BRepOffsetAPI import BRepOffsetAPI_MakePipe
     from OCP.GC import GC_MakeCircle
@@ -257,7 +270,7 @@ def occ_pipe(path, radius):
     return occ_to_brep(pipe.Shape())
 
 
-def occ_from_curves(curves):
+def occ_from_curves(curves: list[Any]) -> Brep:
     """Create a Brep from planar boundary curves."""
     wire_builder = BRepBuilderAPI_MakeWire()
     for curve in curves:
@@ -276,7 +289,7 @@ def occ_from_curves(curves):
     return occ_to_brep(face.Shape())
 
 
-def occ_from_breps(breps):
+def occ_from_breps(breps: list[Brep]) -> Brep:
     """Join multiple Breps into one by sewing overlapping edges."""
     sewing = BRepBuilderAPI_Sewing()
     for b in breps:
@@ -285,7 +298,7 @@ def occ_from_breps(breps):
     return occ_to_brep(sewing.SewedShape())
 
 
-def occ_from_surface(surface, domain_u=None, domain_v=None):
+def occ_from_surface(surface: NurbsSurface, domain_u: tuple[float, float] | None = None, domain_v: tuple[float, float] | None = None) -> Brep:
     """Create a Brep from a NurbsSurface."""
     occ_surface = _nurbs_surface_to_occ(surface)
     if domain_u and domain_v:

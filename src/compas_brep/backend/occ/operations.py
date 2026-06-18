@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
@@ -45,12 +47,16 @@ from compas_brep.vertex import BrepVertex
 from .conversion import brep_to_occ
 from .conversion import occ_to_brep
 
+if TYPE_CHECKING:
+    from compas.geometry import Transformation
+    from compas_brep.brep import Brep
+
 # =============================================================================
 # Boolean operations
 # =============================================================================
 
 
-def boolean_difference(brep_a, brep_b):
+def boolean_difference(brep_a: Brep, brep_b: Brep) -> Brep:
     """Boolean subtraction: A - B."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
@@ -58,7 +64,7 @@ def boolean_difference(brep_a, brep_b):
     return occ_to_brep(op.Shape())
 
 
-def boolean_union(brep_a, brep_b):
+def boolean_union(brep_a: Brep, brep_b: Brep) -> Brep:
     """Boolean union: A + B."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
@@ -66,7 +72,7 @@ def boolean_union(brep_a, brep_b):
     return occ_to_brep(op.Shape())
 
 
-def boolean_intersection(brep_a, brep_b):
+def boolean_intersection(brep_a: Brep, brep_b: Brep) -> Brep:
     """Boolean intersection: A & B."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
@@ -79,7 +85,7 @@ def boolean_intersection(brep_a, brep_b):
 # =============================================================================
 
 
-def occ_trimmed(brep, plane):
+def occ_trimmed(brep: Brep, plane: Plane) -> Brep:
     """OCC implementation of brep.trimmed(plane)."""
 
     shape = brep_to_occ(brep)
@@ -98,7 +104,7 @@ def occ_trimmed(brep, plane):
     return occ_to_brep(result)
 
 
-def occ_split(brep, cutter):
+def occ_split(brep: Brep, cutter: Brep) -> list[Brep]:
     """OCC implementation of brep.split(cutter_brep).
 
     Splits a solid by a cutter Brep.  When the cutter is a planar face
@@ -158,7 +164,7 @@ def occ_split(brep, cutter):
     return results
 
 
-def occ_slice(brep, plane):
+def occ_slice(brep: Brep, plane: Plane) -> list[Polyline]:
     """OCC implementation of brep.slice(plane) — returns intersection polylines."""
 
     shape = brep_to_occ(brep)
@@ -188,7 +194,7 @@ def occ_slice(brep, plane):
     return polylines
 
 
-def occ_fillet(brep, radius, edges=None):
+def occ_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Brep:
     """Fillet edges of a Brep. If edges is None, fillet all edges."""
 
     shape = brep_to_occ(brep)
@@ -215,7 +221,7 @@ def occ_fillet(brep, radius, edges=None):
     return occ_to_brep(fillet.Shape())
 
 
-def occ_offset(brep, distance):
+def occ_offset(brep: Brep, distance: float) -> Brep:
     """Offset a Brep by a distance."""
 
     shape = brep_to_occ(brep)
@@ -224,7 +230,7 @@ def occ_offset(brep, distance):
     return occ_to_brep(offset.Shape())
 
 
-def occ_contains(brep, point):
+def occ_contains(brep: Brep, point: Point) -> bool:
     """Check if a point is contained inside a solid Brep."""
 
     shape = brep_to_occ(brep)
@@ -233,7 +239,7 @@ def occ_contains(brep, point):
     return state == TopAbs_IN or state == TopAbs_ON
 
 
-def occ_cap_planar_holes(brep):
+def occ_cap_planar_holes(brep: Brep) -> Brep:
     """Cap planar holes in a Brep."""
 
     shape = brep_to_occ(brep)
@@ -248,7 +254,7 @@ def occ_cap_planar_holes(brep):
         return occ_to_brep(sewn)
 
 
-def occ_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
+def occ_overlap(brep_a: Brep, brep_b: Brep, deflection: float | None = None, tolerance: float = 0.0) -> Brep:
     """Compute the overlap between two Breps, returning the common shape."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
@@ -257,7 +263,7 @@ def occ_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
     return result
 
 
-def occ_fix(brep):
+def occ_fix(brep: Brep) -> Brep:
     """Fix a Brep shape using ShapeFix."""
 
     shape = brep_to_occ(brep)
@@ -266,7 +272,7 @@ def occ_fix(brep):
     return occ_to_brep(fixer.Shape())
 
 
-def occ_heal(brep):
+def occ_heal(brep: Brep) -> Brep:
     """Heal a Brep shape (fix + sew)."""
 
     shape = brep_to_occ(brep)
@@ -280,7 +286,7 @@ def occ_heal(brep):
     return occ_to_brep(sewing.SewedShape())
 
 
-def occ_sew(brep):
+def occ_sew(brep: Brep) -> Brep:
     """Sew a Brep shape."""
     shape = brep_to_occ(brep)
     sewing = BRepBuilderAPI_Sewing()
@@ -289,7 +295,7 @@ def occ_sew(brep):
     return occ_to_brep(sewing.SewedShape())
 
 
-def occ_make_solid(brep):
+def occ_make_solid(brep: Brep) -> Brep:
     """Convert a shell Brep to a solid."""
 
     shape = brep_to_occ(brep)
@@ -297,7 +303,7 @@ def occ_make_solid(brep):
     return occ_to_brep(solid.Shape())
 
 
-def occ_transform(brep, transformation):
+def occ_transform(brep: Brep, transformation: Transformation) -> Brep:
     """Transform a Brep by a COMPAS Transformation."""
 
     shape = brep_to_occ(brep)
@@ -320,20 +326,20 @@ def occ_transform(brep, transformation):
     return occ_to_brep(BRepBuilderAPI_Transform(shape, trsf, True).Shape())
 
 
-def occ_flip(brep):
+def occ_flip(brep: Brep) -> Brep:
     """Reverse the orientation of a Brep."""
     shape = brep_to_occ(brep)
     return occ_to_brep(shape.Reversed())
 
 
-def occ_copy(brep):
+def occ_copy(brep: Brep) -> Brep:
     """Create a deep copy of a Brep."""
 
     shape = brep_to_occ(brep)
     return occ_to_brep(BRepBuilderAPI_Copy(shape).Shape())
 
 
-def occ_rebuild(brep, data: dict) -> None:
+def occ_rebuild(brep: Brep, data: dict) -> None:
     """Rebuild native OCC shape from a STEP-inspired JSON data dict.
 
     Constructs Python topology from the data, then calls brep_to_occ to build

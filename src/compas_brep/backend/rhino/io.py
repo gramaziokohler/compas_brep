@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+from typing import Any
+from typing import Callable
+
 import Rhino  # type: ignore
 import Rhino.FileIO as rio  # type: ignore
 import System  # type: ignore
@@ -9,11 +13,14 @@ import System  # type: ignore
 from .conversion import brep_to_rhino
 from .conversion import rhino_to_brep
 
+if TYPE_CHECKING:
+    from compas_brep.brep import Brep
 
-def _invoke_on_ui(fn):
+
+def _invoke_on_ui(fn: Callable) -> Any:
     """Run fn on the Rhino UI thread and return its result (or raise its exception)."""
-    result = [None]
-    error = [None]
+    result: list[Any] = [None]
+    error: list[Exception | None] = [None]
 
     def wrapper():
         try:
@@ -27,7 +34,7 @@ def _invoke_on_ui(fn):
     return result[0]
 
 
-def rhino_to_step(brep, filepath, **kwargs):
+def rhino_to_step(brep: Brep, filepath: str, **kwargs: Any) -> None:
     """Export a Brep to a STEP file.
 
     Safe to call from any thread (GH solve thread, LAMCP bridge, etc.) —
@@ -55,7 +62,7 @@ def rhino_to_step(brep, filepath, **kwargs):
     _invoke_on_ui(_write)
 
 
-def rhino_from_step(filepath):
+def rhino_from_step(filepath: str) -> Brep:
     """Import a Brep from a STEP file.
 
     Safe to call from any thread — the doc read is marshalled to the UI thread.

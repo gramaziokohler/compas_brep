@@ -35,5 +35,5 @@ class NurbsCurveObject(ViewerGeometryObject, GeometryObject):
         return lines
 
     @property
-    def viewmesh(self):
+    def viewmesh(self) -> None:
         return None

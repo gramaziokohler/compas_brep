@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+from typing import Any
 
 from compas.geometry import Point
 
 if TYPE_CHECKING:
     from compas_brep.edge import BrepEdge
 
+from compas_brep.curves import NurbsCurve
 from compas_brep.vertex import BrepVertex
 
 
@@ -26,11 +28,11 @@ class BrepTrim:
         self,
         edge: BrepEdge,
         is_reversed: bool = False,
-        curve_2d=None,
-    ):
+        curve_2d: NurbsCurve | None = None,
+    ) -> None:
         self._edge = edge
         self._is_reversed = is_reversed
-        self._curve_2d = curve_2d  # NurbsCurve in UV space (pcurve), or None
+        self._curve_2d: NurbsCurve | None = curve_2d
 
     @property
     def edge(self) -> BrepEdge:
@@ -38,30 +40,30 @@ class BrepTrim:
         return self._edge
 
     @property
-    def curve(self):
+    def curve(self) -> NurbsCurve | None:
         """The 2D parametric curve in the face's UV space (pcurve)."""
         return self._curve_2d
 
     @curve.setter
-    def curve(self, value):
+    def curve(self, value: NurbsCurve | None) -> None:
         self._curve_2d = value
 
     @property
-    def curve_2d(self):
+    def curve_2d(self) -> NurbsCurve | None:
         """Alias for the 2D parametric curve (pcurve)."""
         return self._curve_2d
 
     @curve_2d.setter
-    def curve_2d(self, value):
+    def curve_2d(self, value: NurbsCurve | None) -> None:
         self._curve_2d = value
 
     @property
-    def curve_3d(self):
+    def curve_3d(self) -> Any:
         """The 3D curve from the underlying edge."""
         return self._edge.curve
 
     @property
-    def iso_status(self):
+    def iso_status(self) -> int:
         return 0  # NONE
 
     @property
@@ -88,14 +90,14 @@ class BrepTrim:
         return [self.start_vertex, self.end_vertex]
 
     @property
-    def native_trim(self):
+    def native_trim(self) -> BrepTrim:
         return self
 
     # =========================================================================
     # Sampling
     # =========================================================================
 
-    def sample_points(self, surface, n: int = 64) -> list[Point]:
+    def sample_points(self, surface: Any, n: int = 64) -> list[Point]:
         """Sample points along this trim for visualization.
 
         When a pcurve is available, samples via pcurve → surface evaluation
@@ -104,14 +106,10 @@ class BrepTrim:
 
         Parameters
         ----------
-        surface : Plane or NurbsSurface
+        surface
             The parent face's surface (needed for pcurve → 3D evaluation).
-        n : int, optional
+        n
             Number of segments. Defaults to 64.
-
-        Returns
-        -------
-        list[Point]
         """
         if self._curve_2d is not None and hasattr(surface, "point_at"):
             t_start, t_end = self._curve_2d.domain
@@ -142,7 +140,7 @@ class BrepTrim:
             data["pcurve"] = curve_2d.__data__
         return data
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         rev = " reversed" if self._is_reversed else ""
         pcurve = " +pcurve" if self._curve_2d else ""
         return f"BrepTrim({self.start_vertex.point} -> {self.end_vertex.point}{rev}{pcurve})"

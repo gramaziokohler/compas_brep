@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import Rhino  # type: ignore
 import Rhino.Geometry as rg  # type: ignore
 from compas.datastructures import Mesh
@@ -28,6 +30,10 @@ from compas_brep.vertex import BrepVertex
 from .conversion import brep_to_rhino
 from .conversion import rhino_to_brep
 
+if TYPE_CHECKING:
+    from compas.geometry import Transformation
+    from compas_brep.brep import Brep
+
 # =============================================================================
 # Boolean operations
 # =============================================================================
@@ -36,7 +42,7 @@ from .conversion import rhino_to_brep
 _RHINO_TOL = 1e-6  # Rhino boolean ops require at least 1e-6; TOL.absolute (1e-9) is too tight
 
 
-def boolean_difference(brep_a, brep_b):
+def boolean_difference(brep_a: Brep, brep_b: Brep) -> Brep:
     """Boolean subtraction: A - B."""
     shape_a = brep_to_rhino(brep_a)
     shape_b = brep_to_rhino(brep_b)
@@ -50,7 +56,7 @@ def boolean_difference(brep_a, brep_b):
     return rhino_to_brep(results[0])
 
 
-def boolean_union(brep_a, brep_b):
+def boolean_union(brep_a: Brep, brep_b: Brep) -> Brep:
     """Boolean union: A + B."""
     shape_a = brep_to_rhino(brep_a)
     shape_b = brep_to_rhino(brep_b)
@@ -63,7 +69,7 @@ def boolean_union(brep_a, brep_b):
     return rhino_to_brep(results[0])
 
 
-def boolean_intersection(brep_a, brep_b):
+def boolean_intersection(brep_a: Brep, brep_b: Brep) -> Brep:
     """Boolean intersection: A & B."""
     shape_a = brep_to_rhino(brep_a)
     shape_b = brep_to_rhino(brep_b)
@@ -82,7 +88,7 @@ def boolean_intersection(brep_a, brep_b):
 # =============================================================================
 
 
-def rhino_trimmed(brep, plane):
+def rhino_trimmed(brep: Brep, plane: Plane) -> Brep:
     """Rhino implementation of brep.trimmed(plane)."""
     shape = brep_to_rhino(brep)
     rhino_plane = plane_to_rhino(plane)
@@ -96,7 +102,7 @@ def rhino_trimmed(brep, plane):
     return rhino_to_brep(result)
 
 
-def rhino_split(brep, cutter):
+def rhino_split(brep: Brep, cutter: Brep) -> list[Brep]:
     """Rhino implementation of brep.split(cutter_brep)."""
     shape = brep_to_rhino(brep)
     cutter_shape = brep_to_rhino(cutter)
@@ -104,7 +110,7 @@ def rhino_split(brep, cutter):
     return [rhino_to_brep(r) for r in results]
 
 
-def rhino_slice(brep, plane):
+def rhino_slice(brep: Brep, plane: Plane) -> list[Polyline]:
     """Rhino implementation of brep.slice(plane) — returns intersection polylines."""
     shape = brep_to_rhino(brep)
     rhino_plane = plane_to_rhino(plane)
@@ -127,7 +133,7 @@ def rhino_slice(brep, plane):
     return polylines
 
 
-def rhino_fillet(brep, radius, edges=None):
+def rhino_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Brep:
     """Fillet edges of a Brep."""
     rhino_brep = brep_to_rhino(brep)
     if edges is not None:
@@ -149,7 +155,7 @@ def rhino_fillet(brep, radius, edges=None):
     raise BrepFilletError("Fillet operation failed")
 
 
-def rhino_cap_planar_holes(brep):
+def rhino_cap_planar_holes(brep: Brep) -> Brep:
     """Cap planar holes in a Brep."""
     rhino_brep = brep_to_rhino(brep)
     capped = rhino_brep.CapPlanarHoles(0.001)
@@ -158,7 +164,7 @@ def rhino_cap_planar_holes(brep):
     return brep
 
 
-def rhino_contains(brep, point):
+def rhino_contains(brep: Brep, point: Point) -> bool:
     """Check if a point is contained inside a solid Brep."""
     rhino_brep = brep_to_rhino(brep)
     if not rhino_brep.IsSolid:
@@ -167,21 +173,21 @@ def rhino_contains(brep, point):
     return rhino_brep.IsPointInside(pt, 0.001, False)
 
 
-def rhino_flip(brep):
+def rhino_flip(brep: Brep) -> Brep:
     """Flip face orientations of a Brep."""
     rhino_brep = brep_to_rhino(brep)
     rhino_brep.Flip()
     return rhino_to_brep(rhino_brep)
 
 
-def rhino_fix(brep):
+def rhino_fix(brep: Brep) -> Brep:
     """Repair a Brep."""
     rhino_brep = brep_to_rhino(brep)
     rhino_brep.Repair(0.001)
     return rhino_to_brep(rhino_brep)
 
 
-def rhino_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
+def rhino_tessellate(brep: Brep, linear_deflection: float = 0.1, n: int = 16, n_curves: int = 64) -> tuple[Mesh, list[Polyline]]:
     """Tessellate a Brep via Rhino.Geometry — returns (Mesh, list[Polyline])."""
     rhino_brep = brep_to_rhino(brep)
     params = rg.MeshingParameters.Default
@@ -225,12 +231,12 @@ def rhino_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     return mesh, boundaries
 
 
-def rhino_copy(brep):
+def rhino_copy(brep: Brep) -> Brep:
     """Return a deep copy of a Brep."""
     return rhino_to_brep(brep_to_rhino(brep).Duplicate())
 
 
-def rhino_transform(brep, transformation):
+def rhino_transform(brep: Brep, transformation: Transformation) -> Brep:
     """Apply a COMPAS Transformation to a Brep and return the result."""
     rhino_brep = brep_to_rhino(brep).Duplicate()
     m = transformation.matrix
@@ -243,19 +249,19 @@ def rhino_transform(brep, transformation):
     return rhino_to_brep(rhino_brep)
 
 
-def rhino_area(brep):
+def rhino_area(brep: Brep) -> float:
     """Return the surface area of a Brep."""
     mp = Rhino.Geometry.AreaMassProperties.Compute(brep_to_rhino(brep))
     return mp.Area if mp is not None else 0.0
 
 
-def rhino_volume(brep):
+def rhino_volume(brep: Brep) -> float:
     """Return the enclosed volume of a solid Brep."""
     mp = Rhino.Geometry.VolumeMassProperties.Compute(brep_to_rhino(brep))
     return abs(mp.Volume) if mp is not None else 0.0
 
 
-def rhino_centroid(brep):
+def rhino_centroid(brep: Brep) -> Point:
     """Return the area centroid of a Brep as a COMPAS Point."""
     mp = Rhino.Geometry.AreaMassProperties.Compute(brep_to_rhino(brep))
     if mp is None:
@@ -264,7 +270,7 @@ def rhino_centroid(brep):
     return Point(c.X, c.Y, c.Z)
 
 
-def rhino_aabb(brep):
+def rhino_aabb(brep: Brep) -> Box:
     """Return the axis-aligned bounding box of a Brep as a COMPAS Box."""
     bbox = brep_to_rhino(brep).GetBoundingBox(True)
     mn, mx = bbox.Min, bbox.Max
@@ -272,17 +278,17 @@ def rhino_aabb(brep):
     return Box(mx.X - mn.X, mx.Y - mn.Y, mx.Z - mn.Z, frame=Frame(Point(cx, cy, cz), [1, 0, 0], [0, 1, 0]))
 
 
-def rhino_is_solid(brep):
+def rhino_is_solid(brep: Brep) -> bool:
     """Return True if the Brep is a closed solid."""
     return brep_to_rhino(brep).IsSolid
 
 
-def rhino_is_valid(brep):
+def rhino_is_valid(brep: Brep) -> bool:
     """Return True if the Brep passes Rhino's validity check."""
     return brep_to_rhino(brep).IsValid
 
 
-def rhino_rebuild(brep, data: dict) -> None:
+def rhino_rebuild(brep: Brep, data: dict) -> None:
     """Rebuild native Rhino.Geometry.Brep from a STEP-inspired JSON data dict.
 
     Constructs Python topology from the data dict (same intermediate objects as

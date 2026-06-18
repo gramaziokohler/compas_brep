@@ -22,14 +22,14 @@ class BrepFace:
     def __init__(
         self,
         outer_loop: BrepLoop,
-        surface: Plane | None = None,
+        surface: Plane | NurbsSurface | None = None,
         is_reversed: bool = False,
         domain_u: tuple[float, float] | None = None,
         domain_v: tuple[float, float] | None = None,
-    ):
+    ) -> None:
         self._outer_loop = outer_loop
         self._inner_loops: list[BrepLoop] = []
-        self._surface = surface or self._compute_plane()
+        self._surface: Plane | NurbsSurface = surface or self._compute_plane()
         self._is_reversed = is_reversed
         self._domain_u = domain_u
         self._domain_v = domain_v
@@ -40,11 +40,11 @@ class BrepFace:
         return _plane_from_points(points)
 
     @property
-    def surface(self):
+    def surface(self) -> Plane | NurbsSurface:
         return self._surface
 
     @surface.setter
-    def surface(self, value):
+    def surface(self, value: Plane | NurbsSurface) -> None:
         self._surface = value
 
     @property
@@ -113,7 +113,7 @@ class BrepFace:
     def to_polygon(self) -> Polygon:
         return Polygon([v.point for v in self._outer_loop.vertices])
 
-    def add_loop(self, loop: BrepLoop):
+    def add_loop(self, loop: BrepLoop) -> None:
         self._inner_loops.append(loop)
 
     # =========================================================================
@@ -145,7 +145,7 @@ class BrepFace:
             face_data["domain_v"] = list(self._domain_v)
         return face_data
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         surface_type = "plane" if self.is_planar else "nurbs"
         return f"BrepFace({len(self.vertices)} vertices, {surface_type})"
 

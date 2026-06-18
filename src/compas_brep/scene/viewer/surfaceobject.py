@@ -27,13 +27,13 @@ class NurbsSurfaceObject(ViewerGeometryObject, GeometryObject):
 
     geometry: NurbsSurface
 
-    def __init__(self, n_u: int = 32, n_v: int = 32, **kwargs):
+    def __init__(self, n_u: int = 32, n_v: int = 32, **kwargs) -> None:
         super().__init__(**kwargs)
         self._n_u = n_u
         self._n_v = n_v
         self._viewmesh, self._boundaries = self._tessellate()
 
-    def _tessellate(self):
+    def _tessellate(self) -> tuple[Mesh, list[Polyline]]:
         """Tessellate the surface into a mesh and boundary polylines."""
         surface = self.geometry
         u_params = surface.space_u(self._n_u)

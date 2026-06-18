@@ -127,6 +127,41 @@ Plugin discovery: `__all_plugins__` in `compas_brep.__init__` lists both backend
 
 ---
 
+## Type Annotations
+
+All Python source files use Python 3.9-compatible type annotations.
+
+**Every file must start with:**
+
+```python
+from __future__ import annotations
+```
+
+This makes all annotations lazy strings at runtime, enabling Python 3.10+ syntax (`X | Y`, `list[X]`, `tuple[X, Y]`) to work safely on Python 3.9 (the Rhino venv).
+
+**Rules:**
+
+1. **Built-in generics** — use `list[X]`, `dict[K, V]`, `tuple[X, Y]`, not `List`, `Dict`, `Tuple` from `typing`.
+2. **Unions** — use `X | Y`, not `Union[X, Y]`. Use `X | None`, not `Optional[X]`.
+3. **Runtime-unavailable types** — import under `TYPE_CHECKING`:
+   ```python
+   from typing import TYPE_CHECKING
+   if TYPE_CHECKING:
+       from compas_brep.brep import Brep          # avoids circular import
+       from OCP.TopoDS import TopoDS_Shape        # avoids OCC import at module level
+   ```
+4. **Docstrings** — do **not** include types in `Parameters` or `Returns` sections. The signature is the authoritative source. Write:
+   ```
+   Parameters
+   ----------
+   filepath
+       Path to the STEP file.
+   ```
+   not `filepath : str`.  If a `Returns` section has only a type name and no description, remove the section entirely.
+5. **`Any`** — use sparingly for backend-specific native objects (`TopoDS_Shape`, `Rhino.Geometry.Brep`) when typing through `TYPE_CHECKING` is impractical.
+
+---
+
 ## Import Style Rules
 
 These rules are enforced by ruff (`isort.force-single-line = true`) and must be followed in all source and test files.
