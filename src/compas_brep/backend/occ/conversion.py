@@ -11,7 +11,6 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from typing import Any
 
-from compas.geometry import Frame
 from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
@@ -70,7 +69,6 @@ from .topology import OccBrepVertex
 if TYPE_CHECKING:
     from compas_brep.brep import Brep
     from compas_brep.face import BrepFace
-    from compas_brep.loop import BrepLoop
 
 
 # =============================================================================
@@ -703,9 +701,7 @@ def _build_nurbs_face(occ_surface: Any, face: BrepFace) -> Any:
     builder = BRep_Builder()
 
     # Check if all trims have pcurves
-    all_have_pcurves = (
-        all(t.curve_2d is not None for loop in face.loops for t in loop.trims) if face.outer_loop.trims else False
-    )
+    all_have_pcurves = all(t.curve_2d is not None for loop in face.loops for t in loop.trims) if face.outer_loop.trims else False
 
     if all_have_pcurves:
         # Build face with explicit pcurve-based trimming

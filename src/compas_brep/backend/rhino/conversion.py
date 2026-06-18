@@ -353,10 +353,8 @@ def _trim_nurbs_surface_from_2d(rhino_surface, loop):
     if not u_needs_trim and not v_needs_trim:
         return rhino_surface
 
-    u_interval = Rhino.Geometry.Interval(u_min if u_needs_trim else surf_u.Min,
-                                          u_max if u_needs_trim else surf_u.Max)
-    v_interval = Rhino.Geometry.Interval(v_min if v_needs_trim else surf_v.Min,
-                                          v_max if v_needs_trim else surf_v.Max)
+    u_interval = Rhino.Geometry.Interval(u_min if u_needs_trim else surf_u.Min, u_max if u_needs_trim else surf_u.Max)
+    v_interval = Rhino.Geometry.Interval(v_min if v_needs_trim else surf_v.Min, v_max if v_needs_trim else surf_v.Max)
     trimmed = rhino_surface.Trim(u_interval, v_interval)
     return trimmed if trimmed is not None else rhino_surface
 

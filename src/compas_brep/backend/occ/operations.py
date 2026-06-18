@@ -19,7 +19,6 @@ from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
-from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepClass3d import BRepClass3d_SolidClassifier
 from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
 from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
@@ -49,6 +48,7 @@ from .conversion import occ_to_brep
 
 if TYPE_CHECKING:
     from compas.geometry import Transformation
+
     from compas_brep.brep import Brep
 
 # =============================================================================
@@ -345,7 +345,6 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
     Constructs Python topology from the data, then calls brep_to_occ to build
     the native OCC shape, which is cached on brep._native_brep.
     """
-
 
     vertices = [BrepVertex(Point(*xyz)) for xyz in data["vertices"]]
 

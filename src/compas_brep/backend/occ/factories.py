@@ -38,11 +38,11 @@ if TYPE_CHECKING:
     from compas.geometry import Cylinder
     from compas.geometry import Sphere
     from compas.geometry import Torus
+
     from compas_brep.brep import Brep
     from compas_brep.surfaces import NurbsSurface
 
 from .conversion import _frame_to_ax2
-from .conversion import _loop_to_occ_wire
 from .conversion import _nurbs_curve_to_occ
 from .conversion import _nurbs_surface_to_occ
 from .conversion import _points_to_occ_wire
@@ -298,7 +298,11 @@ def occ_from_breps(breps: list[Brep]) -> Brep:
     return occ_to_brep(sewing.SewedShape())
 
 
-def occ_from_surface(surface: NurbsSurface, domain_u: tuple[float, float] | None = None, domain_v: tuple[float, float] | None = None) -> Brep:
+def occ_from_surface(
+    surface: NurbsSurface,
+    domain_u: tuple[float, float] | None = None,
+    domain_v: tuple[float, float] | None = None,
+) -> Brep:
     """Create a Brep from a NurbsSurface."""
     occ_surface = _nurbs_surface_to_occ(surface)
     if domain_u and domain_v:

@@ -32,6 +32,7 @@ from .conversion import rhino_to_brep
 
 if TYPE_CHECKING:
     from compas.geometry import Transformation
+
     from compas_brep.brep import Brep
 
 # =============================================================================
@@ -241,10 +242,22 @@ def rhino_transform(brep: Brep, transformation: Transformation) -> Brep:
     rhino_brep = brep_to_rhino(brep).Duplicate()
     m = transformation.matrix
     xform = Rhino.Geometry.Transform(1.0)
-    xform.M00 = m[0][0]; xform.M01 = m[0][1]; xform.M02 = m[0][2]; xform.M03 = m[0][3]  # noqa: E702
-    xform.M10 = m[1][0]; xform.M11 = m[1][1]; xform.M12 = m[1][2]; xform.M13 = m[1][3]  # noqa: E702
-    xform.M20 = m[2][0]; xform.M21 = m[2][1]; xform.M22 = m[2][2]; xform.M23 = m[2][3]  # noqa: E702
-    xform.M30 = m[3][0]; xform.M31 = m[3][1]; xform.M32 = m[3][2]; xform.M33 = m[3][3]  # noqa: E702
+    xform.M00 = m[0][0]
+    xform.M01 = m[0][1]
+    xform.M02 = m[0][2]
+    xform.M03 = m[0][3]  # noqa: E702
+    xform.M10 = m[1][0]
+    xform.M11 = m[1][1]
+    xform.M12 = m[1][2]
+    xform.M13 = m[1][3]  # noqa: E702
+    xform.M20 = m[2][0]
+    xform.M21 = m[2][1]
+    xform.M22 = m[2][2]
+    xform.M23 = m[2][3]  # noqa: E702
+    xform.M30 = m[3][0]
+    xform.M31 = m[3][1]
+    xform.M32 = m[3][2]
+    xform.M33 = m[3][3]  # noqa: E702
     rhino_brep.Transform(xform)
     return rhino_to_brep(rhino_brep)
 

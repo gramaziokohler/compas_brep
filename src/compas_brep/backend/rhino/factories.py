@@ -29,12 +29,13 @@ from .conversion import nurbs_curve_to_rhino
 from .conversion import rhino_to_brep
 
 if TYPE_CHECKING:
+    from compas.datastructures import Mesh
     from compas.geometry import Box
     from compas.geometry import Cone
     from compas.geometry import Cylinder
-    from compas.datastructures import Mesh
     from compas.geometry import Sphere
     from compas.geometry import Torus
+
     from compas_brep.brep import Brep
 
 # =============================================================================

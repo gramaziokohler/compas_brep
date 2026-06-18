@@ -13,7 +13,13 @@ from compas_brep.surfaces import NurbsSurface
 from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
-__all_plugins__ = ["compas_brep.scene", "compas_brep.backend.occ.plugins", "compas_brep.backend.rhino.plugins", "compas_brep.scene.viewer", "compas_brep.scene.rhino"]
+__all_plugins__ = [
+    "compas_brep.scene",
+    "compas_brep.backend.occ.plugins",
+    "compas_brep.backend.rhino.plugins",
+    "compas_brep.scene.viewer",
+    "compas_brep.scene.rhino",
+]
 
 __all__ = [
     "Brep",

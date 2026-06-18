@@ -24,27 +24,27 @@ They are **not** imported at package level so that ``compas_brep`` remains
 importable in any environment.
 """
 
-from .occ.topology import OccBrepEdge
-from .occ.topology import OccBrepFace
-from .occ.topology import OccBrepLoop
-from .occ.topology import OccBrepTrim
-from .occ.topology import OccBrepVertex
-from .rhino.topology import RhinoBrepEdge
-from .rhino.topology import RhinoBrepFace
-from .rhino.topology import RhinoBrepLoop
-from .rhino.topology import RhinoBrepTrim
-from .rhino.topology import RhinoBrepVertex
+from .occ.topology import OccBrepEdge as OccBrepEdge
+from .occ.topology import OccBrepFace as OccBrepFace
+from .occ.topology import OccBrepLoop as OccBrepLoop
+from .occ.topology import OccBrepTrim as OccBrepTrim
+from .occ.topology import OccBrepVertex as OccBrepVertex
+from .rhino.topology import RhinoBrepEdge as RhinoBrepEdge
+from .rhino.topology import RhinoBrepFace as RhinoBrepFace
+from .rhino.topology import RhinoBrepLoop as RhinoBrepLoop
+from .rhino.topology import RhinoBrepTrim as RhinoBrepTrim
+from .rhino.topology import RhinoBrepVertex as RhinoBrepVertex
 
 try:
-    from .occ.conversion import brep_to_occ
-    from .occ.conversion import occ_to_brep
+    from .occ.conversion import brep_to_occ as brep_to_occ
+    from .occ.conversion import occ_to_brep as occ_to_brep
 except ImportError:
     pass
 
 try:
-    from .rhino.conversion import brep_to_rhino
-    from .rhino.conversion import nurbs_curve_to_rhino
-    from .rhino.conversion import nurbs_surface_to_rhino
-    from .rhino.conversion import rhino_to_brep
+    from .rhino.conversion import brep_to_rhino as brep_to_rhino
+    from .rhino.conversion import nurbs_curve_to_rhino as nurbs_curve_to_rhino
+    from .rhino.conversion import nurbs_surface_to_rhino as nurbs_surface_to_rhino
+    from .rhino.conversion import rhino_to_brep as rhino_to_brep
 except ImportError:
     pass

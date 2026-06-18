@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 from typing import Any
-from typing import Callable
 
 import Rhino  # type: ignore
 import Rhino.FileIO as rio  # type: ignore

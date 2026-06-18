@@ -90,7 +90,7 @@ def test_roundtrip_cylinder():
     assert abs(restored.volume - expected) < 0.1
 
 
-def test_serialize_json_roundtrip():
+def test_serialize_json_roundtrip_cylinder():
     """Brep survives a full json.dumps/loads round-trip."""
     cyl = Cylinder(0.5, 2.0)
     brep = Brep.from_cylinder(cyl)
