@@ -58,6 +58,7 @@ from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
 from compas_brep.curves import NurbsCurve
+from compas_brep.errors import BrepError
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
 
@@ -320,9 +321,23 @@ def _extract_surface(occ_face: Any) -> Plane | NurbsSurface:
     surface_handle = BRep_Tool.Surface_s(occ_face)
     umin, umax, vmin, vmax = BRepTools.UVBounds_s(occ_face)
 
-    # Trim infinite surfaces to face bounds
-    trimmed = Geom_RectangularTrimmedSurface(surface_handle, umin, umax, vmin, vmax)
-    bspline = GeomConvert.SurfaceToBSplineSurface_s(trimmed)
+    # BRepTools.UVBounds_s can return tiny negative values on periodic surfaces due
+    # to floating-point drift. Clamp periodic bounds to [0, period] to avoid
+    # crashing Geom_RectangularTrimmedSurface with an out-of-domain lower bound.
+    if surface_handle.IsUPeriodic():
+        umin = max(umin, 0.0)
+        umax = min(umax, surface_handle.UPeriod())
+    if surface_handle.IsVPeriodic():
+        vmin = max(vmin, 0.0)
+        vmax = min(vmax, surface_handle.VPeriod())
+
+    try:
+        trimmed = Geom_RectangularTrimmedSurface(surface_handle, umin, umax, vmin, vmax)
+        bspline = GeomConvert.SurfaceToBSplineSurface_s(trimmed)
+    except Exception as exc:
+        # Never emit a silently-wrong dummy plane: a failed conversion must be loud
+        # so a bogus surface can't enter a Brep. (Was: return Plane(0,0,0).)
+        raise BrepError(f"Failed to extract surface from OCC face (type {stype}): {exc}") from exc
 
     return _bspline_surface_to_nurbs(bspline)
 
