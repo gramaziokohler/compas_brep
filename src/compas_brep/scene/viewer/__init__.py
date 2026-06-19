@@ -1,3 +1,4 @@
+from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
 from compas.geometry import SphericalSurface
 from compas.geometry import ToroidalSurface
@@ -23,4 +24,5 @@ def register_scene_objects():
     register(CylindricalSurface, AnalyticSurfaceObject, context="Viewer")
     register(SphericalSurface, AnalyticSurfaceObject, context="Viewer")
     register(ToroidalSurface, AnalyticSurfaceObject, context="Viewer")
+    register(ConicalSurface, AnalyticSurfaceObject, context="Viewer")
     print("Registered scene objects for compas_brep in the Viewer context.")

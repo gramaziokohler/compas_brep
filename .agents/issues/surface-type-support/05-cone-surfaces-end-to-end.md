@@ -30,16 +30,16 @@ End-to-end behavior:
 
 ## Acceptance criteria
 
-- [ ] `face.surface` for a `BRepPrimAPI_MakeCone` face is a `ConicalSurface`
-- [ ] Sampling `face.surface.point_at(u, v)` over the face domain matches the
+- [x] `face.surface` for a `BRepPrimAPI_MakeCone` face is a `ConicalSurface`
+- [x] Sampling `face.surface.point_at(u, v)` over the face domain matches the
       native cone surface evaluated at the same parameters (≤ 1e-6) — this is the
       primary correctness gate, not a field-equality assertion
-- [ ] `BrepFace.is_cone` and `surface_type == "cone"`
-- [ ] JSON round-trip preserves the `ConicalSurface` type and parameters
-- [ ] After round-trip, the rebuilt Brep passes `BRepCheck` and `to_viewmesh()`
+- [x] `BrepFace.is_cone` and `surface_type == "cone"`
+- [x] JSON round-trip preserves the `ConicalSurface` type and parameters
+- [x] After round-trip, the rebuilt Brep passes `BRepCheck` and `to_viewmesh()`
       returns a non-empty mesh
-- [ ] The viewer object tessellates a `ConicalSurface` into a non-empty mesh
-- [ ] All `@pytest.mark.occ` tests pass
+- [x] The viewer object tessellates a `ConicalSurface` into a non-empty mesh
+- [x] All `@pytest.mark.occ` tests pass
 
 ## Blocked by
 

@@ -11,6 +11,7 @@ compatibility with v4 documents; other types round-trip through their COMPAS
 
 from __future__ import annotations
 
+from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
 from compas.geometry import Plane
 from compas.geometry import Point
@@ -39,6 +40,8 @@ def surface_to_data(surface) -> dict:
         return {"type": "sphere", "data": surface.__data__}
     if isinstance(surface, ToroidalSurface):
         return {"type": "torus", "data": surface.__data__}
+    if isinstance(surface, ConicalSurface):
+        return {"type": "cone", "data": surface.__data__}
     raise TypeError(f"Cannot serialize surface of type {type(surface).__name__}")
 
 
@@ -59,4 +62,6 @@ def surface_from_data(data: dict):
         return SphericalSurface.__from_data__(payload)
     if tag == "torus":
         return ToroidalSurface.__from_data__(payload)
+    if tag == "cone":
+        return ConicalSurface.__from_data__(payload)
     raise ValueError(f"Unknown surface type tag: {tag!r}")

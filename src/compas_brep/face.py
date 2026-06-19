@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
 from compas.geometry import Plane
 from compas.geometry import Point
@@ -26,14 +27,14 @@ class BrepFace:
     def __init__(
         self,
         outer_loop: BrepLoop,
-        surface: Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | NurbsSurface | None = None,
+        surface: Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | ConicalSurface | NurbsSurface | None = None,
         is_reversed: bool = False,
         domain_u: tuple[float, float] | None = None,
         domain_v: tuple[float, float] | None = None,
     ) -> None:
         self._outer_loop = outer_loop
         self._inner_loops: list[BrepLoop] = []
-        self._surface: Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | NurbsSurface = surface or self._compute_plane()
+        self._surface: Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | ConicalSurface | NurbsSurface = surface or self._compute_plane()
         self._is_reversed = is_reversed
         self._domain_u = domain_u
         self._domain_v = domain_v
@@ -44,16 +45,16 @@ class BrepFace:
         return _plane_from_points(points)
 
     @property
-    def surface(self) -> Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | NurbsSurface:
+    def surface(self) -> Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | ConicalSurface | NurbsSurface:
         return self._surface
 
     @surface.setter
-    def surface(self, value: Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | NurbsSurface) -> None:
+    def surface(self, value: Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | ConicalSurface | NurbsSurface) -> None:
         self._surface = value
 
     @property
     def surface_type(self) -> str:
-        """Return the surface type as a string: 'plane', 'cylinder', 'sphere', 'torus', or 'nurbs'."""
+        """Return the surface type as a string: 'plane', 'cylinder', 'sphere', 'torus', 'cone', or 'nurbs'."""
         if isinstance(self.surface, Plane):
             return "plane"
         if isinstance(self.surface, CylindricalSurface):
@@ -62,6 +63,8 @@ class BrepFace:
             return "sphere"
         if isinstance(self.surface, ToroidalSurface):
             return "torus"
+        if isinstance(self.surface, ConicalSurface):
+            return "cone"
         if isinstance(self.surface, NurbsSurface):
             return "nurbs"
         return type(self.surface).__name__.lower()
@@ -97,6 +100,10 @@ class BrepFace:
     @property
     def is_torus(self) -> bool:
         return isinstance(self.surface, ToroidalSurface)
+
+    @property
+    def is_cone(self) -> bool:
+        return isinstance(self.surface, ConicalSurface)
 
     @property
     def loops(self) -> list[BrepLoop]:
