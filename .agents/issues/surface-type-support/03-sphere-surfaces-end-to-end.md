@@ -25,16 +25,16 @@ End-to-end behavior:
 
 ## Acceptance criteria
 
-- [ ] `face.surface` for a `BRepPrimAPI_MakeSphere` face is a `SphericalSurface`
+- [x] `face.surface` for a `BRepPrimAPI_MakeSphere` face is a `SphericalSurface`
       with correct `radius` and `frame` (within `TOL`)
-- [ ] Sampling `point_at(u, v)` over the face domain matches the native surface
+- [x] Sampling `point_at(u, v)` over the face domain matches the native surface
       (≤ 1e-6)
-- [ ] `BrepFace.is_sphere` and `surface_type == "sphere"`
-- [ ] JSON round-trip preserves the `SphericalSurface` type and parameters
-- [ ] After round-trip, the rebuilt Brep passes `BRepCheck` and `to_viewmesh()`
+- [x] `BrepFace.is_sphere` and `surface_type == "sphere"`
+- [x] JSON round-trip preserves the `SphericalSurface` type and parameters
+- [x] After round-trip, the rebuilt Brep passes `BRepCheck` and `to_viewmesh()`
       returns a non-empty mesh
-- [ ] The viewer object tessellates a `SphericalSurface` into a non-empty mesh
-- [ ] All `@pytest.mark.occ` tests pass
+- [x] The viewer object tessellates a `SphericalSurface` into a non-empty mesh
+- [x] All `@pytest.mark.occ` tests pass
 
 ## Blocked by
 

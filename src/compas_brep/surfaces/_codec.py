@@ -14,6 +14,7 @@ from __future__ import annotations
 from compas.geometry import CylindricalSurface
 from compas.geometry import Plane
 from compas.geometry import Point
+from compas.geometry import SphericalSurface
 from compas.geometry import Vector
 
 from .nurbs import NurbsSurface
@@ -33,6 +34,8 @@ def surface_to_data(surface) -> dict:
         return {"type": "nurbs", "data": surface.__data__}
     if isinstance(surface, CylindricalSurface):
         return {"type": "cylinder", "data": surface.__data__}
+    if isinstance(surface, SphericalSurface):
+        return {"type": "sphere", "data": surface.__data__}
     raise TypeError(f"Cannot serialize surface of type {type(surface).__name__}")
 
 
@@ -49,4 +52,6 @@ def surface_from_data(data: dict):
         return NurbsSurface.__from_data__(payload)
     if tag == "cylinder":
         return CylindricalSurface.__from_data__(payload)
+    if tag == "sphere":
+        return SphericalSurface.__from_data__(payload)
     raise ValueError(f"Unknown surface type tag: {tag!r}")

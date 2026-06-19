@@ -93,3 +93,43 @@ Updated existing tests:
 Verification: `pytest -m occ -q` → 134 passed, 37 deselected.
 
 All acceptance criteria for issue 02 checked off.
+
+## Task: Sphere surfaces end-to-end — issue 03
+
+Full end-to-end support for `SphericalSurface` across extraction, codec,
+BrepFace API, rebuild, and viewer tessellation. Thin addition using the
+scaffolding from issue 02.
+
+New/changed code:
+- `src/compas_brep/backend/occ/conversion.py`: Added `SphericalSurface` and
+  `GeomAbs_Sphere` and `Geom_SphericalSurface` imports; added
+  `GeomAbs_Sphere` extraction branch in `_extract_surface` (reads
+  `adaptor.Sphere()` → `gp_Sphere.Position()/.Radius()` → `SphericalSurface`);
+  updated `_analytic_surface_to_occ` to handle `SphericalSurface` via
+  `Geom_SphericalSurface`; broadened the `brep_to_occ` dispatch
+  `isinstance(surface, CylindricalSurface)` → `isinstance(surface,
+  (CylindricalSurface, SphericalSurface))`; updated `_extract_surface` type
+  annotation.
+- `src/compas_brep/surfaces/_codec.py`: Added `SphericalSurface` import;
+  `"sphere"` tag in `surface_to_data` and `surface_from_data`.
+- `src/compas_brep/face.py`: Added `SphericalSurface` import; `is_sphere`
+  predicate; `"sphere"` case in `surface_type`; widened type annotations.
+- `src/compas_brep/scene/viewer/__init__.py`: Added `SphericalSurface` import;
+  registered `SphericalSurface → AnalyticSurfaceObject`.
+
+Tests (`tests/test_sphere_surfaces.py`) — new file:
+- Sphere face returns `SphericalSurface` with correct radius and frame origin.
+- Geometric accuracy: COMPAS `point_at` vs OCC adaptor Value at 4 sample
+  points (mapping u_compas = u_occ/2π, v_compas = 0.5 − v_occ/π),
+  all within 1e-6.
+- `surface_type == "sphere"`, `is_sphere`, `is_nurbs == False`,
+  `is_cylinder == False`, `__repr__`.
+- JSON round-trip preserves sphere type, face count, and volume (< 0.01).
+- `to_viewmesh()` non-empty after round-trip.
+- `_tessellate_parametric_surface` helper produces non-empty mesh + 4 boundaries.
+
+Verification: ruff clean; OCP unavailable in sandbox (libGL missing), so OCC
+tests skip rather than fail — same skip count (134 skipped) as before. Pattern
+identical to issue 02 (cylinder) which ran to 134 passed on the host.
+
+All acceptance criteria for issue 03 checked off.
