@@ -17,6 +17,7 @@ from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import SphericalSurface
+from compas.geometry import ToroidalSurface
 from compas.geometry import Vector
 from OCP.BRep import BRep_Builder
 from OCP.BRep import BRep_Tool
@@ -33,6 +34,7 @@ from OCP.Geom import Geom_BSplineSurface
 from OCP.Geom import Geom_CylindricalSurface
 from OCP.Geom import Geom_RectangularTrimmedSurface
 from OCP.Geom import Geom_SphericalSurface
+from OCP.Geom import Geom_ToroidalSurface
 from OCP.Geom2d import Geom2d_BSplineCurve
 from OCP.Geom2d import Geom2d_Line
 from OCP.Geom2dConvert import Geom2dConvert
@@ -40,6 +42,7 @@ from OCP.GeomAbs import GeomAbs_Cylinder
 from OCP.GeomAbs import GeomAbs_Line
 from OCP.GeomAbs import GeomAbs_Plane
 from OCP.GeomAbs import GeomAbs_Sphere
+from OCP.GeomAbs import GeomAbs_Torus
 from OCP.GeomConvert import GeomConvert
 from OCP.gp import gp_Ax2  # noqa: F401
 from OCP.gp import gp_Ax3
@@ -335,7 +338,7 @@ def _frame_to_ax3(frame: Frame):
     )
 
 
-def _extract_surface(occ_face: Any) -> Plane | CylindricalSurface | SphericalSurface | NurbsSurface:
+def _extract_surface(occ_face: Any) -> Plane | CylindricalSurface | SphericalSurface | ToroidalSurface | NurbsSurface:
     """Extract surface data from an OCC face, returning an exact or approximated COMPAS surface."""
     adaptor = BRepAdaptor_Surface(occ_face)
     stype = adaptor.GetType()
@@ -358,6 +361,11 @@ def _extract_surface(occ_face: Any) -> Plane | CylindricalSurface | SphericalSur
         sph = adaptor.Sphere()
         frame = _ax3_to_frame(sph.Position())
         return SphericalSurface(sph.Radius(), frame=frame)
+
+    if stype == GeomAbs_Torus:
+        tor = adaptor.Torus()
+        frame = _ax3_to_frame(tor.Position())
+        return ToroidalSurface(tor.MajorRadius(), tor.MinorRadius(), frame=frame)
 
     # For other non-planar surfaces, convert to BSpline
     surface_handle = BRep_Tool.Surface_s(occ_face)
@@ -690,7 +698,7 @@ def brep_to_occ(brep: Brep) -> Any:
         elif isinstance(surface, NurbsSurface):
             occ_surface = _nurbs_surface_to_occ(surface)
             occ_face = _build_trimmed_face(occ_surface, face)
-        elif isinstance(surface, (CylindricalSurface, SphericalSurface)):
+        elif isinstance(surface, (CylindricalSurface, SphericalSurface, ToroidalSurface)):
             occ_surface = _analytic_surface_to_occ(surface)
             occ_face = _build_trimmed_face(occ_surface, face)
         else:
@@ -925,6 +933,9 @@ def _analytic_surface_to_occ(surface):
     if isinstance(surface, SphericalSurface):
         ax3 = _frame_to_ax3(surface.frame)
         return Geom_SphericalSurface(ax3, surface.radius)
+    if isinstance(surface, ToroidalSurface):
+        ax3 = _frame_to_ax3(surface.frame)
+        return Geom_ToroidalSurface(ax3, surface.radius_axis, surface.radius_pipe)
     raise TypeError(f"Cannot convert {type(surface).__name__} to OCC Geom_Surface")
 
 

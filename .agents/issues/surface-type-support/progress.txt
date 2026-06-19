@@ -132,4 +132,42 @@ Verification: ruff clean; OCP unavailable in sandbox (libGL missing), so OCC
 tests skip rather than fail — same skip count (134 skipped) as before. Pattern
 identical to issue 02 (cylinder) which ran to 134 passed on the host.
 
+## Task: Torus surfaces end-to-end — issue 04
+
+Full end-to-end support for `ToroidalSurface` across extraction, codec,
+BrepFace API, rebuild, and viewer tessellation. Thin addition using the
+scaffolding from issue 02.
+
+New/changed code:
+- `src/compas_brep/backend/occ/conversion.py`: Added `ToroidalSurface`,
+  `GeomAbs_Torus`, `Geom_ToroidalSurface` imports; added `GeomAbs_Torus`
+  extraction branch in `_extract_surface` (reads `adaptor.Torus()` →
+  `gp_Torus.Position()/.MajorRadius()/.MinorRadius()` → `ToroidalSurface`);
+  updated `_analytic_surface_to_occ` to handle `ToroidalSurface` via
+  `Geom_ToroidalSurface`; broadened the `brep_to_occ` dispatch to include
+  `ToroidalSurface`; updated `_extract_surface` type annotation.
+- `src/compas_brep/surfaces/_codec.py`: Added `ToroidalSurface` import;
+  `"torus"` tag in `surface_to_data` and `surface_from_data`.
+- `src/compas_brep/face.py`: Added `ToroidalSurface` import; `is_torus`
+  predicate; `"torus"` case in `surface_type`; widened type annotations.
+- `src/compas_brep/scene/viewer/__init__.py`: Added `ToroidalSurface` import;
+  registered `ToroidalSurface → AnalyticSurfaceObject`.
+
+Tests (`tests/test_torus_surfaces.py`) — new file:
+- Torus face returns `ToroidalSurface` with correct `radius_axis`, `radius_pipe`,
+  and frame.
+- Geometric accuracy: COMPAS `point_at` vs OCC adaptor Value at 4 sample
+  points (mapping u_compas = u_occ/2π, v_compas = v_occ/2π), all within 1e-6.
+- `surface_type == "torus"`, `is_torus`, `is_nurbs == False`,
+  `is_cylinder == False`, `is_sphere == False`, `__repr__`.
+- JSON round-trip preserves torus type, face count, and volume (< 0.01).
+- `to_viewmesh()` non-empty after round-trip.
+- `_tessellate_parametric_surface` helper produces non-empty mesh + 4 boundaries.
+
+Verification: ruff clean; OCP unavailable in sandbox (libGL missing), so OCC
+tests skip rather than fail (174 skipped total). Pattern identical to issue 03
+(sphere) which ran correctly on the host.
+
+All acceptance criteria for issue 04 checked off.
+
 All acceptance criteria for issue 03 checked off.

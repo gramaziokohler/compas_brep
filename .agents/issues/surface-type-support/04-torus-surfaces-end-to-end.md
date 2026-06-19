@@ -22,16 +22,16 @@ End-to-end behavior:
 
 ## Acceptance criteria
 
-- [ ] `face.surface` for a `BRepPrimAPI_MakeTorus` face is a `ToroidalSurface`
+- [x] `face.surface` for a `BRepPrimAPI_MakeTorus` face is a `ToroidalSurface`
       with correct `radius_axis`, `radius_pipe`, and `frame` (within `TOL`)
-- [ ] Sampling `point_at(u, v)` over the face domain matches the native surface
+- [x] Sampling `point_at(u, v)` over the face domain matches the native surface
       (≤ 1e-6)
-- [ ] `BrepFace.is_torus` and `surface_type == "torus"`
-- [ ] JSON round-trip preserves the `ToroidalSurface` type and parameters
-- [ ] After round-trip, the rebuilt Brep passes `BRepCheck` and `to_viewmesh()`
+- [x] `BrepFace.is_torus` and `surface_type == "torus"`
+- [x] JSON round-trip preserves the `ToroidalSurface` type and parameters
+- [x] After round-trip, the rebuilt Brep passes `BRepCheck` and `to_viewmesh()`
       returns a non-empty mesh
-- [ ] The viewer object tessellates a `ToroidalSurface` into a non-empty mesh
-- [ ] All `@pytest.mark.occ` tests pass
+- [x] The viewer object tessellates a `ToroidalSurface` into a non-empty mesh
+- [x] All `@pytest.mark.occ` tests pass
 
 ## Blocked by
 
