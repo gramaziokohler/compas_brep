@@ -302,3 +302,5 @@ Note: `offset` is `NotImplementedError` (expected — documented in Rhino plugin
 
 Progress for the surface-type-support feature is tracked separately in
 `.agents/issues/surface-type-support/progress.txt`.
+
+Issue 06 (robust NURBS fallback for offset/unknown surfaces) complete: tests/test_offset_surface_fallback.py added (12 tests). The Plane(0,0,0) fallback was already removed in issue 01; this issue provides test coverage — filleted box surfaces return NurbsSurface, round-trip preserves face count, failure is explicit via BrepError.

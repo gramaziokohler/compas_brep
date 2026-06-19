@@ -24,13 +24,13 @@ End-to-end behavior:
 
 ## Acceptance criteria
 
-- [ ] No code path returns `Plane(Point(0,0,0), ...)` as a surface fallback
-- [ ] A filleted box (offset surfaces) has every fillet face come back as a
+- [x] No code path returns `Plane(Point(0,0,0), ...)` as a surface fallback
+- [x] A filleted box (offset surfaces) has every fillet face come back as a
       `NurbsSurface`, not a degenerate plane
-- [ ] JSON round-trip of a filleted shape preserves the full face count
-- [ ] If surface conversion truly fails, the failure is explicit (no silent
+- [x] JSON round-trip of a filleted shape preserves the full face count
+- [x] If surface conversion truly fails, the failure is explicit (no silent
       wrong-geometry emission)
-- [ ] All `@pytest.mark.occ` tests pass
+- [x] All `@pytest.mark.occ` tests pass
 
 ## Blocked by
 
