@@ -24,13 +24,13 @@ End-to-end behavior:
 
 ## Acceptance criteria
 
-- [ ] CONTEXT.md surface table and surrounding prose reflect actual behavior
+- [x] CONTEXT.md surface table and surrounding prose reflect actual behavior
       after slices 2–6
-- [ ] Serialization section documents v5 + v4 read-compat and the cone caveat
-- [ ] An inspect example prints surface types/parameters and demonstrates a JSON
+- [x] Serialization section documents v5 + v4 read-compat and the cone caveat
+- [x] An inspect example prints surface types/parameters and demonstrates a JSON
       round-trip preserving the analytic type
-- [ ] A visualization example draws an extracted analytic surface
-- [ ] Example scripts run without error against the OCC backend
+- [x] A visualization example draws an extracted analytic surface
+- [x] Example scripts run without error against the OCC backend
 
 ## Blocked by
 

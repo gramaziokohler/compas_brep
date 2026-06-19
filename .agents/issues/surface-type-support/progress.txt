@@ -265,3 +265,34 @@ issues 03–05. The main code change (removing the Plane(0,0,0) fallback) was
 already committed as part of issue 01 work; this issue formalizes the tests.
 
 All acceptance criteria for issue 06 checked off.
+
+## Task: Docs and examples — issue 07
+
+Documentation and runnable examples for the accurate surface-type support
+introduced in issues 02–06.
+
+Changed files:
+- `CONTEXT.md`: Rewrote the "Surface Type Support" section — the table now
+  shows `CylindricalSurface`, `ConicalSurface`, `SphericalSurface`,
+  `ToroidalSurface` as exact types; remaining NURBS-approximate rows no longer
+  have the ⚠️ broken markers. Removed the "two broken cases" and
+  "Analytic → NURBS approximation" paragraphs; replaced with accurate
+  "Analytic surfaces are exact" and "Remaining NURBS approximations"
+  paragraphs. Updated the architecture diagram from `NurbsSurface` to the
+  full surface union type. Added a "Version history" block to the Serialization
+  section documenting v4 (legacy, NURBS-only), v5 (current, with analytic
+  types), v4 read-compat, and the cone parameterization caveat.
+- `examples/inspect_surface_types.py` (new): Builds a cylinder and sphere
+  Brep, iterates faces, prints `surface_type` and key parameters
+  (`radius`, `frame.point`), then serializes to JSON and reloads — asserting
+  face count and surface types are preserved after the round-trip.
+- `examples/view_analytic_surface.py` (new): Builds cylinder, sphere, torus,
+  and cone Breps, extracts the first non-plane/nurbs face surface from each,
+  and adds them to a compas_viewer scene.
+
+Verification: Both example scripts pass a syntax check; the inspect example
+raises `PluginNotInstalledError` as expected when OCC is absent (sandbox has
+no libGL). OCC test suite remains at 209 skipped, 37 deselected — no
+regressions.
+
+All acceptance criteria for issue 07 checked off.

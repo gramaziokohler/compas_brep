@@ -37,12 +37,40 @@ Brep  (public interface, compas.data.Data)
  └── _native_brep  →  TopoDS_Shape  (OCC)  |  Rhino.Geometry.Brep  (Rhino)
 
 Brep.faces  →  list[BrepFace]  (native-handle wrappers, lazily populated, cached)
-BrepFace.surface  →  NurbsSurface  (COMPAS value type, lazily extracted, cached)
+BrepFace.surface  →  Plane | CylindricalSurface | ConicalSurface | SphericalSurface | ToroidalSurface | NurbsSurface
 ```
 
 - `Brep` delegates all operations to pluggables in `compas_brep.operations`.
 - Topology lists (`_vertices`, `_edges`, `_loops`, `_faces`) are caches populated lazily on first access via `brep_extract_topology`.
 - All inputs to and outputs from `Brep` methods are COMPAS types.
+
+---
+
+## Surface Type Support
+
+OCC has eleven surface types (`GeomAbs`). The table below records what compas_brep can do with each:
+
+| OCC surface type | `face.surface` COMPAS type | Tessellation / viz | JSON serialize | JSON deserialize |
+|---|---|---|---|---|
+| Plane | `Plane` (exact) | ✓ | ✓ | ✓ |
+| Cylinder | `CylindricalSurface` (exact) | ✓ | ✓ | ✓ |
+| Cone | `ConicalSurface` (exact) | ✓ | ✓ | ✓ |
+| Sphere | `SphericalSurface` (exact) | ✓ | ✓ | ✓ |
+| Torus | `ToroidalSurface` (exact) | ✓ | ✓ | ✓ |
+| Bezier | `NurbsSurface` (exact, rational) | ✓ | ✓ | ✓ |
+| BSpline / NURBS | `NurbsSurface` (exact) | ✓ | ✓ | ✓ |
+| Surface of Revolution | `NurbsSurface` (approx) | ✓ | ✓ | ✓ |
+| Surface of Extrusion | `NurbsSurface` (approx) | ✓ | ✓ | ✓ |
+| Offset Surface | `NurbsSurface` (approx) | ✓ | ✓ | ✓ |
+| Other | `NurbsSurface` (approx) | ✓ | ✓ | ✓ |
+
+**Why tessellation always works:** `to_viewmesh()` / `to_tesselation()` call `BRepMesh_IncrementalMesh` on the **native OCC shape** directly — they never touch `face.surface`. The same is true for boolean operations and `to_step()`. The COMPAS-type extraction in `face.surface` is a separate, lossy layer on top.
+
+**Analytic surfaces are exact:** Cylinder, Cone, Sphere, and Torus faces return the matching COMPAS analytic surface type (`CylindricalSurface`, `ConicalSurface`, `SphericalSurface`, `ToroidalSurface`) with correct geometric parameters (radius, frame, etc.) extracted directly from the OCC adaptor. These types expose the same `point_at(u, v)`, `space_u(n)`, `space_v(n)` interface as `NurbsSurface`, so visualization, inspection, and round-tripping all work natively. `BrepFace` exposes `surface_type` (string) and `is_cylinder` / `is_cone` / `is_sphere` / `is_torus` predicates.
+
+**Remaining NURBS approximations:** Surface of Revolution, Surface of Extrusion, Offset (fillet/chamfer), and Other surface types do not have a matching COMPAS analytic type. They are converted to `NurbsSurface` via `GeomConvert::SurfaceToBSplineSurface`. If that conversion fails, `_extract_surface` raises `BrepError` rather than returning silent dummy geometry.
+
+**Implementation:** `_extract_surface()` in `src/compas_brep/backend/occ/conversion.py`. Codec in `src/compas_brep/surfaces/_codec.py`. `BrepFace` API in `src/compas_brep/face.py`.
 
 ---
 
@@ -54,6 +82,13 @@ Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices
 - `Brep.__from_data__` decodes the JSON and calls `brep_rebuild` (a pluggable) to reconstruct the native object. Requires a backend — no display-only fallback.
 - `brep_rebuild` is only called from `__from_data__`. After it runs, the native object is source of truth.
 - `Brep.to_step` / `Brep.from_step` are always available as the explicit file-level serialization path.
+
+**Version history:**
+
+- **v4** (legacy): only `"plane"` and `"nurbs"` surface types. Cylinder/Cone/Sphere/Torus were serialized as `"nurbs"` (NURBS approximation).
+- **v5** (current): adds `"cylinder"`, `"cone"`, `"sphere"`, and `"torus"` surface type tags. Each uses the COMPAS analytic type's native `__data__`/`__from_data__` round-trip. The surface codec (`surfaces/_codec.py`) reads both v4 and v5 documents transparently — v4 files still deserialize correctly.
+
+**Cone parameterization note:** OCC's `gp_Cone` is parameterized by `(Position, RefRadius, SemiAngle)`, where `RefRadius` is the base radius at the location origin and `SemiAngle` is the half-opening angle. COMPAS's `ConicalSurface` uses `(radius, height, frame)`. The conversion is `height = -RefRadius / tan(SemiAngle)` (negative SemiAngle for a tapering cone). The v5 JSON stores the COMPAS `radius` and `height` directly; the OCC SemiAngle is not preserved in the serialized form.
 
 ---
 
