@@ -122,10 +122,12 @@ class TestPropertyTypes:
         for f in box_brep.faces:
             assert isinstance(f.surface, (Plane, NurbsSurface))
 
-    def test_face_surface_nurbs_returns_nurbs(self, sphere_brep):
+    def test_face_surface_sphere_returns_spherical(self, sphere_brep):
+        from compas.geometry import SphericalSurface
+
         surfaces = [f.surface for f in sphere_brep.faces]
-        nurbs_surfaces = [s for s in surfaces if isinstance(s, NurbsSurface)]
-        assert len(nurbs_surfaces) >= 1
+        sphere_surfaces = [s for s in surfaces if isinstance(s, SphericalSurface)]
+        assert len(sphere_surfaces) >= 1
 
     def test_face_surface_cylinder_returns_cylindrical(self, cylinder_brep):
         surfaces = [f.surface for f in cylinder_brep.faces]
@@ -163,9 +165,8 @@ class TestPropertyCaching:
         assert s1 is s2
 
     def test_trim_curve_2d_cached(self, sphere_brep):
-        # Use a trim from a NURBS face where pcurve is available
-        nurbs_face = next(f for f in sphere_brep.faces if f.is_nurbs)
-        trim = nurbs_face.outer_loop.trims[0]
+        sphere_face = next(f for f in sphere_brep.faces if f.is_sphere)
+        trim = sphere_face.outer_loop.trims[0]
         c1 = trim.curve_2d
         c2 = trim.curve_2d
         assert c1 is c2

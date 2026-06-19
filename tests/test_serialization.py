@@ -105,7 +105,7 @@ def test_serialize_json_roundtrip_cylinder():
 
 
 def test_serialize_boolean_result():
-    """Boolean result with mixed planar+NURBS faces serializes correctly."""
+    """Boolean result with mixed planar+spherical faces serializes correctly."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
     sph = Brep.from_sphere(Sphere(0.3))
     result = box - sph
@@ -114,21 +114,21 @@ def test_serialize_boolean_result():
     assert data["version"] == 5
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "plane" in surface_types
-    assert "nurbs" in surface_types
+    assert "sphere" in surface_types
 
     restored = Brep.__from_data__(data)
     assert len(restored.faces) == len(result.faces)
 
 
 def test_deserialize_v4_document():
-    """A stored v4 document (plane + nurbs only) still deserializes correctly."""
+    """A v4-version-tagged document (plane + sphere faces) still deserializes correctly."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
     sph = Brep.from_sphere(Sphere(0.3))
     result = box - sph
 
     data = result.__data__
-    # Simulate an older document written before the version bump. The plane/nurbs
-    # payloads are unchanged between v4 and v5, so the codec must still read it.
+    # Simulate an older version tag. The codec handles all surface types
+    # regardless of version number; this verifies the reader doesn't gate on it.
     data["version"] = 4
     json_str = json.dumps(data)
     restored = Brep.__from_data__(json.loads(json_str))
@@ -136,7 +136,7 @@ def test_deserialize_v4_document():
     assert len(restored.faces) == len(result.faces)
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "plane" in surface_types
-    assert "nurbs" in surface_types
+    assert "sphere" in surface_types
 
 
 def test_viewmesh_box():

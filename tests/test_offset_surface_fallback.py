@@ -1,7 +1,7 @@
-"""Tests for robust NURBS fallback for offset/unknown surfaces (issue 06).
+"""Tests for robust surface extraction for offset/unknown surfaces (issue 06).
 
 Verifies that:
-- Offset surfaces (from fillets) produce a NurbsSurface, never a degenerate Plane(0,0,0)
+- Fillet surfaces are extracted as exact analytic types (cylinder, sphere) or NurbsSurface — never a degenerate Plane(0,0,0)
 - JSON round-trip of a filleted shape preserves the full face count
 - The failure path in _extract_surface is explicit, not silent
 """
@@ -10,10 +10,16 @@ import json
 
 import pytest
 from compas.geometry import Box
+from compas.geometry import ConicalSurface
+from compas.geometry import CylindricalSurface
 from compas.geometry import NurbsSurface
 from compas.geometry import Plane
+from compas.geometry import SphericalSurface
+from compas.geometry import ToroidalSurface
 
 from compas_brep import Brep
+
+KNOWN_SURFACE_TYPES = (Plane, NurbsSurface, CylindricalSurface, SphericalSurface, ToroidalSurface, ConicalSurface)
 
 pytestmark = pytest.mark.occ
 
@@ -45,18 +51,18 @@ class TestNoDegeneatePlane:
                     "Found Plane(0,0,0) dummy surface on face; should be NurbsSurface or valid Plane"
                 )
 
-    def test_fillet_faces_are_nurbs(self, filleted_box_brep):
-        """Non-planar faces from fillets must be NurbsSurface, not Plane."""
+    def test_fillet_faces_are_not_plane(self, filleted_box_brep):
+        """Non-planar faces from fillets must not be decoded as a Plane."""
         for face in filleted_box_brep.faces:
             if not face.is_planar:
-                assert isinstance(face.surface, NurbsSurface), (
-                    f"Expected NurbsSurface for non-planar fillet face, got {type(face.surface).__name__}"
+                assert not isinstance(face.surface, Plane), (
+                    f"Non-planar fillet face decoded as Plane: {face.surface}"
                 )
 
     def test_all_surfaces_have_valid_type(self, filleted_box_brep):
-        """Every face surface is either a valid Plane or a NurbsSurface."""
+        """Every face surface is a recognized COMPAS surface type."""
         for face in filleted_box_brep.faces:
-            assert isinstance(face.surface, (Plane, NurbsSurface)), (
+            assert isinstance(face.surface, KNOWN_SURFACE_TYPES), (
                 f"Unexpected surface type: {type(face.surface).__name__}"
             )
 
@@ -72,10 +78,10 @@ class TestFilletFaceCount:
         plain_box = Brep.from_box(Box(BOX_SIZE))
         assert len(filleted_box_brep.faces) > len(plain_box.faces)
 
-    def test_filleted_box_has_nurbs_faces(self, filleted_box_brep):
-        """The filleted box contains at least one NurbsSurface face."""
-        nurbs_faces = [f for f in filleted_box_brep.faces if isinstance(f.surface, NurbsSurface)]
-        assert len(nurbs_faces) > 0
+    def test_filleted_box_has_non_planar_faces(self, filleted_box_brep):
+        """The filleted box contains at least one non-planar face (cylinder, sphere, or NURBS)."""
+        non_planar = [f for f in filleted_box_brep.faces if not isinstance(f.surface, Plane)]
+        assert len(non_planar) > 0
 
     def test_filleted_box_has_planar_faces(self, filleted_box_brep):
         """The filleted box retains its original planar faces."""
@@ -107,12 +113,12 @@ class TestFilletRoundTrip:
                 is_zero_origin = abs(pt.x) < 1e-10 and abs(pt.y) < 1e-10 and abs(pt.z) < 1e-10
                 assert not is_zero_origin, "Found Plane(0,0,0) dummy surface after JSON round-trip"
 
-    def test_json_round_trip_nurbs_faces_preserved(self, filleted_box_brep):
-        """NurbsSurface fillet faces survive the round-trip."""
+    def test_json_round_trip_non_planar_faces_preserved(self, filleted_box_brep):
+        """Non-planar fillet faces (cylinder, sphere, or NURBS) survive the round-trip."""
         data = json.loads(json.dumps(filleted_box_brep.__data__))
         restored = Brep.__from_data__(data)
-        nurbs_faces = [f for f in restored.faces if isinstance(f.surface, NurbsSurface)]
-        assert len(nurbs_faces) > 0
+        non_planar = [f for f in restored.faces if not isinstance(f.surface, Plane)]
+        assert len(non_planar) > 0
 
     def test_json_round_trip_viewmesh_non_empty(self, filleted_box_brep):
         """Restored filleted Brep can still be tessellated."""
@@ -137,15 +143,12 @@ class TestExplicitFailure:
         assert issubclass(BrepError, Exception)
 
     def test_no_plane_with_zero_normal_in_codec(self, filleted_box_brep):
-        """The serialized data has no surface entry with a zero-vector normal (old dummy plane marker)."""
+        """The serialized data has no surface entry with a zero-origin plane (old dummy plane marker)."""
         data = filleted_box_brep.__data__
         for face_data in data["faces"]:
             surf = face_data["surface"]
             if surf.get("type") == "plane":
-                pt = surf["data"].get("point", {})
-                x = pt.get("x", None) or (pt[0] if isinstance(pt, list) else 0)
-                y = pt.get("y", None) or (pt[1] if isinstance(pt, list) else 0)
-                z = pt.get("z", None) or (pt[2] if isinstance(pt, list) else 0)
+                x, y, z = surf["data"]["point"]
                 assert not (abs(x) < 1e-10 and abs(y) < 1e-10 and abs(z) < 1e-10), (
                     "Serialized data contains the degenerate Plane(0,0,0) sentinel"
                 )
