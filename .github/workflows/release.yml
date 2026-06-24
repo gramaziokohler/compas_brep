@@ -1,0 +1,34 @@
+name: release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  Build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        python: ['3.13']
+
+    steps:
+      - uses: compas-dev/compas-actions.build@v5.1.0
+        with:
+          invoke_lint: true
+          check_import: false
+          management_tool: uv
+          invoke_test: true
+          python: ${{ matrix.python }}
+
+  Publish:
+    needs: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: compas-dev/compas-actions.publish@v3.1.0
+        with:
+          publish_to_pypi: true
+          pypi_token: ${{ secrets.PYPI }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          python: '3.13'
