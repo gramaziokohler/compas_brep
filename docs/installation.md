@@ -19,7 +19,7 @@ pip install "compas-brep[occ]"
 ## Latest (from source)
 
 ```bash
-git clone https://github.com/GKR/compas_brep.git
+git clone https://github.com/gramaziokohler/compas_brep.git
 cd compas_brep
 pip install -e .
 ```
@@ -27,7 +27,7 @@ pip install -e .
 ## Development
 
 ```bash
-git clone https://github.com/GKR/compas_brep.git
+git clone https://github.com/gramaziokohler/compas_brep.git
 cd compas_brep
 pip install -e ".[dev]"
 ```

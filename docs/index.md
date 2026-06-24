@@ -43,4 +43,4 @@ see the sections linked in the navigation.
 ## Issue Tracker
 
 If you find a bug or have a problem running the code, please file an issue on the
-[Issue Tracker](https://github.com/GKR/compas_brep/issues).
+[Issue Tracker](https://github.com/gramaziokohler/compas_brep/issues).
