@@ -47,24 +47,18 @@ class TestNoDegeneatePlane:
             if isinstance(surface, Plane):
                 pt = surface.point
                 is_zero_origin = abs(pt.x) < 1e-10 and abs(pt.y) < 1e-10 and abs(pt.z) < 1e-10
-                assert not is_zero_origin, (
-                    "Found Plane(0,0,0) dummy surface on face; should be NurbsSurface or valid Plane"
-                )
+                assert not is_zero_origin, "Found Plane(0,0,0) dummy surface on face; should be NurbsSurface or valid Plane"
 
     def test_fillet_faces_are_not_plane(self, filleted_box_brep):
         """Non-planar faces from fillets must not be decoded as a Plane."""
         for face in filleted_box_brep.faces:
             if not face.is_planar:
-                assert not isinstance(face.surface, Plane), (
-                    f"Non-planar fillet face decoded as Plane: {face.surface}"
-                )
+                assert not isinstance(face.surface, Plane), f"Non-planar fillet face decoded as Plane: {face.surface}"
 
     def test_all_surfaces_have_valid_type(self, filleted_box_brep):
         """Every face surface is a recognized COMPAS surface type."""
         for face in filleted_box_brep.faces:
-            assert isinstance(face.surface, KNOWN_SURFACE_TYPES), (
-                f"Unexpected surface type: {type(face.surface).__name__}"
-            )
+            assert isinstance(face.surface, KNOWN_SURFACE_TYPES), f"Unexpected surface type: {type(face.surface).__name__}"
 
 
 # =============================================================================
@@ -149,6 +143,4 @@ class TestExplicitFailure:
             surf = face_data["surface"]
             if surf.get("type") == "plane":
                 x, y, z = surf["data"]["point"]
-                assert not (abs(x) < 1e-10 and abs(y) < 1e-10 and abs(z) < 1e-10), (
-                    "Serialized data contains the degenerate Plane(0,0,0) sentinel"
-                )
+                assert not (abs(x) < 1e-10 and abs(y) < 1e-10 and abs(z) < 1e-10), "Serialized data contains the degenerate Plane(0,0,0) sentinel"

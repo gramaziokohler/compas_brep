@@ -4,8 +4,8 @@ import json
 import math
 
 import pytest
-from compas.geometry import CylindricalSurface
 from compas.geometry import Cylinder
+from compas.geometry import CylindricalSurface
 from compas.geometry import Frame
 from compas.tolerance import TOL
 

@@ -2,8 +2,6 @@
 
 import os
 
-DATA = os.path.join(os.path.dirname(__file__), "data")
-
 from compas_brep.brep import Brep
 from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
@@ -16,6 +14,8 @@ from compas_brep.loop import BrepLoop
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
+
+DATA = os.path.join(os.path.dirname(__file__), "data")
 
 __all_plugins__ = [
     "compas_brep.scene",
