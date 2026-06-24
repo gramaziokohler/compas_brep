@@ -13,9 +13,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: compas-dev/compas-actions.build@v5
+      - uses: compas-dev/compas-actions.build@v5.1.0
         with:
           python: "3.13"
+          management_tool: uv
           invoke_lint: true
           invoke_test: true
           extras: "occ,dev"
