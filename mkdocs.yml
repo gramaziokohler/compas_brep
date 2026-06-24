@@ -145,6 +145,3 @@ nav:
       - Backends:
           - OCC: reference/compas_brep.backend.occ.md
           - Rhino: reference/compas_brep.backend.rhino.md
-  - Other:
-      - changelog.md
-      - license.md

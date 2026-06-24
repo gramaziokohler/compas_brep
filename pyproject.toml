@@ -8,7 +8,7 @@ build-backend = "uv_build"
 
 [project]
 name = "compas-brep"
-version = "0.1.0"
+version = "0.0.1"
 description = "Canonical Brep wrapper based on COMPAS framework with pluggable OCC/Rhino backends"
 readme = "README.md"
 authors = [
@@ -66,3 +66,23 @@ quote-style = "double"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-m occ"
+
+# ============================================================================
+# Release 
+# ============================================================================
+
+[tool.bumpversion]
+current_version = "0.0.1"
+message = "Bump version to {new_version}"
+commit = true
+tag = true
+
+[[tool.bumpversion.files]]
+filename = "src/compas_brep/__init__.py"
+search = "{current_version}"
+replace = "{new_version}"
+
+[[tool.bumpversion.files]]
+filename = "CHANGELOG.md"
+search = "Unreleased"
+replace = "[{new_version}] {now:%Y-%m-%d}"

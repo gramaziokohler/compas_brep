@@ -1,5 +1,7 @@
 """compas_brep: Pure Python Brep implementation based on the COMPAS framework."""
 
+__version__ = "0.0.1"
+
 import os
 
 from compas_brep.brep import Brep
@@ -16,6 +18,7 @@ from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 DATA = os.path.join(os.path.dirname(__file__), "data")
+
 
 __all_plugins__ = [
     "compas_brep.scene",
