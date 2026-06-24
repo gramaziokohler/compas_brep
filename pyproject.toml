@@ -1,13 +1,21 @@
+[build-system]
+requires = ["uv_build>=0.10.2,<0.11.0"]
+build-backend = "uv_build"
+
+# ============================================================================
+# project info
+# ============================================================================
+
 [project]
 name = "compas-brep"
 version = "0.1.0"
-description = "Canonical Brep implementation based on COMPAS framework with pluggable OCC/Rhino backends"
+description = "Canonical Brep wrapper based on COMPAS framework with pluggable OCC/Rhino backends"
 readme = "README.md"
 authors = [
     { name = "Chen Kasirer", email = "kasirer@arch.ethz.ch" }
 ]
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = { file = "LICENSE" }
 dependencies = [
     "compas>=2.0",
     "numpy",
@@ -15,7 +23,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/GKR/compas_brep"
+Repository = "https://github.com/gramaziokohler/compas_brep"
 
 [project.optional-dependencies]
 occ = ["cadquery-ocp-novtk>=7.8; python_version >= '3.10'", "compas_viewer>=1.0"]
@@ -34,10 +42,9 @@ docs = [
     "mkdocstrings[python]",
 ]
 
-[build-system]
-requires = ["uv_build>=0.10.2,<0.11.0"]
-build-backend = "uv_build"
-
+# ============================================================================
+# Linting and formatting
+# ============================================================================
 
 [tool.ruff]
 line-length = 179
@@ -51,6 +58,10 @@ force-single-line = true
 
 [tool.ruff.format]
 quote-style = "double"
+
+# ============================================================================
+# Testing
+# ============================================================================
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
