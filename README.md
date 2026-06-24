@@ -20,7 +20,7 @@ Examples in `examples/` have mostly been copied from [COMPAS OCC](https://github
 pip install compas_brep
 ```
 
-**With OCC backend:**
+**With [OCC backend](https://github.com/CadQuery/OCP):**
 
 ```bash
 pip install "compas_brep[occ]"
