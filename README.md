@@ -24,17 +24,25 @@ pip install compas_brep
 pip install "compas_brep[occ]"
 ```
 
-The Rhino backend is available automatically when running inside Rhino or with `rhinoinside` installed.
+The Rhino backend is available automatically when running inside Rhino.
 
 ## Usage
 
 ```python
-from compas_brep import Brep
+import os
+from compas_brep import Brep, DATA
+from compas_viewer import Viewer
 
-brep = Brep.from_step("model.stp")
+brep = Brep.from_step(os.path.join(DATA, "box_with_holes.stp"))
 
 for face in brep.faces:
-    surface = face.surface  # returns a NurbsSurface (COMPAS type)
+    print(face.surface)  # Plane for flat faces, NurbsSurface for curved faces
+
+viewer = Viewer()
+viewer.scene.add(brep)
+
+viewer.show()
+
 ```
 
 ## Running tests

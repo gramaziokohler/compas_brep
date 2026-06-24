@@ -1,5 +1,9 @@
 """compas_brep: Pure Python Brep implementation based on the COMPAS framework."""
 
+import os
+
+DATA = os.path.join(os.path.dirname(__file__), "data")
+
 from compas_brep.brep import Brep
 from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
@@ -22,6 +26,7 @@ __all_plugins__ = [
 ]
 
 __all__ = [
+    "DATA",
     "Brep",
     "BrepVertex",
     "BrepEdge",

@@ -500,12 +500,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-occ = [
-    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10'" },
-    { name = "compas-viewer" },
-]
-
-[package.dev-dependencies]
 dev = [
     { name = "build", version = "1.4.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "build", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -522,29 +516,29 @@ docs = [
     { name = "mkdocstrings", version = "0.30.1", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version < '3.10'" },
     { name = "mkdocstrings", version = "1.0.4", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version >= '3.10'" },
 ]
+occ = [
+    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10'" },
+    { name = "compas-viewer" },
+]
 
 [package.metadata]
 requires-dist = [
+    { name = "build", marker = "extra == 'dev'" },
+    { name = "bump-my-version", marker = "extra == 'dev'" },
     { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and extra == 'occ'", specifier = ">=7.8" },
     { name = "compas", specifier = ">=2.0" },
+    { name = "compas-invocations2", extras = ["mkdocs"], marker = "extra == 'dev'" },
     { name = "compas-viewer", marker = "extra == 'occ'", specifier = ">=1.0" },
+    { name = "invoke", marker = "extra == 'dev'" },
+    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'" },
     { name = "numpy" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "ruff", marker = "extra == 'dev'" },
     { name = "scipy" },
+    { name = "twine", marker = "extra == 'dev'" },
+    { name = "wheel", marker = "extra == 'dev'" },
 ]
-provides-extras = ["occ"]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "build" },
-    { name = "bump-my-version" },
-    { name = "compas-invocations2", extras = ["mkdocs"] },
-    { name = "invoke" },
-    { name = "pytest" },
-    { name = "ruff" },
-    { name = "twine" },
-    { name = "wheel" },
-]
-docs = [{ name = "mkdocstrings", extras = ["python"] }]
+provides-extras = ["occ", "dev", "docs"]
 
 [[package]]
 name = "compas-invocations2"
