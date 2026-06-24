@@ -1,13 +1,13 @@
 site_name: COMPAS Brep
-site_url: https://GKR.github.io/compas_brep/
+site_url: https://gramaziokohler.github.io/compas_brep/
 
-repo_name: GKR/compas_brep
-repo_url: https://github.com/GKR/compas_brep/
+repo_name: gramaziokohler/compas_brep
+repo_url: https://github.com/gramaziokohler/compas_brep/
 
 copyright: Copyright &copy; 2024 - 2026, ETH Zurich - Gramazio Kohler Research
 
 extra:
-  homepage: https://GKR.github.io/compas_brep/
+  homepage: https://gramaziokohler.github.io/compas_brep/
 
 theme:
   name: material
