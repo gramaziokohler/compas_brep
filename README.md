@@ -1,9 +1,8 @@
 # compas_brep
 
 [![Github Actions Build Status](https://github.com/gramaziokohler/compas_brep/actions/workflows/build.yml/badge.svg)](https://github.com/gramaziokohler/compas_brep/actions)
-[![License](https://img.shields.io/github/license/gramaziokohler/compas_brep.svg)](https://pypi.python.org/pypi/compas-brep)
-[![PyPI Package latest release](https://img.shields.io/pypi/v/compas-brep.svg)](https://pypi.python.org/pypi/compas-brep)
-[![Supported Python versions](https://img.shields.io/pypi/pyversions/compas-brep.svg)](https://pypi.python.org/pypi/compas-brep)
+[![License](https://img.shields.io/github/license/gramaziokohler/compas_brep)](https://pypi.python.org/pypi/compas-brep)
+[![PyPI Package latest release](https://img.shields.io/pypi/v/compas-brep)](https://pypi.python.org/pypi/compas-brep)
 [![Made with COMPAS](https://compas.dev/badge.svg)](https://compas.dev/#/)
 
 A unified Brep wrapper for the [COMPAS](https://github.com/compas-dev/compas) framework with pluggable OCC and Rhino backends.
