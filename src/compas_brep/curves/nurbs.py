@@ -1,4 +1,7 @@
-"""Pure-Python rational NURBS curve built on scipy.interpolate.BSpline."""
+"""This is an attempt at Pure-Python rational NURBS curve built on scipy.interpolate.BSpline.
+
+This is a replacement for the compas.geometry.NurbsCurve pluggable but need to be evaluated for completness.
+"""
 
 from __future__ import annotations
 

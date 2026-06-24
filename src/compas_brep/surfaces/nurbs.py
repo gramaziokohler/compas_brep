@@ -1,4 +1,7 @@
-"""Pure-Python rational NURBS surface built on scipy.interpolate.BSpline."""
+"""This is an attempt at Pure-Python rational NURBS surface built on scipy.interpolate.BSpline which seems more doable than a pure-Python Brep.
+
+This is a replacement for the compas.geometry.NurbsSurface pluggable but need to be evaluated for completness.
+"""
 
 from __future__ import annotations
 

@@ -10,6 +10,8 @@ A unified Brep wrapper for the [COMPAS](https://github.com/compas-dev/compas) fr
 
 Provides a single `Brep` class with a stable public interface. The backend (OCC or Rhino) is selected automatically at runtime based on what is importable. All inputs and outputs are COMPAS types — never backend types.
 
+Examples in `examples/` have mostly been copied from [COMPAS OCC](https://github.com/compas-dev/compas_occ) which is used as benchmark for this project.
+
 ## Installation
 
 **Base (no backend):**
