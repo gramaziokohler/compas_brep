@@ -505,6 +505,7 @@ dev = [
     { name = "build", version = "1.5.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
     { name = "bump-my-version" },
     { name = "compas-invocations2", extra = ["mkdocs"] },
+    { name = "compas-viewer" },
     { name = "invoke" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.1.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -518,6 +519,8 @@ docs = [
 ]
 occ = [
     { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10'" },
+]
+viz = [
     { name = "compas-viewer" },
 ]
 
@@ -528,7 +531,8 @@ requires-dist = [
     { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and extra == 'occ'", specifier = ">=7.8" },
     { name = "compas", specifier = ">=2.0" },
     { name = "compas-invocations2", extras = ["mkdocs"], marker = "extra == 'dev'" },
-    { name = "compas-viewer", marker = "extra == 'occ'", specifier = ">=1.0" },
+    { name = "compas-viewer", marker = "extra == 'dev'", specifier = ">=1.0" },
+    { name = "compas-viewer", marker = "extra == 'viz'", specifier = ">=1.0" },
     { name = "invoke", marker = "extra == 'dev'" },
     { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'" },
     { name = "numpy" },
@@ -538,7 +542,7 @@ requires-dist = [
     { name = "twine", marker = "extra == 'dev'" },
     { name = "wheel", marker = "extra == 'dev'" },
 ]
-provides-extras = ["occ", "dev", "docs"]
+provides-extras = ["occ", "dev", "docs", "viz"]
 
 [[package]]
 name = "compas-invocations2"

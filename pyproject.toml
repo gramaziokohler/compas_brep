@@ -26,7 +26,7 @@ dependencies = [
 Repository = "https://github.com/gramaziokohler/compas_brep"
 
 [project.optional-dependencies]
-occ = ["cadquery-ocp-novtk>=7.8; python_version >= '3.10'", "compas_viewer>=1.0"]
+occ = ["cadquery-ocp-novtk>=7.8; python_version >= '3.10'"]
 dev = [
     "invoke",
     "ruff",
@@ -36,10 +36,14 @@ dev = [
     "twine",
     "wheel",
     "build",
+    "compas_viewer>=1.0"
 ]
 docs = [
     #"zensical",  # TODO: this works, need to figure our how to use with mike and add to compas-actions.
     "mkdocstrings[python]",
+]
+viz = [
+    "compas_viewer>=1.0"
 ]
 
 # ============================================================================
