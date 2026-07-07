@@ -9,8 +9,8 @@ from copy import deepcopy
 from typing import TYPE_CHECKING
 
 import numpy as np
-from compas.data import Data
 from compas.geometry import Frame
+from compas.geometry import Geometry
 from compas.geometry import Point
 from compas.geometry import Vector
 from scipy.interpolate import BSpline
@@ -98,7 +98,7 @@ class ControlPointGrid:
         return repr(self._data)
 
 
-class NurbsSurface(Data):
+class NurbsSurface(Geometry):
     """A rational NURBS surface (tensor-product).
 
     Parameters
@@ -681,18 +681,6 @@ class NurbsSurface(Data):
             for pt in row:
                 pt.transform(transformation)
         self._invalidate_cache()
-
-    def transformed(self, transformation: Transformation) -> NurbsSurface:
-        """Return a transformed copy.
-
-        Parameters
-        ----------
-        transformation
-            The transformation to apply.
-        """
-        s = self.copy()
-        s.transform(transformation)
-        return s
 
     def copy(self) -> NurbsSurface:
         """Return a deep copy."""

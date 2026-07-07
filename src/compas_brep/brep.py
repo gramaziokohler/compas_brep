@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from compas.data import Data
 from compas.datastructures import Mesh
 from compas.geometry import Box
 from compas.geometry import Cylinder
 from compas.geometry import Frame
+from compas.geometry import Geometry
 from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
@@ -81,7 +81,7 @@ from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 
-class Brep(Data):
+class Brep(Geometry):
     """Thin wrapper around a native backend geometry object (OCC or Rhino).
 
     ``_native_brep`` is the sole source of truth. Topology lists are lazy caches
@@ -654,27 +654,15 @@ class Brep(Data):
         """Flip face orientations of this Brep in-place."""
         self._replace_from(brep_flip(self))
 
-    def transform(self, matrix: Transformation) -> None:
+    def transform(self, transformation: Transformation) -> None:
         """Transform this Brep in-place by a transformation matrix.
 
         Parameters
         ----------
-        matrix
+        transformation
             The transformation to apply.
         """
-        self._replace_from(brep_transform(self, matrix))
-
-    def transformed(self, matrix: Transformation) -> Brep:
-        """Return a transformed copy of this Brep.
-
-        Parameters
-        ----------
-        matrix
-            The transformation to apply.
-        """
-        copy = self.copy()
-        copy.transform(matrix)
-        return copy
+        self._replace_from(brep_transform(self, transformation))
 
     def copy(self) -> Brep:
         """Return a deep copy of this Brep."""

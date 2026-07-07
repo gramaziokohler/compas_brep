@@ -1,0 +1,11 @@
+# Brep, NurbsCurve, and NurbsSurface inherit `compas.geometry.Geometry`
+
+`Brep`, `NurbsCurve`, and `NurbsSurface` previously inherited `compas.data.Data` directly and hand-rolled `transform`/`transformed`. To add `translate`/`scale`/`rotate` convenience methods without duplicating logic, they now inherit `compas.geometry.Geometry` instead, which provides `translate(d)`/`translated`, `scale(x, y=None, z=None)`/`scaled`, and `rotate(angle, axis=None, point=None)`/`rotated` for free — each composes a `Translation`/`Scale`/`Rotation` and calls `self.transform(...)`, which correctly dispatches to each class's own override.
+
+This is **not** the same decision as "matching the `compas.geometry.Brep` interface without inheriting from it" (see `CONTEXT.md`). `compas.geometry.Geometry` is the lightweight generic base (`Data` + `aabb`/`obb` caching + transform convenience methods); `compas.geometry.Brep` is a separate, heavier class that additionally carries its own plugin/dispatch system (`new_brep`, `from_native`, etc.), which is what `compas_brep` avoids inheriting to prevent a collision with its own backend dispatch.
+
+**Trade-off accepted:** `Geometry.__eq__` is abstract (`raise NotImplementedError`) and `Geometry` defines no `__hash__`. None of `Brep`, `NurbsCurve`, `NurbsSurface` define `__eq__`/`__hash__` either, so `a == b` now raises `NotImplementedError` instead of falling back to identity comparison, and instances are unhashable. This matches `compas.geometry.Brep`'s own behavior (it has the same gap), so it's consistent with the wider COMPAS ecosystem rather than a `compas_brep`-specific quirk. No current code relies on identity equality or hashing these types.
+
+Each class's own `transformed()` override was deleted as a redundant duplicate of the inherited `Geometry.transformed()`; `transform()` stays as each class's real implementation (`Geometry.transform()` is itself abstract).
+
+**Note:** `scale()` always scales about the world origin (`Scale.from_factors`, no center point) — this is standard `Geometry` behavior, matching `Point`, `Line`, and `compas.geometry.Brep`. To scale about a Brep's own centroid or frame, compose a `Translation` + `Scale` + `Translation` manually and call `.transform()`/`.transformed()`.
