@@ -69,7 +69,7 @@ quote-style = "double"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m occ"
+addopts = "-m 'not rhino'"
 
 # ============================================================================
 # Release 

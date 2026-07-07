@@ -94,10 +94,10 @@ Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices
 
 ## Testing
 
-- Tests require a backend at runtime. Without one, they are skipped via pytest marks.
+- Most tests require a backend at runtime. Without one, they are skipped via pytest marks. A minority of tests (e.g. `NurbsCurve`/`NurbsSurface`, which are pure Python) need no backend and carry no marker.
 - `@pytest.mark.occ` — requires OCC (`cadquery-ocp-novtk`). Runs on CI.
-- `@pytest.mark.rhino` — requires `rhinoinside`. Runs locally on a dev machine with a Rhino license. Skipped on CI.
-- No mock backend. Tests run against the real kernel.
+- `@pytest.mark.rhino` — requires `rhinoinside`. Runs locally on a dev machine with a Rhino license. Skipped on CI (and by default locally — `addopts = "-m 'not rhino'"` in `pyproject.toml`).
+- No mock backend. Backend-dependent tests run against the real kernel.
 
 **Before running tests, install the OCC backend:**
 
