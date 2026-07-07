@@ -98,6 +98,7 @@ Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices
 - `@pytest.mark.occ` — requires OCC (`cadquery-ocp-novtk`). Runs on CI.
 - `@pytest.mark.rhino` — requires `rhinoinside`. Runs locally on a dev machine with a Rhino license. Skipped on CI (and by default locally — `addopts = "-m 'not rhino'"` in `pyproject.toml`).
 - No mock backend. Backend-dependent tests run against the real kernel.
+- No test classes. Tests are flat module-level `test_*` functions, not methods on `TestXxx` classes — grouping is expressed with `# =====` section-header comments and a `test_<group>_<name>` naming prefix (e.g. `test_constructors_from_box`), not nesting.
 
 **Before running tests, install the OCC backend:**
 
