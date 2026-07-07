@@ -1,5 +1,7 @@
 """Comprehensive tests for the Brep API methods."""
 
+import math
+
 import pytest
 from compas.datastructures import Mesh
 from compas.geometry import Box
@@ -303,6 +305,78 @@ class TestOperations:
         assert abs(brep.centroid.y) < 1e-6
         # New brep moved
         assert abs(new_brep.centroid.y - 3.0) < 1e-6
+
+    # -- translate / scale / rotate (inherited from compas.geometry.Geometry) --
+
+    def test_translate_moves_centroid(self):
+        brep = _unit_box_brep()
+        brep.translate(Vector(5, 0, 0))
+        c = brep.centroid
+        assert abs(c.x - 5.0) < 1e-6
+        assert abs(c.y) < 1e-6
+        assert abs(c.z) < 1e-6
+
+    def test_translated_returns_new_brep(self):
+        brep = Brep.from_polygons(_unit_box_brep().to_polygons())
+        new_brep = brep.translated(Vector(0, 3, 0))
+        assert isinstance(new_brep, Brep)
+        # Original unchanged
+        assert abs(brep.centroid.y) < 1e-6
+        # New brep moved
+        assert abs(new_brep.centroid.y - 3.0) < 1e-6
+
+    def test_scale_uniform_moves_centroid_and_volume(self):
+        brep = _offset_box_brep(dx=2.0)
+        brep.scale(2)
+        c = brep.centroid
+        assert abs(c.x - 4.0) < 1e-6
+        assert abs(c.y) < 1e-6
+        assert abs(brep.volume - 8.0) < 1e-6
+
+    def test_scale_nonuniform_moves_centroid_and_volume(self):
+        # Regression test: gp_Trsf (used for rigid + uniform-scale transforms) cannot
+        # represent anisotropic scale. occ_transform must route this through gp_GTrsf.
+        brep = _offset_box_brep(dx=1.0, dy=1.0, dz=1.0)
+        brep.scale(2, 3, 4)
+        c = brep.centroid
+        assert abs(c.x - 2.0) < 1e-6
+        assert abs(c.y - 3.0) < 1e-6
+        assert abs(c.z - 4.0) < 1e-6
+        assert abs(brep.volume - 24.0) < 1e-6
+
+    def test_scaled_returns_new_brep(self):
+        brep = Brep.from_polygons(_offset_box_brep(dx=2.0).to_polygons())
+        new_brep = brep.scaled(2)
+        assert isinstance(new_brep, Brep)
+        # Original unchanged
+        assert abs(brep.centroid.x - 2.0) < 1e-6
+        # New brep scaled
+        assert abs(new_brep.centroid.x - 4.0) < 1e-6
+
+    def test_rotate_default_axis_and_point(self):
+        # Default axis is Z, default point is the origin.
+        brep = _offset_box_brep(dx=2.0)
+        brep.rotate(math.pi / 2)
+        c = brep.centroid
+        assert abs(c.x) < 1e-6
+        assert abs(c.y - 2.0) < 1e-6
+        assert abs(c.z) < 1e-6
+
+    def test_rotate_custom_axis_and_point(self):
+        brep = _offset_box_brep(dx=5.0)
+        brep.rotate(math.pi, axis=Vector(0, 0, 1), point=Point(3, 0, 0))
+        c = brep.centroid
+        assert abs(c.x - 1.0) < 1e-6
+        assert abs(c.y) < 1e-6
+
+    def test_rotated_returns_new_brep(self):
+        brep = Brep.from_polygons(_offset_box_brep(dx=2.0).to_polygons())
+        new_brep = brep.rotated(math.pi / 2)
+        assert isinstance(new_brep, Brep)
+        # Original unchanged
+        assert abs(brep.centroid.x - 2.0) < 1e-6
+        # New brep rotated
+        assert abs(new_brep.centroid.y - 2.0) < 1e-6
 
     def test_flip_reverses_faces(self):
         brep = _unit_box_brep()
