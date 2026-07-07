@@ -9,8 +9,8 @@ import math
 from typing import TYPE_CHECKING
 
 import numpy as np
-from compas.data import Data
 from compas.geometry import Frame
+from compas.geometry import Geometry
 from compas.geometry import Line
 from compas.geometry import Point
 from compas.geometry import Polyline
@@ -47,7 +47,7 @@ def _knots_mults_from_knotvector(knotvector: list[float]) -> tuple[list[float], 
     return knots, mults
 
 
-class NurbsCurve(Data):
+class NurbsCurve(Geometry):
     """A rational NURBS curve.
 
     Parameters
@@ -426,18 +426,6 @@ class NurbsCurve(Data):
         for pt in self._points:
             pt.transform(transformation)
         self._invalidate_cache()
-
-    def transformed(self, transformation: Transformation) -> NurbsCurve:
-        """Return a transformed copy.
-
-        Parameters
-        ----------
-        transformation
-            The transformation to apply.
-        """
-        c = self.copy()
-        c.transform(transformation)
-        return c
 
     def copy(self) -> NurbsCurve:
         """Return a deep copy."""

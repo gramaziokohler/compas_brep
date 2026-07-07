@@ -11,7 +11,7 @@ The project consolidates the compas Brep wrappers (previously split across `comp
 ## Glossary
 
 **Brep**
-The single public interface class. A thin wrapper holding a reference to a native backend object. Owns no geometry data itself. All properties and methods delegate to the backend via the COMPAS plugin system. All argument and return types are COMPAS types — never backend types.
+The single public interface class. A thin wrapper holding a reference to a native backend object. Owns no geometry data itself. All properties and methods delegate to the backend via the COMPAS plugin system. All argument and return types are COMPAS types — never backend types. Inherits `compas.geometry.Geometry` (not `compas.data.Data` directly) for `translate`/`scale`/`rotate`/`transform` and their `-ed` copy-returning counterparts — see [design doc](.agents/prd/inherit-compas-geometry-geometry.md). This is unrelated to the "matching the `compas.geometry.Brep` interface without inheriting from it" decision below: `compas.geometry.Geometry` is the lightweight generic base; `compas.geometry.Brep` is the heavier class (with its own plugin dispatch) that is still avoided.
 
 **Backend**
 A geometry kernel that owns and operates on the native Brep object. Selected automatically at runtime based on what is importable. Current backends: OCC, Rhino.
@@ -23,7 +23,7 @@ The backend-specific Brep representation (e.g. `TopoDS_Shape` for OCC, `Rhino.Ge
 `BrepVertex`, `BrepEdge`, `BrepLoop`, `BrepFace`, `BrepTrim`. Native-handle wrappers — each holds a reference to its corresponding native entity. Properties (`.point`, `.curve`, `.surface`, etc.) call into native on demand and return COMPAS types. Results are lazily cached per-property to avoid repeated kernel calls.
 
 **NurbsCurve / NurbsSurface**
-Pure-Python value types storing control points, knots, and weights. Used as COMPAS-typed return values from topology sub-object properties. No backend delegation — they are data, not wrappers.
+Pure-Python value types storing control points, knots, and weights. Used as COMPAS-typed return values from topology sub-object properties. No backend delegation — they are data, not wrappers. Like `Brep`, inherit `compas.geometry.Geometry` for `translate`/`scale`/`rotate`/`transform` (see [design doc](.agents/prd/inherit-compas-geometry-geometry.md)).
 
 **Pluggable**
 A `@pluggable`-decorated function in `compas_brep.operations`. Raises `NotImplementedError` by default. Each backend registers `@plugin` implementations gated by `requires=["OCP"]` or `requires=["Rhino"]`.
