@@ -14,6 +14,7 @@ from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse
 from OCP.BRepAlgoAPI import BRepAlgoAPI_Section
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Copy
+from OCP.BRepBuilderAPI import BRepBuilderAPI_GTransform
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeSolid
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
@@ -23,6 +24,7 @@ from OCP.BRepFilletAPI import BRepFilletAPI_MakeFillet
 from OCP.BRepOffsetAPI import BRepOffsetAPI_MakeOffsetShape
 from OCP.BRepPrimAPI import BRepPrimAPI_MakeHalfSpace
 from OCP.gp import gp_Dir
+from OCP.gp import gp_GTrsf
 from OCP.gp import gp_Pln
 from OCP.gp import gp_Pnt
 from OCP.gp import gp_Trsf
@@ -302,27 +304,56 @@ def occ_make_solid(brep: Brep) -> Brep:
     return occ_to_brep(solid.Shape())
 
 
+def _is_similarity_transform(m: list[list[float]], tol: float = 1e-6) -> bool:
+    """Return True if the linear part of a transform matrix is a pure rotation + uniform scale.
+
+    gp_Trsf can only represent rigid motion plus a single uniform scale factor: it silently
+    collapses anisotropic scale or shear into an averaged uniform factor instead of raising.
+    Detect that case here so callers can route through gp_GTrsf instead.
+    """
+    cols = [[m[row][col] for row in range(3)] for col in range(3)]
+    lengths_sq = [sum(v * v for v in col) for col in cols]
+    k2 = lengths_sq[0]
+    if any(abs(length_sq - k2) > tol * max(1.0, k2) for length_sq in lengths_sq):
+        return False
+    for i in range(3):
+        for j in range(i + 1, 3):
+            dot = sum(cols[i][k] * cols[j][k] for k in range(3))
+            if abs(dot) > tol * max(1.0, k2):
+                return False
+    return True
+
+
 def occ_transform(brep: Brep, transformation: Transformation) -> Brep:
     """Transform a Brep by a COMPAS Transformation."""
 
     shape = brep_to_occ(brep)
     m = transformation.matrix
-    trsf = gp_Trsf()
-    trsf.SetValues(
-        m[0][0],
-        m[0][1],
-        m[0][2],
-        m[0][3],
-        m[1][0],
-        m[1][1],
-        m[1][2],
-        m[1][3],
-        m[2][0],
-        m[2][1],
-        m[2][2],
-        m[2][3],
-    )
-    return occ_to_brep(BRepBuilderAPI_Transform(shape, trsf, True).Shape())
+
+    if _is_similarity_transform(m):
+        trsf = gp_Trsf()
+        trsf.SetValues(
+            m[0][0],
+            m[0][1],
+            m[0][2],
+            m[0][3],
+            m[1][0],
+            m[1][1],
+            m[1][2],
+            m[1][3],
+            m[2][0],
+            m[2][1],
+            m[2][2],
+            m[2][3],
+        )
+        return occ_to_brep(BRepBuilderAPI_Transform(shape, trsf, True).Shape())
+
+    # Anisotropic scale or shear: gp_Trsf can't represent this, use the general affine transform.
+    gtrsf = gp_GTrsf()
+    for i in range(3):
+        for j in range(4):
+            gtrsf.SetValue(i + 1, j + 1, m[i][j])
+    return occ_to_brep(BRepBuilderAPI_GTransform(shape, gtrsf, True).Shape())
 
 
 def occ_flip(brep: Brep) -> Brep:
