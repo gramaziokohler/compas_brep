@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-* Changed `compas_brep.scene.rhino` scene objects to only register for the `Rhino` context, since they bake geometry into the Rhino document rather than returning it as Grasshopper output data.
+* Fixed `SceneObjectNotRegisteredError` in Grasshopper for when trying to draw Brep.
 
 ### Removed
 
