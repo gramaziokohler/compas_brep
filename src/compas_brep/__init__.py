@@ -26,6 +26,7 @@ __all_plugins__ = [
     "compas_brep.backend.rhino.plugins",
     "compas_brep.scene.viewer",
     "compas_brep.scene.rhino",
+    "compas_brep.scene.ghpython",
 ]
 
 __all__ = [

@@ -9,7 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `compas_brep.scene.ghpython` with `BrepObject`, `NurbsCurveObject`, and `NurbsSurfaceObject` for drawing `Brep`, `NurbsCurve`, and `NurbsSurface` in Grasshopper.
+
 ### Changed
+
+* Changed `compas_brep.scene.rhino` scene objects to only register for the `Rhino` context, since they bake geometry into the Rhino document rather than returning it as Grasshopper output data.
 
 ### Removed
 
