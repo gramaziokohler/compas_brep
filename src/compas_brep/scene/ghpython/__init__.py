@@ -19,6 +19,9 @@ from .surfaceobject import NurbsSurfaceObject
 
 @plugin(category="factories", requires=["Rhino"])
 def register_scene_objects():
+    # even though they have the same requirement (`Rhino`), Grasshopper scene objects
+    # are slightly different, and mostly need to be separated from the rhino ones since they contain imports
+    # which are not allowed in the Grasshopper context and therefore will silently not get registered
     register(Brep, BrepObject, context="Grasshopper")
     register(NurbsCurve, NurbsCurveObject, context="Grasshopper")
     register(NurbsSurface, NurbsSurfaceObject, context="Grasshopper")
