@@ -725,6 +725,14 @@ def brep_to_occ(brep: Brep) -> Any:
         else:
             continue
 
+        # Honor the stored face orientation. The build paths above produce a
+        # face whose orientation follows the surface's natural normal, dropping
+        # the canonical ``is_reversed`` flag. Without this, sewing is free to
+        # pick either global sense and can invert the whole shell (flipping the
+        # sign of the reported volume) for shapes with mixed face orientations.
+        if face.is_reversed:
+            occ_face = TopoDS.Face_s(occ_face.Reversed())
+
         sewing.Add(occ_face)
 
     sewing.Perform()
