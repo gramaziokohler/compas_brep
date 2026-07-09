@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Fixed Brep with negative volume is masked by the `Brep.volume` property which always reports an absolute value.
+
 ### Removed
 
 ## [0.1.3] 2026-07-08
