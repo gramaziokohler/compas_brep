@@ -47,7 +47,7 @@ def occ_volume(brep: Brep) -> float:
     shape = brep_to_occ(brep)
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, props)
-    return abs(props.Mass())
+    return props.Mass()
 
 
 def occ_centroid(brep: Brep) -> Point:

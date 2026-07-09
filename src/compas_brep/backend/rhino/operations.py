@@ -270,7 +270,7 @@ def rhino_area(brep: Brep) -> float:
 def rhino_volume(brep: Brep) -> float:
     """Return the enclosed volume of a solid Brep."""
     mp = Rhino.Geometry.VolumeMassProperties.Compute(brep_to_rhino(brep))
-    return abs(mp.Volume) if mp is not None else 0.0
+    return mp.Volume if mp is not None else 0.0
 
 
 def rhino_centroid(brep: Brep) -> Point:

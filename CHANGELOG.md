@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Fixed Brep with negative volume is masked by the `Brep.volume` property which always reports an absolute value.
+* Fixed `brep_to_occ` dropping the stored per-face `is_reversed` orientation, which let sewing invert the global shell orientation and flip the sign of the volume on serialization round-trips of shapes with mixed face orientations.
+
 ### Removed
 
 ## [0.1.3] 2026-07-08
