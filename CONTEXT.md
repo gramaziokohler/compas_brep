@@ -28,6 +28,20 @@ Pure-Python value types storing control points, knots, and weights. Used as COMP
 **Pluggable**
 A `@pluggable`-decorated function in `compas_brep.operations`. Raises `NotImplementedError` by default. Each backend registers `@plugin` implementations gated by `requires=["OCP"]` or `requires=["Rhino"]`.
 
+**Exchange document**
+The COMPAS-native JSON produced by `Brep.__data__` and consumed by `Brep.__from_data__`. The medium for moving a Brep between backends. Always a **file/wire handoff** — one backend is live per process, and the document crosses a process boundary. Never requires both kernels in one process. STEP is a file format for third-party CAD interop, not the exchange document.
+_Avoid_: "serialization format" when the cross-backend contract is what's meant.
+
+**Representational fidelity**
+The bar an exchange must clear: a cylinder that leaves one backend arrives at the other as a `CylindricalSurface`, not as a NURBS approximation of one. Stronger than *geometric fidelity* (matching volume/area within tolerance), which a NURBS approximation would pass. See [ADR-0001](docs/adr/0001-native-json-brep-exchange.md).
+
+**Loop role**
+Whether a loop bounds a face from outside (`outer`) or cuts a hole in it (`inner`). Explicitly tagged in the exchange document as of v6. In v5 this was implied by position (`loops[0]` was outer), a convention no writer enforced.
+
+**Pcurve**
+The 2D curve of a trim in its face's parameter space (`BrepTrim.curve_2d`). Required — not optional — for an exact rebuild: it is what distinguishes a genuinely trimmed face from a rectangular patch.
+_Avoid_: "2D curve", "UV curve".
+
 ---
 
 ## Architecture
@@ -48,7 +62,7 @@ BrepFace.surface  →  Plane | CylindricalSurface | ConicalSurface | SphericalSu
 
 ## Surface Type Support
 
-OCC has eleven surface types (`GeomAbs`). The table below records what compas_brep can do with each:
+OCC has eleven surface types (`GeomAbs`). The table below records what compas_brep can do with each **via the OCC backend**. The Rhino backend must reach the same analytic coverage (`Surface.TryGetCylinder` / `TryGetSphere` / `TryGetTorus` / `TryGetCone` on extract; the ported builder on rebuild) — anything less fails the representational-fidelity bar, and anything unhandled raises rather than degrading.
 
 | OCC surface type | `face.surface` COMPAS type | Tessellation / viz | JSON serialize | JSON deserialize |
 |---|---|---|---|---|
@@ -76,17 +90,26 @@ OCC has eleven surface types (`GeomAbs`). The table below records what compas_br
 
 ## Serialization
 
-Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices, edges with curves, faces with surfaces, loops with trim curves) but as COMPAS/JSON, not STEP syntax.
+Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices, edges with curves, faces with surfaces, loops with trim curves) but as COMPAS/JSON, not STEP syntax. This is the **exchange document** — the supported way to move a Brep between the Rhino and OCC backends. See [ADR-0001](docs/adr/0001-native-json-brep-exchange.md).
 
 - `Brep.__data__` asks the backend to extract geometry/topology entities and encodes them as JSON.
-- `Brep.__from_data__` decodes the JSON and calls `brep_rebuild` (a pluggable) to reconstruct the native object. Requires a backend — no display-only fallback.
+- `Brep.__from_data__` decodes the JSON and calls `brep_rebuild` (a pluggable) to reconstruct the native object. **Requires a backend — no display-only fallback, no exceptions.** A consumer without a kernel gets a `Mesh`, not a `Brep`.
 - `brep_rebuild` is only called from `__from_data__`. After it runs, the native object is source of truth.
-- `Brep.to_step` / `Brep.from_step` are always available as the explicit file-level serialization path.
+- `Brep.to_step` / `Brep.from_step` remain available for third-party CAD interop. They are not the cross-backend exchange path.
+
+**Loss policy: never silently degrade.** A backend that encounters a surface or curve type it cannot represent raises `BrepError`. It does not fall back to an approximation, and it does not skip the entity. This generalizes the rule OCC's `_extract_surface` already followed. It exists because the opposite behaviour is what let `brep_to_rhino` silently drop every analytic face for an entire release.
 
 **Version history:**
 
 - **v4** (legacy): only `"plane"` and `"nurbs"` surface types. Cylinder/Cone/Sphere/Torus were serialized as `"nurbs"` (NURBS approximation).
-- **v5** (current): adds `"cylinder"`, `"cone"`, `"sphere"`, and `"torus"` surface type tags. Each uses the COMPAS analytic type's native `__data__`/`__from_data__` round-trip. The surface codec (`surfaces/_codec.py`) reads both v4 and v5 documents transparently — v4 files still deserialize correctly.
+- **v5**: adds `"cylinder"`, `"cone"`, `"sphere"`, and `"torus"` surface type tags. Each uses the COMPAS analytic type's native `__data__`/`__from_data__` round-trip. Written by both backends, but **only OCC ever produced the analytic tags** — Rhino's `_extract_surface` emitted `plane`/`nurbs` only, and Rhino's rebuild understood nothing else. v5 documents from OCC were therefore unreadable by Rhino (faces were dropped without error).
+- **v6** (current): closes the cross-backend gaps.
+  - Loops carry an explicit role: `{"type": "outer" | "inner", "trims": [...]}`. Position is no longer load-bearing.
+  - `curve_2d` is **non-nullable**. A writer that cannot produce a pcurve raises.
+  - Edge curves gain analytic tags: `line | circle | arc | ellipse | nurbs` (was `line | nurbs`). An exact cylinder now carries exact circular seams, removing the edge/surface tolerance mismatch that forced hand-tuned join tolerances.
+  - Both backends read and write every tag. This is a contract, not a convention — see the schema test.
+
+The surface codec (`surfaces/_codec.py`) reads v4, v5, and v6 documents transparently.
 
 **Cone parameterization note:** OCC's `gp_Cone` is parameterized by `(Position, RefRadius, SemiAngle)`, where `RefRadius` is the base radius at the location origin and `SemiAngle` is the half-opening angle. COMPAS's `ConicalSurface` uses `(radius, height, frame)`. The conversion is `height = -RefRadius / tan(SemiAngle)` (negative SemiAngle for a tapering cone). The v5 JSON stores the COMPAS `radius` and `height` directly; the OCC SemiAngle is not preserved in the serialized form.
 
@@ -98,6 +121,14 @@ Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices
 - `@pytest.mark.occ` — requires OCC (`cadquery-ocp-novtk`). Runs on CI.
 - `@pytest.mark.rhino` — requires `rhinoinside`. Runs locally on a dev machine with a Rhino license. Skipped on CI (and by default locally — `addopts = "-m 'not rhino'"` in `pyproject.toml`).
 - No mock backend. Backend-dependent tests run against the real kernel.
+
+**Cross-backend exchange is verified by committed fixtures, not by live round-trips.** CI has no Rhino license, and `-m 'not rhino'` skips Rhino tests by default even locally — so any test that needs a live Rhino is a test that effectively never runs. (This is not hypothetical: `test_rhino_serialization.py` asserted `version == 4` for an entire release after the writer moved to 5, and nobody saw it fail.)
+
+The contract is pinned three ways:
+
+1. **Golden fixtures** — real Rhino-authored exchange documents committed under `tests/fixtures/`. OCC-marked tests read them on CI and assert analytic types survive. This is the only mechanism that lets CI catch "Rhino writes a tag OCC can't read".
+2. **Fixture regeneration** — Rhino-marked tests regenerate the fixtures and assert they still match, so drift surfaces on a dev machine.
+3. **Schema test** — both backends must round-trip every tag in the format's tag set. Cheap, runs on CI, and would have caught the dropped-cylinder bug on day one.
 - No test classes. Tests are flat module-level `test_*` functions, not methods on `TestXxx` classes — grouping is expressed with `# =====` section-header comments and a `test_<group>_<name>` naming prefix (e.g. `test_constructors_from_box`), not nesting.
 
 **Before running tests, install the OCC backend:**
