@@ -74,3 +74,84 @@ Testing status — READ THIS:
   The LAMCP bridge is a usable Rhino gate for later slices.
 
 Next: slice 02 — v6 format: explicit loop roles, non-nullable pcurves.
+
+--------------------------------------------------------------------------
+2026-07-16 — Slice 02 (v6: explicit loop roles, non-nullable pcurves): DONE
+commit 8e6c33b
+
+Loops are now tagged {"type": "outer"|"inner", "trims": [...]}; version is 6
+from both writers (OCC tags via BRepTools.OuterWire_s, Rhino via BrepLoopType);
+both readers pick the outer loop by tag and raise on zero or several. curve_2d
+is non-nullable in v6 and the pcurve-presence branches are gone from both
+rebuild paths (OCC's all_have_pcurves -> domain-bounded fallback, Rhino's two
+None-guards).
+
+New module src/compas_brep/exchange.py holds what the backends must agree on
+(version, roles, loop decode, pcurve decode). Both legacy concessions are
+confined there and nowhere else: the v4/v5 positional fallback and the null
+pcurve those versions permitted.
+
+Design point that cost the most thought — non-nullability is a property of a v6
+DOCUMENT, not of the reader. The committed v4 fixture (test_rhino_serialization
+UNIT_BOX_OCC_DATA) is planar-only with curve_2d: null on every trim, so a reader
+that enforced non-null retroactively would fail the v4 read test this slice is
+required to keep passing. trim_pcurve_from_data therefore raises only at v6.
+
+Measured, not assumed:
+  - The pcurve criterion cost nothing. Checked both writers first: OCC and Rhino
+    each already emit a pcurve for every trim of a box / holed box / sphere.
+    Zero nulls. The "writer that cannot produce a pcurve" is hypothetical on
+    both backends today.
+  - The inner-loop criterion caught a REAL pre-existing defect, and it was not
+    in the format. Box with a through-hole never round-tripped on OCC: volume
+    7.434513 -> 7.623009, restored shape invalid. Identical numbers before the
+    slice, so v6 didn't cause it. Cause: a planar face rebuilds from its 3D
+    wires; a 3D wire's winding says nothing about hole-ness, OCC reads that from
+    wire orientation, and MakeFace(face, wire) does not reorient. One of the two
+    holed faces got an inner wire winding with its outer, so OCC ADDED the hole
+    area (4.283 = 4 + pi*0.3^2) instead of subtracting it (3.717). Only one of
+    the two broke — top and bottom have opposite orientations — which is how a
+    symmetric shape hid it. ShapeFix_Face.FixOrientation fixes it; delta now
+    4.5e-08 (so the test asserts TOL.is_close, not TOL.absolute — 1e-9 is below
+    the rebuild's own sewing tolerance).
+
+Slice 01's flagged design point, now resolved as far as this slice can:
+  Planar pcurves stay WRITE-ONLY. Routing planar faces through the pcurve path
+  (which would delete the 3D-wire path entirely) does not work, because
+  Plane.__data__ is point + normal and pins no x-axis — a reader re-deriving the
+  plane picks an arbitrary UV frame and the pcurve lands elsewhere. OCC ignores
+  planar pcurves; Rhino re-derives its own by projection. v6 makes them
+  non-nullable but not meaningful. Making them meaningful needs the plane's
+  frame + uv_domain pinned in the document — which ADR-0002 explicitly declined.
+  Worth a decision (and an ADR amendment) before anyone relies on them.
+
+Carried forward — KNOWN DEFECT, not in any slice-02 criterion:
+  A cylinder loses its SEAM EDGE on rebuild and the result reports invalid.
+  Plain cylinder: 3 edges -> 2, BRepCheck_Analyzer invalid. Holed box: 15 -> 14.
+  Pre-existing (identical before this slice). It survives because face count and
+  volume — what the criteria check — are both unaffected by it. Slice 06
+  (analytic edge tags: circle/arc/ellipse) touches seam curves and is the
+  natural home for it.
+
+CONTEXT.md drift, left alone deliberately: its v6 section already claims edge
+curves carry analytic tags (line | circle | arc | ellipse | nurbs) and that
+"both backends read and write every tag". That is slice 06, not yet true.
+
+Testing status — READ THIS:
+  pytest -m occ -q ................ 227 passed (217 before + 10 new)
+  pytest -q (default, not rhino) .. 240 passed
+  pytest -m rhino ................. NOT RUN. No rhinoinside on this machine, and
+        -m 'not rhino' skips it by default. Do not read the checked boxes as a
+        pytest -m rhino pass.
+  Instead: all 53 Rhino-marked tests (30 serialization + 23 topology) were run
+  inside a live Rhino 8 via the LAMCP bridge, where all 53 pass. Rhino's runtime
+  has no real pytest (the importable `pytest` is a stub with no .main), so they
+  were driven through a small harness supplying mark/fixture/raises. The harness
+  was sanity-checked against deliberately failing and raising tests before its
+  green was trusted. Real kernel verification, not a pytest run.
+
+Next: slice 03 — cross-backend contract harness: fixtures + schema test.
+  Slice 01 asked slice 03 to replace the hand-written UNIT_BOX_OCC_DATA with a
+  real backend-authored fixture. Note it is currently the ONLY v4 document under
+  test, so whatever replaces it must keep a v4-with-null-pcurves document in the
+  suite or the legacy read path silently stops being covered.
