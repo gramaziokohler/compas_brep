@@ -12,22 +12,36 @@ from __future__ import annotations
 import json
 
 import pytest
+from compas.geometry import CylindricalSurface
 from compas.tolerance import TOL
 from exchange_fixtures import FIXTURE_DIR
+from exchange_fixtures import OCC_SOURCES
 from exchange_fixtures import SOURCES
 from exchange_fixtures import documents_differ
 from exchange_fixtures import load_fixture
+from exchange_fixtures import load_occ_fixture
 from exchange_fixtures import write_fixture
+from exchange_fixtures import write_occ_fixture
 
 from compas_brep import Brep
 from compas_brep.exchange import EXCHANGE_VERSION
 
 # What each Rhino-authored fixture is expected to say.
 #
-# The surface tags are Rhino's as it stands: a sphere and a cylinder wall arrive
-# tagged "nurbs" because the Rhino writer cannot yet emit the analytic tags (slices
-# 04 and 05). When it can, these expectations change along with the fixtures -- that
-# is the point of pinning them.
+# The surface tags are Rhino's as it stands: a sphere still arrives tagged "nurbs"
+# because the Rhino writer cannot yet emit that analytic tag (slice 05). When it can,
+# these expectations change along with the fixtures -- that is the point of pinning
+# them. Slice 04 was the first to collect: a cylinder wall now arrives tagged
+# "cylinder", here and on the holed box.
+#
+# The filleted box's 20 curved faces stay "nurbs" even though 12 of them are exactly
+# cylinders to Rhino, and OCC tags those 12 "cylinder". Rhino stores a fillet as a
+# rational NURBS whose angle is not linear in either parameter, so its pcurves cannot
+# be carried into the document's (angle, height) space exactly -- see
+# `_cylinder_and_param_map`. Tagging them would mean writing trims that land at the
+# wrong angle, which is worse than the "nurbs" tag, and "nurbs" reproduces those
+# faces exactly. This is a real remaining divergence between the backends, not a
+# rounding difference.
 #
 # ``volume_atol`` is the bar the OCC rebuild is held to. A planar box is exact; a
 # document whose curved faces are NURBS carries approximation error at the scale of
@@ -63,9 +77,23 @@ EXPECTED = {
     },
     "box_with_hole": {
         "faces": 7,
-        "surface_tags": {"plane", "nurbs"},
+        "surface_tags": {"plane", "cylinder"},
         "loop_roles": {"outer", "inner"},
         "volume": 7.434513,
+        "volume_atol": 1e-3,
+        "rebuild_broken": False,
+    },
+    # The wall's surface is now analytic and exact, but its cap edges are still
+    # written as NURBS circles, and a NURBS circle's parameter is not its angle.
+    # The wall's pcurves run linearly in angle, so pcurve and edge curve trace the
+    # same circle at different rates and OCC's rebuilt wall is slightly off. Slice 06
+    # (analytic edge curve tags) is what makes a seam an exact circle; this atol
+    # should tighten to TOL when it lands.
+    "cylinder": {
+        "faces": 3,
+        "surface_tags": {"plane", "cylinder"},
+        "loop_roles": {"outer"},
+        "volume": 1.570796,
         "volume_atol": 1e-3,
         "rebuild_broken": False,
     },
@@ -199,6 +227,31 @@ def test_occ_rebuild_of_the_hole_is_valid():
     assert Brep.__from_data__(load_fixture("box_with_hole")).is_valid
 
 
+@pytest.mark.occ
+@pytest.mark.parametrize("name", ["cylinder", "box_with_hole"])
+def test_occ_reads_a_rhino_authored_cylinder_as_an_analytic_cylinder(name):
+    # The slice-04 tracer, running on CI without a Rhino license: Rhino authored a
+    # cylinder wall and tagged it analytically, and OCC must rebuild it as a real
+    # CylindricalSurface rather than a NURBS approximation of one. Asserting the
+    # rebuilt type -- not a volume -- is the representational-fidelity bar.
+    restored = Brep.__from_data__(load_fixture(name))
+
+    walls = [face for face in restored.faces if face.is_cylinder]
+    assert len(walls) == 1
+    assert isinstance(walls[0].surface, CylindricalSurface)
+    assert walls[0].surface_type == "cylinder"
+
+
+@pytest.mark.occ
+def test_occ_reads_the_rhino_cylinder_radius_and_axis():
+    # Guards the tag against being right in name only: a CylindricalSurface with the
+    # wrong radius or axis would still satisfy the type assertion above.
+    wall = next(f for f in Brep.__from_data__(load_fixture("cylinder")).faces if f.is_cylinder)
+
+    assert TOL.is_close(wall.surface.radius, 0.5)
+    assert TOL.is_allclose(list(wall.surface.frame.zaxis), [0.0, 0.0, 1.0])
+
+
 # =============================================================================
 # 3. The legacy v4 document still reads
 # =============================================================================
@@ -255,3 +308,37 @@ def test_rhino_regenerates_fixture_unchanged(name, request):
 
     difference = documents_differ(load_fixture(name), regenerated)
     assert difference is None, f"fixture {name!r} has drifted from live Rhino at {difference}"
+
+
+# =============================================================================
+# 5. The mirror: OCC-authored fixtures, read by Rhino
+# =============================================================================
+
+# The OCC -> Rhino direction needs a committed OCC-authored document for the same
+# reason the other direction does: neither backend is importable in the same process
+# as the other, so the Rhino-marked test that reads it cannot author it. This is the
+# OCC-marked half -- it keeps that document honest on CI.
+
+
+@pytest.mark.occ
+@pytest.mark.parametrize("name", sorted(OCC_SOURCES))
+def test_occ_regenerates_its_fixture_unchanged(name, request):
+    regenerated = OCC_SOURCES[name]().__data__
+
+    if request.config.getoption("--refresh-fixtures"):
+        write_occ_fixture(name, regenerated)
+        pytest.skip(f"refreshed OCC fixture {name!r}")
+
+    difference = documents_differ(load_occ_fixture(name), regenerated)
+    assert difference is None, f"OCC fixture {name!r} has drifted at {difference}"
+
+
+@pytest.mark.occ
+def test_occ_fixture_cylinder_carries_the_analytic_tag():
+    # Guards the fixture the Rhino-marked reader depends on: if OCC ever stopped
+    # tagging this wall `cylinder`, that reader would be testing nothing, and it runs
+    # nowhere CI can see it fail.
+    data = load_occ_fixture("cylinder")
+
+    assert data["version"] == EXCHANGE_VERSION
+    assert _surface_tags(data) == {"plane", "cylinder"}

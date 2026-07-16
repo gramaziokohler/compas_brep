@@ -1,6 +1,7 @@
 """Tests for Rhino native-handle topology sub-object wrappers (issue 05)."""
 
 import pytest
+from compas.geometry import CylindricalSurface
 from compas.geometry import Plane
 from compas.geometry import Point
 
@@ -122,10 +123,14 @@ def test_property_types_face_surface_is_compas_type(box_brep):
         assert isinstance(f.surface, (Plane, NurbsSurface))
 
 
-def test_property_types_face_surface_nurbs_on_cylinder(cylinder_brep):
+def test_property_types_face_surface_analytic_on_cylinder(cylinder_brep):
+    # This asserted `>= 1 NurbsSurface` until slice 04: a cylinder wall came out of
+    # Rhino as a NURBS approximation, and the test pinned that as expected. The wall
+    # is exactly a cylinder, so it now extracts as one and nothing here is a NURBS.
     surfaces = [f.surface for f in cylinder_brep.faces]
-    nurbs_surfaces = [s for s in surfaces if isinstance(s, NurbsSurface)]
-    assert len(nurbs_surfaces) >= 1
+
+    assert len([s for s in surfaces if isinstance(s, CylindricalSurface)]) == 1
+    assert not [s for s in surfaces if isinstance(s, NurbsSurface)]
 
 
 def test_property_types_trim_curve_2d_is_nurbs_or_none(cylinder_brep):
@@ -161,8 +166,9 @@ def test_property_caching_face_surface_cached(box_brep):
 
 
 def test_property_caching_trim_curve_2d_cached(cylinder_brep):
-    nurbs_face = next(f for f in cylinder_brep.faces if f.is_nurbs)
-    trim = nurbs_face.outer_loop.trims[0]
+    # Any face with pcurves will do; the wall is the one that is not planar.
+    curved_face = next(f for f in cylinder_brep.faces if not f.is_planar)
+    trim = curved_face.outer_loop.trims[0]
     c1 = trim.curve_2d
     c2 = trim.curve_2d
     assert c1 is c2

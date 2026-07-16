@@ -53,11 +53,25 @@ def build_box_with_hole() -> Brep:
     return Brep.from_box(Box(2.0, 2.0, 2.0)) - Brep.from_cylinder(Cylinder(0.3, 4.0))
 
 
+def build_cylinder() -> Brep:
+    """A cylinder: the analytic ``cylinder`` tag, and a seam."""
+    return Brep.from_cylinder(Cylinder(0.5, 2.0))
+
+
 SOURCES = {
     "box": build_box,
     "filleted_box": build_filleted_box,
     "sphere": build_sphere,
     "box_with_hole": build_box_with_hole,
+    "cylinder": build_cylinder,
+}
+
+# The fixtures above are Rhino-authored and read by OCC. These are the mirror: OCC
+# -authored documents, committed so that a Rhino-marked test can read them without an
+# OCC install. Without them the OCC -> Rhino direction is verified nowhere, since
+# neither backend is ever importable in the same process as the other.
+OCC_SOURCES = {
+    "cylinder": build_cylinder,
 }
 
 
@@ -65,15 +79,32 @@ def fixture_path(name: str) -> Path:
     return FIXTURE_DIR / f"rhino_{name}.json"
 
 
+def occ_fixture_path(name: str) -> Path:
+    return FIXTURE_DIR / f"occ_{name}.json"
+
+
 def load_fixture(name: str) -> dict:
     with open(fixture_path(name)) as f:
         return json.load(f)
 
 
-def write_fixture(name: str, data: dict) -> None:
+def load_occ_fixture(name: str) -> dict:
+    with open(occ_fixture_path(name)) as f:
+        return json.load(f)
+
+
+def _dump(path: Path, data: dict) -> None:
     FIXTURE_DIR.mkdir(exist_ok=True)
-    with open(fixture_path(name), "w") as f:
+    with open(path, "w") as f:
         json.dump(data, f, indent=2, sort_keys=True)
+
+
+def write_fixture(name: str, data: dict) -> None:
+    _dump(fixture_path(name), data)
+
+
+def write_occ_fixture(name: str, data: dict) -> None:
+    _dump(occ_fixture_path(name), data)
 
 
 def documents_differ(committed, regenerated, path: str = "") -> str | None:

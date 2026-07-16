@@ -95,7 +95,9 @@ class RhinoBrepTrim(BrepTrim):
     @property
     def curve_2d(self) -> NurbsCurve | None:
         if self._curve_2d is None:
-            self._curve_2d = _extract_trim_curve_2d(self._rhino_trim)
+            from .conversion import _extract_trim_pcurve
+
+            self._curve_2d = _extract_trim_pcurve(self._rhino_trim)
         return self._curve_2d
 
     @curve_2d.setter
@@ -189,18 +191,4 @@ class RhinoBrepFace(BrepFace):
         self._domain_v = (self._rhino_face.Domain(1)[0], self._rhino_face.Domain(1)[1])
 
     def __repr__(self) -> str:
-        surface_type = "plane" if self.is_planar else "nurbs"
-        return f"RhinoBrepFace({len(self.vertices)} vertices, {surface_type})"
-
-
-def _extract_trim_curve_2d(rhino_trim: Any) -> NurbsCurve | None:
-    """Extract the 2D parametric curve from a Rhino BrepTrim, returning NurbsCurve or None."""
-    from .conversion import _rhino_nurbs_curve_to_compas
-
-    curve = rhino_trim.TrimCurve
-    if curve is None:
-        return None
-    nurbs = curve.ToNurbsCurve()
-    if nurbs is None:
-        return None
-    return _rhino_nurbs_curve_to_compas(nurbs)
+        return f"RhinoBrepFace({len(self.vertices)} vertices, {self.surface_type})"

@@ -125,7 +125,9 @@ def test_round_trip_boolean_diff_mixed_surface_types_in_data(boolean_diff_brep):
     data = boolean_diff_brep.__data__
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "plane" in surface_types
-    assert "nurbs" in surface_types
+    # The hole's wall was tagged "nurbs" until slice 04 taught the Rhino writer to
+    # emit the analytic tag. It is a cylinder, and it now says so.
+    assert "cylinder" in surface_types
 
 
 # =============================================================================
