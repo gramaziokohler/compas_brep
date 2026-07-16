@@ -26,11 +26,12 @@ class BrepLoop:
     def edges(self) -> list[BrepEdge]:
         """The ordered list of edges in this loop.
 
-        If trims are present, returns their underlying edges.
-        Otherwise returns the directly-stored edges (legacy path).
+        If trims are present, returns their underlying edges. Singular trims
+        contribute nothing — they have no edge. Otherwise returns the
+        directly-stored edges (legacy path).
         """
         if self._trims:
-            return [t.edge for t in self._trims]
+            return [t.edge for t in self._trims if t.edge is not None]
         return self._edges
 
     @property

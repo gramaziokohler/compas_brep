@@ -1,0 +1,14 @@
+Progress log for the cross-backend Brep exchange feature.
+ADRs: ../../adr/0001-native-json-brep-exchange.md
+      ../../adr/0002-rhino-rebuild-via-brepbuilder.md
+General/other project progress lives in ../../progress.txt.
+
+Slice order (each blocked by the one before it):
+  01 Rhino rebuild via the low-level Brep builder   (ADR-0002)
+  02 v6 format: explicit loop roles, non-nullable pcurves
+  03 Cross-backend contract harness: fixtures + schema test
+  04 Rhino cylinder surfaces (tracer)
+  05 Rhino sphere/cone/torus surfaces
+  06 Analytic edge curve tags (circle/arc/ellipse)
+
+No work started yet.

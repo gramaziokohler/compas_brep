@@ -13,6 +13,8 @@ import math
 import pytest
 from compas.geometry import Box
 from compas.geometry import Cylinder
+from compas.geometry import Sphere
+from compas.tolerance import TOL
 
 from compas_brep import Brep
 
@@ -43,7 +45,7 @@ def boolean_diff_brep():
 
 def test_serialization_format_box_data_version(unit_box_brep):
     data = unit_box_brep.__data__
-    assert data["version"] == 4
+    assert data["version"] == 5
 
 
 def test_serialization_format_box_data_keys(unit_box_brep):
@@ -165,12 +167,17 @@ UNIT_BOX_OCC_DATA = {
         {
             "surface": {"type": "plane", "data": {"point": [0.0, 0.0, -0.5], "normal": [0.0, 0.0, -1.0]}},
             "is_reversed": False,
+            # Traversed in reverse so the loop winds counter-clockwise about this
+            # face's -Z normal, as the other five faces do about theirs. The old
+            # rebuild discarded loop winding (CreatePlanarBreps re-derived each
+            # face's normal from its 3D boundary), so this face read as outward
+            # despite winding inward; the builder honors what the document says.
             "loops": [
                 [
-                    {"edge": 0, "is_reversed": False, "curve_2d": None},
-                    {"edge": 1, "is_reversed": False, "curve_2d": None},
-                    {"edge": 2, "is_reversed": False, "curve_2d": None},
-                    {"edge": 3, "is_reversed": False, "curve_2d": None},
+                    {"edge": 3, "is_reversed": True, "curve_2d": None},
+                    {"edge": 2, "is_reversed": True, "curve_2d": None},
+                    {"edge": 1, "is_reversed": True, "curve_2d": None},
+                    {"edge": 0, "is_reversed": True, "curve_2d": None},
                 ]
             ],
         },
@@ -254,3 +261,74 @@ def test_cross_backend_deserialization_cylinder_from_rhino_roundtrip():
     restored = Brep.__from_data__(data)
     expected = math.pi * 0.5**2 * 2.0
     assert abs(restored.volume - expected) < 0.1
+
+
+# =============================================================================
+# 6. Rebuild through the low-level Brep builder (ADR-0002)
+# =============================================================================
+
+
+def test_builder_filleted_box_face_count_preserved():
+    # The rectangular-crop path rebuilt each fillet as a rectangular sheet and
+    # lost 8 of the 26 faces. This is the case that motivated the builder.
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    filleted = box.filleted(0.3)
+    restored = Brep.__from_data__(filleted.__data__)
+    assert len(restored.faces) == len(filleted.faces)
+
+
+def test_builder_filleted_box_volume_preserved():
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    filleted = box.filleted(0.3)
+    restored = Brep.__from_data__(filleted.__data__)
+    assert TOL.is_close(restored.volume, filleted.volume)
+
+
+def test_builder_filleted_box_is_valid():
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    filleted = box.filleted(0.3)
+    restored = Brep.__from_data__(filleted.__data__)
+    assert restored.is_valid
+
+
+def test_builder_boolean_cut_cylinder_face_count_preserved(boolean_diff_brep):
+    restored = Brep.__from_data__(boolean_diff_brep.__data__)
+    assert len(restored.faces) == len(boolean_diff_brep.faces)
+
+
+def test_builder_boolean_cut_cylinder_volume_preserved(boolean_diff_brep):
+    restored = Brep.__from_data__(boolean_diff_brep.__data__)
+    assert TOL.is_close(restored.volume, boolean_diff_brep.volume)
+
+
+def test_builder_boolean_cut_cylinder_is_valid(boolean_diff_brep):
+    restored = Brep.__from_data__(boolean_diff_brep.__data__)
+    assert restored.is_valid
+
+
+def test_builder_sphere_serializes_pole_trims():
+    # A sphere's poles are singular trims — no edge, collapsed to a vertex.
+    # The pre-builder writer dropped them silently.
+    sphere = Brep.from_sphere(Sphere(1.0))
+    data = sphere.__data__
+    singular = [t for f in data["faces"] for loop in f["loops"] for t in loop if t["edge"] == -1]
+    assert len(singular) == 2
+    assert all(t["curve_2d"] is not None for t in singular)
+
+
+def test_builder_sphere_is_valid():
+    sphere = Brep.from_sphere(Sphere(1.0))
+    restored = Brep.__from_data__(sphere.__data__)
+    assert restored.is_valid
+
+
+def test_builder_sphere_volume_preserved():
+    sphere = Brep.from_sphere(Sphere(1.0))
+    restored = Brep.__from_data__(sphere.__data__)
+    assert TOL.is_close(restored.volume, sphere.volume)
+
+
+def test_builder_rectangular_crop_helper_is_gone():
+    from compas_brep.backend.rhino import conversion
+
+    assert not hasattr(conversion, "_trim_nurbs_surface_from_2d")

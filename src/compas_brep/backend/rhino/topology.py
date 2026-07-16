@@ -75,11 +75,18 @@ class RhinoBrepEdge(BrepEdge):
 class RhinoBrepTrim(BrepTrim):
     """BrepTrim backed by a native Rhino.Geometry.BrepTrim handle."""
 
-    def __init__(self, rhino_trim: Any, brep_edge: RhinoBrepEdge, is_reversed: bool) -> None:
+    def __init__(
+        self,
+        rhino_trim: Any,
+        brep_edge: RhinoBrepEdge | None,
+        is_reversed: bool,
+        vertex: RhinoBrepVertex | None = None,
+    ) -> None:
         self._rhino_trim = rhino_trim
         self._edge = brep_edge
         self._is_reversed = is_reversed
         self._curve_2d: NurbsCurve | None = None
+        self._vertex = vertex
 
     @property
     def native_trim(self) -> Any:
@@ -105,6 +112,8 @@ class RhinoBrepTrim(BrepTrim):
 
     @property
     def curve_3d(self) -> Any:
+        if self._edge is None:
+            return None
         return self._edge.curve
 
     def __repr__(self) -> str:

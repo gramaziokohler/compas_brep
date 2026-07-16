@@ -328,14 +328,18 @@ def rhino_rebuild(brep: Brep, data: dict) -> None:
 
         face_loops = []
         for loop_data in fd["loops"]:
-            trims = [
-                BrepTrim(
-                    edge=edges[td["edge"]],
-                    is_reversed=td.get("is_reversed", False),
-                    curve_2d=NurbsCurve.__from_data__(td["curve_2d"]) if td.get("curve_2d") else None,
+            trims = []
+            for td in loop_data:
+                edge_id = td["edge"]
+                is_singular = edge_id == -1
+                trims.append(
+                    BrepTrim(
+                        edge=None if is_singular else edges[edge_id],
+                        is_reversed=td.get("is_reversed", False),
+                        curve_2d=NurbsCurve.__from_data__(td["curve_2d"]) if td.get("curve_2d") else None,
+                        vertex=vertices[td["vertex"]] if is_singular else None,
+                    )
                 )
-                for td in loop_data
-            ]
             loop = BrepLoop(trims=trims)
             face_loops.append(loop)
             all_loops.append(loop)

@@ -397,14 +397,22 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
 
         face_loops = []
         for loop_data in fd["loops"]:
-            trims = [
-                BrepTrim(
-                    edge=edges[td["edge"]],
-                    is_reversed=td.get("is_reversed", False),
-                    curve_2d=NurbsCurve.__from_data__(td["curve_2d"]) if td.get("curve_2d") else None,
+            trims = []
+            for td in loop_data:
+                edge_id = td["edge"]
+                if edge_id == -1:
+                    # Singular trim (a Rhino writer emits these at e.g. a sphere's
+                    # pole). It contributes no edge to the wire, and OCC derives its
+                    # own degenerate edges when building the face — so drop it here
+                    # rather than let ``edges[-1]`` silently bind the last edge.
+                    continue
+                trims.append(
+                    BrepTrim(
+                        edge=edges[edge_id],
+                        is_reversed=td.get("is_reversed", False),
+                        curve_2d=NurbsCurve.__from_data__(td["curve_2d"]) if td.get("curve_2d") else None,
+                    )
                 )
-                for td in loop_data
-            ]
             loop = BrepLoop(trims=trims)
             face_loops.append(loop)
             all_loops.append(loop)

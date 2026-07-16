@@ -16,9 +16,11 @@ from compas.geometry import Vector
 from compas.tolerance import TOL
 
 from compas_brep.curves import NurbsCurve
+from compas_brep.errors import BrepError
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
 
+from .builder import _RhinoBrepBuilder
 from .topology import RhinoBrepEdge
 from .topology import RhinoBrepFace
 from .topology import RhinoBrepLoop
@@ -97,7 +99,16 @@ def rhino_extract_topology(brep) -> None:
             for rhino_trim in rhino_loop.Trims:
                 rhino_edge_obj = rhino_trim.Edge
                 if rhino_edge_obj is None:
-                    # Singular trim (e.g. at pole of sphere) — skip
+                    # Singular trim (e.g. at the pole of a sphere): no edge, but it
+                    # collapses to a vertex and must survive the round-trip.
+                    trims.append(
+                        RhinoBrepTrim(
+                            rhino_trim,
+                            None,
+                            False,
+                            vertex=vertex_map[rhino_trim.StartVertex.VertexIndex],
+                        )
+                    )
                     continue
                 edge_idx = rhino_edge_obj.EdgeIndex
                 brep_edge = edge_map[edge_idx]
@@ -316,100 +327,134 @@ def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):  # noqa: ARG
 # =============================================================================
 
 
-def _trim_nurbs_surface_from_2d(rhino_surface, loop):
-    """Trim a NurbsSurface to the 2D parametric bounding box of a BrepLoop's curve_2d trims.
+def _edge_curve_to_rhino(curve):
+    """Convert a canonical edge curve (Line or NurbsCurve) to a Rhino Curve."""
+    if isinstance(curve, Line):
+        return Rhino.Geometry.LineCurve(
+            Rhino.Geometry.Point3d(curve.start.x, curve.start.y, curve.start.z),
+            Rhino.Geometry.Point3d(curve.end.x, curve.end.y, curve.end.z),
+        )
+    if isinstance(curve, NurbsCurve):
+        return nurbs_curve_to_rhino(curve)
+    raise BrepError(f"Cannot rebuild a Rhino edge from curve of type {type(curve).__name__}")
 
-    Collects all 2D trim curve endpoints, finds the min/max (u, v) bounding box,
-    and calls NurbsSurface.Trim() to restrict the surface domain.  Returns the
-    trimmed surface, or the original if no 2D curves are available or the domain
-    doesn't need adjustment.
+
+def _rhino_plane_from_compas(plane):
+    """Build a Rhino.Geometry.Plane from a COMPAS Plane.
+
+    The exchange document pins a plane by point and normal only — it carries no
+    x-axis and no domain — so the in-plane axes are whatever Rhino derives from
+    the normal. This is deterministic, but it is *not* the parameterization the
+    writer's pcurves were measured in, which is why planar faces re-derive their
+    pcurves in :func:`_project_curve_to_plane` instead of reusing the serialized
+    ones.
     """
-    u_vals = []
-    v_vals = []
-
-    for trim in loop.trims:
-        c2d = trim.curve_2d
-        if c2d is None:
-            continue
-        if not isinstance(c2d, NurbsCurve):
-            continue
-        rc = nurbs_curve_to_rhino(c2d)
-        for t in [rc.Domain.Min, rc.Domain.Max]:
-            pt = rc.PointAt(t)
-            u_vals.append(pt.X)
-            v_vals.append(pt.Y)
-
-    if not u_vals:
-        return rhino_surface
-
-    u_min, u_max = min(u_vals), max(u_vals)
-    v_min, v_max = min(v_vals), max(v_vals)
-
-    surf_u = rhino_surface.Domain(0)
-    surf_v = rhino_surface.Domain(1)
-
-    u_needs_trim = abs(u_min - surf_u.Min) > 1e-6 or abs(u_max - surf_u.Max) > 1e-6
-    v_needs_trim = abs(v_min - surf_v.Min) > 1e-6 or abs(v_max - surf_v.Max) > 1e-6
-
-    if not u_needs_trim and not v_needs_trim:
-        return rhino_surface
-
-    u_interval = Rhino.Geometry.Interval(u_min if u_needs_trim else surf_u.Min, u_max if u_needs_trim else surf_u.Max)
-    v_interval = Rhino.Geometry.Interval(v_min if v_needs_trim else surf_v.Min, v_max if v_needs_trim else surf_v.Max)
-    trimmed = rhino_surface.Trim(u_interval, v_interval)
-    return trimmed if trimmed is not None else rhino_surface
+    return Rhino.Geometry.Plane(
+        Rhino.Geometry.Point3d(plane.point.x, plane.point.y, plane.point.z),
+        Rhino.Geometry.Vector3d(plane.normal.x, plane.normal.y, plane.normal.z),
+    )
 
 
-def _rhino_curve_from_loop(loop):
-    """Build a single joined Rhino Curve from a BrepLoop's trims or edges.
+def _plane_surface_for_face(plane, face):
+    """Build a bounded Rhino PlaneSurface large enough to contain a face's boundary."""
+    rhino_plane = _rhino_plane_from_compas(plane)
 
-    Returns None if no curves can be built (e.g. all degenerate edges).
+    us = []
+    vs = []
+    for loop in face.loops:
+        for vertex in loop.vertices:
+            p = vertex.point
+            success, u, v = rhino_plane.ClosestParameter(Rhino.Geometry.Point3d(p.x, p.y, p.z))
+            if success:
+                us.append(u)
+                vs.append(v)
+
+    if not us:
+        raise BrepError("Cannot rebuild a planar face with no boundary vertices")
+
+    # Pad so the trimmed boundary sits strictly inside the surface domain.
+    pad = max(max(us) - min(us), max(vs) - min(vs)) * 0.1 + 1.0
+    u_interval = Rhino.Geometry.Interval(min(us) - pad, max(us) + pad)
+    v_interval = Rhino.Geometry.Interval(min(vs) - pad, max(vs) + pad)
+    return Rhino.Geometry.PlaneSurface(rhino_plane, u_interval, v_interval)
+
+
+def _project_curve_to_plane(curve, rhino_plane):
+    """Project a canonical edge curve into a Rhino plane's (u, v) parameter space.
+
+    A plane maps 3D to (u, v) affinely, so control points can be mapped directly
+    while knots, weights, and degree carry over unchanged — the resulting pcurve
+    is exact, not an approximation.
     """
-    curves = []
-    if loop.trims:
-        for trim in loop.trims:
-            edge = trim.edge
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            if isinstance(curve, NurbsCurve):
-                rc = nurbs_curve_to_rhino(curve)
-                if trim.is_reversed:
-                    rc.Reverse()
-                curves.append(rc)
-            else:
-                if trim.is_reversed:
-                    p0 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
-                    p1 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
-                else:
-                    p0 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
-                    p1 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
-                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-                if dist > 1e-9:
-                    curves.append(Rhino.Geometry.LineCurve(p0, p1))
-    else:
-        for edge in loop.edges:
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            if isinstance(curve, NurbsCurve):
-                curves.append(nurbs_curve_to_rhino(curve))
-            else:
-                p0 = Rhino.Geometry.Point3d(sp.x, sp.y, sp.z)
-                p1 = Rhino.Geometry.Point3d(ep.x, ep.y, ep.z)
-                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-                if dist > 1e-9:
-                    curves.append(Rhino.Geometry.LineCurve(p0, p1))
-    if not curves:
-        return None
-    joined = Rhino.Geometry.Curve.JoinCurves(curves, TOL.absolute)
-    return joined[0] if joined else None
+
+    def to_uv(point):
+        success, u, v = rhino_plane.ClosestParameter(Rhino.Geometry.Point3d(point.x, point.y, point.z))
+        if not success:
+            raise BrepError("Failed to project a curve onto the face plane")
+        return u, v
+
+    if isinstance(curve, Line):
+        u0, v0 = to_uv(curve.start)
+        u1, v1 = to_uv(curve.end)
+        return Rhino.Geometry.LineCurve(
+            Rhino.Geometry.Point3d(u0, v0, 0.0),
+            Rhino.Geometry.Point3d(u1, v1, 0.0),
+        )
+
+    if isinstance(curve, NurbsCurve):
+        n = len(curve._points)
+        pcurve = Rhino.Geometry.NurbsCurve(3, True, curve._degree + 1, n)
+        for i, (point, weight) in enumerate(zip(curve._points, curve._weights)):
+            u, v = to_uv(point)
+            pcurve.Points.SetPoint(i, Rhino.Geometry.Point3d(u, v, 0.0), weight)
+        for i, k in enumerate(_expand_knots(curve._knots, curve._mults)[1:-1]):
+            pcurve.Knots[i] = k
+        return pcurve
+
+    raise BrepError(f"Cannot project curve of type {type(curve).__name__} onto a plane")
+
+
+def _iso_status_for_pcurve(pcurve, rhino_surface):
+    """Classify a pcurve's iso direction, as ``Trims.AddSingularTrim`` requires.
+
+    A singular trim runs along one edge of the surface's parameter rectangle —
+    the pole of a sphere collapses to the whole u-range at v = min or v = max.
+    """
+    iso = Rhino.Geometry.IsoStatus
+    start = pcurve.PointAtStart
+    end = pcurve.PointAtEnd
+    u_domain = rhino_surface.Domain(0)
+    v_domain = rhino_surface.Domain(1)
+
+    if TOL.is_close(start.X, end.X):
+        if TOL.is_close(start.X, u_domain.Min):
+            return iso.West
+        if TOL.is_close(start.X, u_domain.Max):
+            return iso.East
+    if TOL.is_close(start.Y, end.Y):
+        if TOL.is_close(start.Y, v_domain.Min):
+            return iso.South
+        if TOL.is_close(start.Y, v_domain.Max):
+            return iso.North
+    return iso.NONE
+
+
+def _surface_to_rhino(surface, face):
+    """Build the Rhino surface a face sits on."""
+    if isinstance(surface, Plane):
+        return _plane_surface_for_face(surface, face)
+    if isinstance(surface, NurbsSurface):
+        return nurbs_surface_to_rhino(surface)
+    raise BrepError(f"Rhino backend cannot rebuild a face on surface type {type(surface).__name__}")
 
 
 def brep_to_rhino(brep):
     """Convert a canonical compas_brep.Brep to a Rhino.Geometry.Brep.
 
-    If the brep has a cached native shape that is not dirty, returns it directly.
+    If the brep has a cached native shape, returns it directly. Otherwise the
+    shape is reconstructed through the low-level Rhino Brep builder, which shares
+    edges by index and carries every trim's pcurve across — so a genuinely
+    trimmed face rebuilds as a trimmed face. See ADR-0002.
 
     Parameters
     ----------
@@ -423,56 +468,74 @@ def brep_to_rhino(brep):
     if brep._native_brep is not None:
         return brep._native_brep
 
-    face_breps = []
+    builder = _RhinoBrepBuilder()
+
+    vertex_index = {}
+    for vertex in brep._vertices:
+        vertex_index[id(vertex)] = len(vertex_index)
+        builder.add_vertex(vertex.point)
+
+    edge_index = {}
+    for edge in brep._edges:
+        edge_index[id(edge)] = len(edge_index)
+        builder.add_edge(
+            _edge_curve_to_rhino(edge.curve),
+            vertex_index[id(edge.first_vertex)],
+            vertex_index[id(edge.last_vertex)],
+        )
 
     for face in brep._faces:
         surface = face.surface
+        rhino_surface = _surface_to_rhino(surface, face)
+        face_builder = builder.add_face(rhino_surface, face.is_reversed)
 
-        if isinstance(surface, Plane):
-            # Build boundary curves from loop trim edges (handles inner loops/holes).
-            outer_curve = _rhino_curve_from_loop(face.outer_loop)
-            if outer_curve is None:
-                # Fallback: closed polygon from vertex positions
-                points = [v.point for v in face.outer_loop.vertices]
-                if not points:
+        is_planar = isinstance(surface, Plane)
+        rhino_plane = _rhino_plane_from_compas(surface) if is_planar else None
+
+        loops = [(face.outer_loop, Rhino.Geometry.BrepLoopType.Outer)]
+        loops += [(loop, Rhino.Geometry.BrepLoopType.Inner) for loop in face._inner_loops]
+
+        for loop, loop_type in loops:
+            loop_builder = face_builder.add_loop(loop_type)
+            for trim in loop.trims:
+                if trim.edge is None:
+                    # Singular trim (e.g. at the pole of a sphere): it collapses to
+                    # a vertex, so it has no edge curve to project — the serialized
+                    # pcurve is the only description of it.
+                    if trim.curve_2d is None:
+                        raise BrepError("Cannot rebuild a singular trim without a pcurve")
+                    pcurve = nurbs_curve_to_rhino(trim.curve_2d)
+                    loop_builder.add_trim(
+                        pcurve,
+                        -1,
+                        False,
+                        _iso_status_for_pcurve(pcurve, rhino_surface),
+                        vertex_index[id(trim.vertex)],
+                    )
                     continue
-                rhino_points = [Rhino.Geometry.Point3d(p.x, p.y, p.z) for p in points]
-                rhino_points.append(rhino_points[0])
-                polyline = Rhino.Geometry.Polyline(rhino_points)
-                outer_curve = polyline.ToNurbsCurve()
 
-            all_curves = [outer_curve]
-            for inner_loop in face._inner_loops:
-                inner_curve = _rhino_curve_from_loop(inner_loop)
-                if inner_curve is not None:
-                    all_curves.append(inner_curve)
+                if is_planar:
+                    # A plane's parameterization is not pinned by the document
+                    # (point and normal fix no x-axis), so the serialized pcurve
+                    # cannot be trusted here — re-derive it against the rebuilt plane.
+                    pcurve = _project_curve_to_plane(trim.edge.curve, rhino_plane)
+                    if trim.is_reversed:
+                        pcurve.Reverse()
+                else:
+                    if trim.curve_2d is None:
+                        raise BrepError("Cannot rebuild a trim without a pcurve")
+                    pcurve = nurbs_curve_to_rhino(trim.curve_2d)
 
-            planar_breps = Rhino.Geometry.Brep.CreatePlanarBreps(all_curves, TOL.absolute)
-            if planar_breps:
-                face_breps.extend(planar_breps)
+                loop_builder.add_trim(
+                    pcurve,
+                    edge_index[id(trim.edge)],
+                    trim.is_reversed,
+                    Rhino.Geometry.IsoStatus.NONE,
+                    -1,
+                )
 
-        elif isinstance(surface, NurbsSurface):
-            rhino_surface = nurbs_surface_to_rhino(surface)
-            # Apply parametric trimming from 2D loop curves if the surface domain
-            # is larger than the actual face boundary (e.g. a cylinder trimmed by a box).
-            if face._outer_loop and face._outer_loop.trims:
-                rhino_surface = _trim_nurbs_surface_from_2d(rhino_surface, face._outer_loop)
-            face_brep = rhino_surface.ToBrep()
-            if face_brep:
-                face_breps.append(face_brep)
-
-    if not face_breps:
-        brep._native_brep = Rhino.Geometry.Brep()
-        return brep._native_brep
-
-    # Join individual face breps into one solid — sews shared edges.
-    # Use 1e-6 rather than TOL.absolute (1e-9): a tighter tolerance leaves
-    # near-coincident edges unjoined in cross-backend NURBS reconstruction.
-    joined = Rhino.Geometry.Brep.JoinBreps(face_breps, 1e-6)
-    result = joined[0] if joined and len(joined) > 0 else face_breps[0]
-
-    brep._native_brep = result
-    return result
+    brep._native_brep = builder.result
+    return brep._native_brep
 
 
 def nurbs_surface_to_rhino(surface):
@@ -636,13 +699,25 @@ def rhino_brep_to_data(brep) -> dict:
         for rl in rf.Loops:
             trims = []
             for rt in rl.Trims:
+                pcurve = _extract_trim_pcurve(rt)
                 re_obj = rt.Edge
                 if re_obj is None:
-                    continue  # Singular trim (e.g. pole of sphere)
+                    # Singular trim (e.g. the pole of a sphere). It has no edge, so
+                    # it is pinned by its pcurve plus the vertex it collapses to.
+                    if pcurve is None:
+                        raise BrepError("Cannot serialize a singular trim without a pcurve")
+                    trims.append(
+                        {
+                            "edge": -1,
+                            "vertex": vertex_id_map[rt.StartVertex.VertexIndex],
+                            "is_reversed": False,
+                            "curve_2d": pcurve.__data__,
+                        }
+                    )
+                    continue
                 eidx = re_obj.EdgeIndex
                 if eidx not in edge_id_map:
                     continue
-                pcurve = _extract_trim_pcurve(rt)
                 trims.append(
                     {
                         "edge": edge_id_map[eidx],
