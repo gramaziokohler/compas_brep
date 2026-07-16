@@ -100,10 +100,10 @@ def make_from_breps(breps):
 def make_from_surface(surface, domain_u=None, domain_v=None):
     import Rhino.Geometry as rg
 
-    from .conversion import _compas_nurbs_surface_to_rhino
+    from .conversion import nurbs_surface_to_rhino
     from .conversion import rhino_to_brep
 
-    rhino_surface = _compas_nurbs_surface_to_rhino(surface)
+    rhino_surface = nurbs_surface_to_rhino(surface)
     if domain_u is not None:
         rhino_surface.SetDomain(0, rg.Interval(domain_u[0], domain_u[1]))
     if domain_v is not None:

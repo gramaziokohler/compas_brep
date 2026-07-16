@@ -9,6 +9,7 @@ To run: pytest -m rhino tests/test_rhino_serialization.py
 
 import json
 import math
+from pathlib import Path
 
 import pytest
 from compas.geometry import Box
@@ -136,123 +137,22 @@ def test_round_trip_boolean_diff_mixed_surface_types_in_data(boolean_diff_brep):
 # These tests run in a Rhino environment where OCC is typically NOT installed,
 # so the OCC payload is supplied as a static dict rather than generated live.
 
-# Minimal STEP-inspired JSON for a unit cube (1×1×1, centred at origin).
-# Produced by the OCC backend; values are exact for a box.
-UNIT_BOX_OCC_DATA = {
-    "version": 4,
-    "vertices": [
-        [-0.5, -0.5, -0.5],
-        [0.5, -0.5, -0.5],
-        [0.5, 0.5, -0.5],
-        [-0.5, 0.5, -0.5],
-        [-0.5, -0.5, 0.5],
-        [0.5, -0.5, 0.5],
-        [0.5, 0.5, 0.5],
-        [-0.5, 0.5, 0.5],
-    ],
-    "edges": [
-        {"start": 0, "end": 1, "curve": {"type": "line", "data": [[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5]]}},
-        {"start": 1, "end": 2, "curve": {"type": "line", "data": [[0.5, -0.5, -0.5], [0.5, 0.5, -0.5]]}},
-        {"start": 2, "end": 3, "curve": {"type": "line", "data": [[0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]]}},
-        {"start": 3, "end": 0, "curve": {"type": "line", "data": [[-0.5, 0.5, -0.5], [-0.5, -0.5, -0.5]]}},
-        {"start": 4, "end": 5, "curve": {"type": "line", "data": [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5]]}},
-        {"start": 5, "end": 6, "curve": {"type": "line", "data": [[0.5, -0.5, 0.5], [0.5, 0.5, 0.5]]}},
-        {"start": 6, "end": 7, "curve": {"type": "line", "data": [[0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]]}},
-        {"start": 7, "end": 4, "curve": {"type": "line", "data": [[-0.5, 0.5, 0.5], [-0.5, -0.5, 0.5]]}},
-        {"start": 0, "end": 4, "curve": {"type": "line", "data": [[-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5]]}},
-        {"start": 1, "end": 5, "curve": {"type": "line", "data": [[0.5, -0.5, -0.5], [0.5, -0.5, 0.5]]}},
-        {"start": 2, "end": 6, "curve": {"type": "line", "data": [[0.5, 0.5, -0.5], [0.5, 0.5, 0.5]]}},
-        {"start": 3, "end": 7, "curve": {"type": "line", "data": [[-0.5, 0.5, -0.5], [-0.5, 0.5, 0.5]]}},
-    ],
-    "faces": [
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, 0.0, -0.5], "normal": [0.0, 0.0, -1.0]}},
-            "is_reversed": False,
-            # Traversed in reverse so the loop winds counter-clockwise about this
-            # face's -Z normal, as the other five faces do about theirs. The old
-            # rebuild discarded loop winding (CreatePlanarBreps re-derived each
-            # face's normal from its 3D boundary), so this face read as outward
-            # despite winding inward; the builder honors what the document says.
-            "loops": [
-                [
-                    {"edge": 3, "is_reversed": True, "curve_2d": None},
-                    {"edge": 2, "is_reversed": True, "curve_2d": None},
-                    {"edge": 1, "is_reversed": True, "curve_2d": None},
-                    {"edge": 0, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, 0.0, 0.5], "normal": [0.0, 0.0, 1.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 4, "is_reversed": False, "curve_2d": None},
-                    {"edge": 5, "is_reversed": False, "curve_2d": None},
-                    {"edge": 6, "is_reversed": False, "curve_2d": None},
-                    {"edge": 7, "is_reversed": False, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, -0.5, 0.0], "normal": [0.0, -1.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 0, "is_reversed": False, "curve_2d": None},
-                    {"edge": 9, "is_reversed": False, "curve_2d": None},
-                    {"edge": 4, "is_reversed": True, "curve_2d": None},
-                    {"edge": 8, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.5, 0.0, 0.0], "normal": [1.0, 0.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 1, "is_reversed": False, "curve_2d": None},
-                    {"edge": 10, "is_reversed": False, "curve_2d": None},
-                    {"edge": 5, "is_reversed": True, "curve_2d": None},
-                    {"edge": 9, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, 0.5, 0.0], "normal": [0.0, 1.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 2, "is_reversed": False, "curve_2d": None},
-                    {"edge": 11, "is_reversed": False, "curve_2d": None},
-                    {"edge": 6, "is_reversed": True, "curve_2d": None},
-                    {"edge": 10, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [-0.5, 0.0, 0.0], "normal": [-1.0, 0.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 3, "is_reversed": False, "curve_2d": None},
-                    {"edge": 8, "is_reversed": False, "curve_2d": None},
-                    {"edge": 7, "is_reversed": True, "curve_2d": None},
-                    {"edge": 11, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-    ],
-}
+# The v4 unit-box document lives in tests/fixtures/legacy_v4_box.json — one copy,
+# read by OCC on CI as well as by Rhino here. See tests/test_exchange_fixtures.py.
+
+
+def _unit_box_occ_data():
+    with open(Path(__file__).parent / "fixtures" / "legacy_v4_box.json") as f:
+        return json.load(f)
 
 
 def test_cross_backend_deserialization_occ_payload_deserializes():
-    restored = Brep.__from_data__(UNIT_BOX_OCC_DATA)
+    restored = Brep.__from_data__(_unit_box_occ_data())
     assert len(restored.faces) == 6
 
 
 def test_cross_backend_deserialization_occ_payload_volume():
-    restored = Brep.__from_data__(UNIT_BOX_OCC_DATA)
+    restored = Brep.__from_data__(_unit_box_occ_data())
     assert abs(restored.volume - 1.0) < 0.05
 
 

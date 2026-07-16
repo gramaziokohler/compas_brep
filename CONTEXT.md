@@ -126,9 +126,15 @@ The surface codec (`surfaces/_codec.py`) reads v4, v5, and v6 documents transpar
 
 The contract is pinned three ways:
 
-1. **Golden fixtures** — real Rhino-authored exchange documents committed under `tests/fixtures/`. OCC-marked tests read them on CI and assert analytic types survive. This is the only mechanism that lets CI catch "Rhino writes a tag OCC can't read".
-2. **Fixture regeneration** — Rhino-marked tests regenerate the fixtures and assert they still match, so drift surfaces on a dev machine.
-3. **Schema test** — both backends must round-trip every tag in the format's tag set. Cheap, runs on CI, and would have caught the dropped-cylinder bug on day one.
+1. **Golden fixtures** — real Rhino-authored exchange documents committed under `tests/fixtures/` (`rhino_box`, `rhino_filleted_box`, `rhino_sphere`, `rhino_box_with_hole`). OCC-marked tests in `tests/test_exchange_fixtures.py` read them on CI and assert analytic types survive. This is the only mechanism that lets CI catch "Rhino writes a tag OCC can't read". `tests/fixtures/legacy_v4_box.json` keeps the v4 read path (positional loops, null pcurves) covered; it is hand-written because no backend writes v4 any more.
+2. **Fixture regeneration** — Rhino-marked tests regenerate the fixtures and assert they still match, so drift surfaces on a dev machine. To refresh them intentionally, on a licensed machine:
+
+   ```bash
+   pytest -m rhino tests/test_exchange_fixtures.py --refresh-fixtures
+   ```
+
+   Review the diff — a change there is a change to the cross-backend contract. `tests/exchange_fixtures.py` holds the source geometry.
+3. **Schema test** — both backends must round-trip every tag in the format's tag set (`tests/test_exchange_schema.py`). Cheap, runs on CI, and would have caught the dropped-cylinder bug on day one. A tag a backend cannot write yet is present as a `strict` xfail rather than omitted, so the gap is checked on every run instead of documented and forgotten.
 - No test classes. Tests are flat module-level `test_*` functions, not methods on `TestXxx` classes — grouping is expressed with `# =====` section-header comments and a `test_<group>_<name>` naming prefix (e.g. `test_constructors_from_box`), not nesting.
 
 **Before running tests, install the OCC backend:**

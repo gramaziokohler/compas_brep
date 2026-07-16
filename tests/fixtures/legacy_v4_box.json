@@ -1,0 +1,529 @@
+{
+  "edges": [
+    {
+      "curve": {
+        "data": [
+          [
+            -0.5,
+            -0.5,
+            -0.5
+          ],
+          [
+            0.5,
+            -0.5,
+            -0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 1,
+      "start": 0
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            0.5,
+            -0.5,
+            -0.5
+          ],
+          [
+            0.5,
+            0.5,
+            -0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 2,
+      "start": 1
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            0.5,
+            0.5,
+            -0.5
+          ],
+          [
+            -0.5,
+            0.5,
+            -0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 3,
+      "start": 2
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            -0.5,
+            0.5,
+            -0.5
+          ],
+          [
+            -0.5,
+            -0.5,
+            -0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 0,
+      "start": 3
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            -0.5,
+            -0.5,
+            0.5
+          ],
+          [
+            0.5,
+            -0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 5,
+      "start": 4
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            0.5,
+            -0.5,
+            0.5
+          ],
+          [
+            0.5,
+            0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 6,
+      "start": 5
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            0.5,
+            0.5,
+            0.5
+          ],
+          [
+            -0.5,
+            0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 7,
+      "start": 6
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            -0.5,
+            0.5,
+            0.5
+          ],
+          [
+            -0.5,
+            -0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 4,
+      "start": 7
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            -0.5,
+            -0.5,
+            -0.5
+          ],
+          [
+            -0.5,
+            -0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 4,
+      "start": 0
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            0.5,
+            -0.5,
+            -0.5
+          ],
+          [
+            0.5,
+            -0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 5,
+      "start": 1
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            0.5,
+            0.5,
+            -0.5
+          ],
+          [
+            0.5,
+            0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 6,
+      "start": 2
+    },
+    {
+      "curve": {
+        "data": [
+          [
+            -0.5,
+            0.5,
+            -0.5
+          ],
+          [
+            -0.5,
+            0.5,
+            0.5
+          ]
+        ],
+        "type": "line"
+      },
+      "end": 7,
+      "start": 3
+    }
+  ],
+  "faces": [
+    {
+      "is_reversed": false,
+      "loops": [
+        [
+          {
+            "curve_2d": null,
+            "edge": 3,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 2,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 1,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 0,
+            "is_reversed": true
+          }
+        ]
+      ],
+      "surface": {
+        "data": {
+          "normal": [
+            0.0,
+            0.0,
+            -1.0
+          ],
+          "point": [
+            0.0,
+            0.0,
+            -0.5
+          ]
+        },
+        "type": "plane"
+      }
+    },
+    {
+      "is_reversed": false,
+      "loops": [
+        [
+          {
+            "curve_2d": null,
+            "edge": 4,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 5,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 6,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 7,
+            "is_reversed": false
+          }
+        ]
+      ],
+      "surface": {
+        "data": {
+          "normal": [
+            0.0,
+            0.0,
+            1.0
+          ],
+          "point": [
+            0.0,
+            0.0,
+            0.5
+          ]
+        },
+        "type": "plane"
+      }
+    },
+    {
+      "is_reversed": false,
+      "loops": [
+        [
+          {
+            "curve_2d": null,
+            "edge": 0,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 9,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 4,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 8,
+            "is_reversed": true
+          }
+        ]
+      ],
+      "surface": {
+        "data": {
+          "normal": [
+            0.0,
+            -1.0,
+            0.0
+          ],
+          "point": [
+            0.0,
+            -0.5,
+            0.0
+          ]
+        },
+        "type": "plane"
+      }
+    },
+    {
+      "is_reversed": false,
+      "loops": [
+        [
+          {
+            "curve_2d": null,
+            "edge": 1,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 10,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 5,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 9,
+            "is_reversed": true
+          }
+        ]
+      ],
+      "surface": {
+        "data": {
+          "normal": [
+            1.0,
+            0.0,
+            0.0
+          ],
+          "point": [
+            0.5,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "plane"
+      }
+    },
+    {
+      "is_reversed": false,
+      "loops": [
+        [
+          {
+            "curve_2d": null,
+            "edge": 2,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 11,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 6,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 10,
+            "is_reversed": true
+          }
+        ]
+      ],
+      "surface": {
+        "data": {
+          "normal": [
+            0.0,
+            1.0,
+            0.0
+          ],
+          "point": [
+            0.0,
+            0.5,
+            0.0
+          ]
+        },
+        "type": "plane"
+      }
+    },
+    {
+      "is_reversed": false,
+      "loops": [
+        [
+          {
+            "curve_2d": null,
+            "edge": 3,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 8,
+            "is_reversed": false
+          },
+          {
+            "curve_2d": null,
+            "edge": 7,
+            "is_reversed": true
+          },
+          {
+            "curve_2d": null,
+            "edge": 11,
+            "is_reversed": true
+          }
+        ]
+      ],
+      "surface": {
+        "data": {
+          "normal": [
+            -1.0,
+            0.0,
+            0.0
+          ],
+          "point": [
+            -0.5,
+            0.0,
+            0.0
+          ]
+        },
+        "type": "plane"
+      }
+    }
+  ],
+  "version": 4,
+  "vertices": [
+    [
+      -0.5,
+      -0.5,
+      -0.5
+    ],
+    [
+      0.5,
+      -0.5,
+      -0.5
+    ],
+    [
+      0.5,
+      0.5,
+      -0.5
+    ],
+    [
+      -0.5,
+      0.5,
+      -0.5
+    ],
+    [
+      -0.5,
+      -0.5,
+      0.5
+    ],
+    [
+      0.5,
+      -0.5,
+      0.5
+    ],
+    [
+      0.5,
+      0.5,
+      0.5
+    ],
+    [
+      -0.5,
+      0.5,
+      0.5
+    ]
+  ]
+}
