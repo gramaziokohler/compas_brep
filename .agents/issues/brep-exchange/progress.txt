@@ -155,3 +155,97 @@ Next: slice 03 — cross-backend contract harness: fixtures + schema test.
   real backend-authored fixture. Note it is currently the ONLY v4 document under
   test, so whatever replaces it must keep a v4-with-null-pcurves document in the
   suite or the legacy read path silently stops being covered.
+
+--------------------------------------------------------------------------
+2026-07-16 — Slice 03 (cross-backend contract harness): DONE
+commit 6fdfdff
+
+Four Rhino-authored v6 fixtures under tests/fixtures/ (box, filleted_box,
+sphere, box_with_hole), authored in live Rhino 8 via the LAMCP bridge — not
+hand-written. tests/exchange_fixtures.py is the single definition of the
+source geometry, shared by the OCC readers, the Rhino regeneration test, and
+the refresh path (pytest -m rhino ... --refresh-fixtures).
+tests/test_exchange_schema.py pins the format's tag set on both backends.
+
+THE HARNESS FOUND A REAL DEFECT ON ITS FIRST RUN, AND IT IS NOT CROSS-BACKEND:
+  OCC's rebuild of a filleted box loses 26% of its volume and reports invalid.
+  It reads as a Rhino->OCC failure, which is what this slice exists to catch.
+  It is not. Measured OCC against itself: an OCC-AUTHORED filleted box round-
+  trips through OCC the same way (7.572619 -> 4.054412). src/ was untouched,
+  so it is in committed code and predates this slice.
+  Cause is orientation, not trimming. Rebuilt per-face areas come back
+  [-0.6597 x6, -0.1414 x4, +0.1414 x4, +0.6608 x6, +1.96 x6] — magnitudes
+  right, signs wrong, so 10 of 26 faces are inside out and the volume mostly
+  cancels. Only curved faces; the 6 planes are exact. occ_rebuild honors
+  is_reversed per face, so the suspect is _build_trimmed_face, which rebuilds
+  each face's edges independently and never shares them (also explains
+  48 edges -> 32 after sewing).
+  NO SLICE OWNS THIS. 04/05 change what Rhino writes; 06 owns seam edges.
+  It needs its own issue. Recorded as strict=True xfail on the volume
+  assertions rather than deleted.
+
+A trap that cost me a wrong conclusion, measured not assumed:
+  BrepFace.area is a polygon approximation over the loop points and returns
+  0.0 for these faces. My first read was "every NURBS face rebuilds empty".
+  That was wrong — real per-face areas come from OCC's BRepGProp. Do not
+  trust BrepFace.area for anything quantitative.
+
+Second defect, fixed here: Brep.from_surface had NEVER worked on Rhino.
+  backend/rhino/plugins.py imported _compas_nurbs_surface_to_rhino; the
+  function is nurbs_surface_to_rhino, so the call raised ImportError every
+  time. Found because the schema test needs a NURBS surface from both
+  backends. Fixed (one word) rather than filed — "both backends round-trip
+  every surface tag" cannot be met for `nurbs` without it, and the previous
+  behaviour was an unconditional raise, so nothing could regress.
+
+Design points:
+  - The fixtures record Rhino AS IT IS: the sphere and the hole's cylinder
+    wall are tagged `nurbs`, not `sphere`/`cylinder`. Slices 04/05 will change
+    both the fixtures and EXPECTED in test_exchange_fixtures.py. That is
+    intended — the regeneration test is what will tell you.
+  - Fixture comparison is structure-exact / float-tolerant (TOL). Bit-exact
+    would make it a tripwire for Rhino's version rather than a drift detector.
+  - Edge tags circle/arc/ellipse are xfail on BOTH backends, not just Rhino.
+    The criterion says "every edge curve tag in the format's tag set", and
+    neither writer emits them yet. CONTEXT.md's v6 section still claims they
+    exist; slice 06 makes that true. (Drift flagged by slice 02, still there.)
+  - v4: slice 01 asked me to replace the hand-written UNIT_BOX_OCC_DATA with a
+    backend-authored fixture. IT CANNOT BE DONE — no backend has written v4 for
+    two versions, so nothing can author it; regenerating gives a v6 document
+    under a v4 name. It stays hand-written, moved to fixtures/legacy_v4_box.json,
+    and is now read by an OCC-marked test. Slice 02 warned it was the only v4
+    document under test; it was also Rhino-marked, so the v4 path was covered
+    nowhere. It runs on CI now.
+
+Every xfail was verified against the real kernel before being trusted. A strict
+xfail on a tag Rhino could already write would be worse than no test.
+
+Testing status — READ THIS:
+  invoke lint ..................... passes (ruff; what CI runs)
+  invoke test ..................... 284 passed, 6 xfailed (what CI runs)
+  pytest -m occ -q ................ 252 passed, 6 xfailed (was 227 + 25 new)
+  pytest -m rhino ................. NOT RUN. No rhinoinside on this machine and
+        -m 'not rhino' skips it by default. Do not read the checked boxes as a
+        pytest -m rhino pass.
+  Instead, through the LAMCP bridge in live Rhino 8:
+    - all 53 existing Rhino-marked tests (30 serialization + 23 topology) pass
+    - all 4 fixtures regenerate with zero drift, using the real
+      documents_differ code
+    - the full Rhino schema table matches the test's expectations exactly:
+      plane/nurbs/line/nurbs pass, cylinder/cone/sphere/torus and
+      circle/arc/ellipse xfail
+  Both harnesses were sanity-checked against deliberately failing, raising, and
+  perturbed inputs before their green was trusted. Real kernel verification,
+  not a pytest run.
+
+  Bridge gotcha for later slices: after reinstalling, purging compas_brep from
+  sys.modules is NOT enough. compas's @plugin registry holds the OLD code object
+  and survives, so you get a traceback whose line text is the new source and
+  whose error is from the old bytecode. Purge every 'compas*' module, in a
+  SEPARATE bridge call from the import.
+
+Next: slice 04 — Rhino cylinder surfaces (tracer).
+  Slice 01 advised preferring a filleted/non-rectangular face as tracer geometry.
+  Note the OCC orientation defect above will mask volume checks on curved
+  rebuilds until it is fixed — do not read a curved-face volume failure in 04 as
+  something 04 caused. Check it against an OCC-authored shape first.
