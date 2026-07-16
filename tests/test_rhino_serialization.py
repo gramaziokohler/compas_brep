@@ -17,6 +17,7 @@ from compas.geometry import Sphere
 from compas.tolerance import TOL
 
 from compas_brep import Brep
+from compas_brep.errors import BrepError
 
 pytestmark = pytest.mark.rhino
 
@@ -45,7 +46,7 @@ def boolean_diff_brep():
 
 def test_serialization_format_box_data_version(unit_box_brep):
     data = unit_box_brep.__data__
-    assert data["version"] == 5
+    assert data["version"] == 6
 
 
 def test_serialization_format_box_data_keys(unit_box_brep):
@@ -311,7 +312,7 @@ def test_builder_sphere_serializes_pole_trims():
     # The pre-builder writer dropped them silently.
     sphere = Brep.from_sphere(Sphere(1.0))
     data = sphere.__data__
-    singular = [t for f in data["faces"] for loop in f["loops"] for t in loop if t["edge"] == -1]
+    singular = [t for f in data["faces"] for loop in f["loops"] for t in loop["trims"] if t["edge"] == -1]
     assert len(singular) == 2
     assert all(t["curve_2d"] is not None for t in singular)
 
@@ -332,3 +333,75 @@ def test_builder_rectangular_crop_helper_is_gone():
     from compas_brep.backend.rhino import conversion
 
     assert not hasattr(conversion, "_trim_nurbs_surface_from_2d")
+
+
+# =============================================================================
+# 6. v6 format: explicit loop roles, non-nullable pcurves
+# =============================================================================
+
+
+def test_v6_loops_are_tagged_with_a_role(boolean_diff_brep):
+    """Every loop the Rhino writer emits carries a role; every face has one outer loop."""
+    data = boolean_diff_brep.__data__
+
+    assert data["version"] == 6
+    for face in data["faces"]:
+        roles = [loop["type"] for loop in face["loops"]]
+        assert set(roles) <= {"outer", "inner"}
+        assert roles.count("outer") == 1
+
+    # The cut goes clean through, so at least one face is holed and the tag matters.
+    assert any("inner" in [loop["type"] for loop in face["loops"]] for face in data["faces"])
+
+
+def test_v6_pcurve_is_never_null(boolean_diff_brep):
+    """curve_2d is non-nullable in v6: the Rhino writer emits a pcurve for every trim."""
+    data = boolean_diff_brep.__data__
+
+    trims = [t for f in data["faces"] for loop in f["loops"] for t in loop["trims"]]
+    assert len(trims) > 0
+    assert all(t["curve_2d"] is not None for t in trims)
+
+
+def test_v6_loop_order_does_not_change_the_rebuilt_shape(boolean_diff_brep):
+    """Reordering the loops array is a no-op: role comes from the tag, not the position."""
+    data = boolean_diff_brep.__data__
+
+    shuffled = json.loads(json.dumps(data))
+    for face in shuffled["faces"]:
+        face["loops"].reverse()
+
+    # Guard the test itself: reversing must actually move an outer loop off index 0,
+    # otherwise this would pass against a positional reader too.
+    assert any(face["loops"][0]["type"] == "inner" for face in shuffled["faces"])
+
+    restored = Brep.__from_data__(shuffled)
+    assert len(restored.faces) == len(boolean_diff_brep.faces)
+    assert TOL.is_close(restored.volume, boolean_diff_brep.volume)
+
+
+def test_v6_face_with_no_outer_loop_raises(boolean_diff_brep):
+    """A face whose loops are all tagged inner is an error, not a silent guess."""
+    data = boolean_diff_brep.__data__
+    for loop in data["faces"][0]["loops"]:
+        loop["type"] = "inner"
+
+    with pytest.raises(BrepError):
+        Brep.__from_data__(data)
+
+
+def test_v6_null_pcurve_raises(boolean_diff_brep):
+    """A v6 document with a null pcurve is rejected rather than rebuilt approximately."""
+    data = boolean_diff_brep.__data__
+    data["faces"][0]["loops"][0]["trims"][0]["curve_2d"] = None
+
+    with pytest.raises(BrepError):
+        Brep.__from_data__(data)
+
+
+def test_roundtrip_box_with_hole(boolean_diff_brep):
+    """A box with a through-hole round-trips with the hole intact."""
+    restored = Brep.__from_data__(json.loads(json.dumps(boolean_diff_brep.__data__)))
+
+    assert len(restored.faces) == len(boolean_diff_brep.faces)
+    assert TOL.is_close(restored.volume, boolean_diff_brep.volume)

@@ -38,6 +38,11 @@ from OCP.TopoDS import TopoDS
 
 from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
+from compas_brep.errors import BrepError
+from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import document_version
+from compas_brep.exchange import face_loops_from_data
+from compas_brep.exchange import trim_pcurve_from_data
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
 from compas_brep.surfaces import surface_from_data
@@ -390,13 +395,16 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
             curve = NurbsCurve.__from_data__(cd["data"])
         edges.append(BrepEdge(start, end, curve=curve))
 
+    version = document_version(data)
+
     all_loops = []
     faces = []
     for fd in data["faces"]:
         surface = surface_from_data(fd["surface"])
 
-        face_loops = []
-        for loop_data in fd["loops"]:
+        outer_loop = None
+        inner_loops = []
+        for role, loop_data in face_loops_from_data(fd, version):
             trims = []
             for td in loop_data:
                 edge_id = td["edge"]
@@ -410,22 +418,29 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
                     BrepTrim(
                         edge=edges[edge_id],
                         is_reversed=td.get("is_reversed", False),
-                        curve_2d=NurbsCurve.__from_data__(td["curve_2d"]) if td.get("curve_2d") else None,
+                        curve_2d=trim_pcurve_from_data(td, version),
                     )
                 )
             loop = BrepLoop(trims=trims)
-            face_loops.append(loop)
             all_loops.append(loop)
+            if role == LOOP_OUTER:
+                if outer_loop is not None:
+                    raise BrepError("Face has more than one outer loop")
+                outer_loop = loop
+            else:
+                inner_loops.append(loop)
 
-        if face_loops:
-            face = BrepFace(
-                face_loops[0],
-                surface=surface,
-                is_reversed=fd.get("is_reversed", False),
-            )
-            for inner_loop in face_loops[1:]:
-                face.add_loop(inner_loop)
-            faces.append(face)
+        if outer_loop is None:
+            raise BrepError("Face has no outer loop")
+
+        face = BrepFace(
+            outer_loop,
+            surface=surface,
+            is_reversed=fd.get("is_reversed", False),
+        )
+        for inner_loop in inner_loops:
+            face.add_loop(inner_loop)
+        faces.append(face)
 
     brep._vertices = vertices
     brep._edges = edges

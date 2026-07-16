@@ -17,6 +17,10 @@ from compas.tolerance import TOL
 
 from compas_brep.curves import NurbsCurve
 from compas_brep.errors import BrepError
+from compas_brep.exchange import EXCHANGE_VERSION
+from compas_brep.exchange import LOOP_INNER
+from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import loop_to_data
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
 
@@ -502,8 +506,6 @@ def brep_to_rhino(brep):
                     # Singular trim (e.g. at the pole of a sphere): it collapses to
                     # a vertex, so it has no edge curve to project — the serialized
                     # pcurve is the only description of it.
-                    if trim.curve_2d is None:
-                        raise BrepError("Cannot rebuild a singular trim without a pcurve")
                     pcurve = nurbs_curve_to_rhino(trim.curve_2d)
                     loop_builder.add_trim(
                         pcurve,
@@ -522,8 +524,6 @@ def brep_to_rhino(brep):
                     if trim.is_reversed:
                         pcurve.Reverse()
                 else:
-                    if trim.curve_2d is None:
-                        raise BrepError("Cannot rebuild a trim without a pcurve")
                     pcurve = nurbs_curve_to_rhino(trim.curve_2d)
 
                 loop_builder.add_trim(
@@ -647,6 +647,20 @@ def _extract_trim_pcurve(rhino_trim):
     return _rhino_nurbs_curve_to_compas(nurbs)
 
 
+def _loop_role(rhino_loop) -> str:
+    """Map a Rhino BrepLoopType onto the exchange document's loop role.
+
+    Rhino's other loop types (Slit, Curveonsurface, Ptonsurface, Unknown) have no
+    role in this format, and the loss policy is to raise rather than guess one.
+    """
+    loop_type = rhino_loop.LoopType
+    if loop_type == Rhino.Geometry.BrepLoopType.Outer:
+        return LOOP_OUTER
+    if loop_type == Rhino.Geometry.BrepLoopType.Inner:
+        return LOOP_INNER
+    raise BrepError(f"Cannot serialize a loop of type {loop_type}; expected Outer or Inner")
+
+
 def rhino_brep_to_data(brep) -> dict:
     """Extract a STEP-inspired JSON dict from a native Rhino.Geometry.Brep.
 
@@ -696,16 +710,18 @@ def rhino_brep_to_data(brep) -> dict:
         surface_data = surface_to_data(surface)
 
         loops = []
+        outer_count = 0
         for rl in rf.Loops:
+            role = _loop_role(rl)
             trims = []
             for rt in rl.Trims:
                 pcurve = _extract_trim_pcurve(rt)
+                if pcurve is None:
+                    raise BrepError("Cannot serialize a trim without a pcurve")
                 re_obj = rt.Edge
                 if re_obj is None:
                     # Singular trim (e.g. the pole of a sphere). It has no edge, so
                     # it is pinned by its pcurve plus the vertex it collapses to.
-                    if pcurve is None:
-                        raise BrepError("Cannot serialize a singular trim without a pcurve")
                     trims.append(
                         {
                             "edge": -1,
@@ -722,13 +738,16 @@ def rhino_brep_to_data(brep) -> dict:
                     {
                         "edge": edge_id_map[eidx],
                         "is_reversed": rt.IsReversed(),
-                        "curve_2d": pcurve.__data__ if pcurve is not None else None,
+                        "curve_2d": pcurve.__data__,
                     }
                 )
             if trims:
-                loops.append(trims)
+                outer_count += role == LOOP_OUTER
+                loops.append(loop_to_data(role, trims))
 
         if loops:
+            if outer_count != 1:
+                raise BrepError(f"Cannot serialize a face with {outer_count} outer loops; expected exactly 1")
             face_list.append(
                 {
                     "surface": surface_data,
@@ -738,7 +757,7 @@ def rhino_brep_to_data(brep) -> dict:
             )
 
     return {
-        "version": 5,
+        "version": EXCHANGE_VERSION,
         "vertices": vertex_list,
         "edges": edge_list,
         "faces": face_list,
