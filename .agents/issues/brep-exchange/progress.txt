@@ -12,3 +12,65 @@ Slice order (each blocked by the one before it):
   06 Analytic edge curve tags (circle/arc/ellipse)
 
 No work started yet.
+
+--------------------------------------------------------------------------
+2026-07-16 — Slice 01 (Rhino rebuild via the low-level Brep builder): DONE
+commit 2a9bf8c
+
+Ported compas_rhino's _RhinoBrepBuilder to backend/rhino/builder.py and
+rewrote brep_to_rhino to use it. Dropped _trim_nurbs_surface_from_2d, the
+JoinBreps stitch, and the hand-tuned 1e-6 tolerance (builder runs at
+TOL.absolute). Singular trims now survive: serialized as edge: -1 + vertex,
+rebuilt via AddSingularTrim. BrepTrim gained .vertex / .is_singular.
+Format stays v5.
+
+Design point worth carrying into slice 02 (v6):
+  The "plane" tag pins no parameterization — point + normal fix no x-axis
+  and no domain — so a serialized pcurve on a planar face is meaningless to
+  any reader. The builder needs a pcurve per trim, so planar faces re-derive
+  theirs by projecting the edge curve onto the rebuilt plane (exact: the map
+  is affine). OCC dodges this by ignoring pcurves for planes entirely and
+  building from the 3D wire. Non-planar faces are fine — NURBS control points
+  and the analytic types' COMPAS frames do pin the parameterization.
+  ADR-0002 says v6 makes curve_2d non-nullable; for "plane" that is only
+  meaningful if v6 also pins the plane's frame + uv_domain. Flagging it
+  because ADR-0002 explicitly declined to adopt compas_rhino's frame/uv_domain.
+
+Two of this slice's acceptance criteria did not discriminate — measured, not
+assumed, by running both old and new code in live Rhino:
+  - boolean-cut cylinder: the OLD path already passed (7/7 faces, exact
+    volume). A through-cut cylinder wall IS a rectangle in parameter space,
+    so the rectangular crop was adequate. The issue's claim that the old
+    path failed here is wrong.
+  - sphere IsValid: the OLD path also reported IsValid — ToBrep() regenerated
+    an untrimmed sphere, so the dropped poles never surfaced. Validity does
+    not pin this; the serialized singular-trim count (2) does.
+  - filleted box: the ONLY case that caught the real defect. Old 26 -> 18
+    faces, volume 7.563414 -> 7.063681. New: 26 -> 26, volume exact.
+Future slices: prefer a filleted/non-rectangular face as the tracer geometry.
+
+Fixed two pre-existing test faults the old code had been masking:
+  - UNIT_BOX_OCC_DATA's bottom face wound against its own normal (exactly one
+    flipped face -> volume 2/3). CreatePlanarBreps re-derived each face normal
+    from its 3D boundary, so the bad winding never showed. Also note this
+    fixture is hand-written and does NOT match real OCC output: OCC emits
+    natural surface normals plus is_reversed: True, not outward-baked normals
+    with all-False flags. Slice 03 should replace it with a real backend-
+    authored fixture.
+  - test_serialization_format_box_data_version asserted version == 4; the
+    writer has emitted 5 for a release. Exactly the drift CONTEXT.md warns
+    about, still sitting there because -m rhino never runs.
+
+Testing status — READ THIS:
+  pytest -m occ -q ................ 217 passed, no regression
+  pytest -q (default, not rhino) .. 230 passed
+  pytest -m rhino ................. NOT RUN. No rhinoinside on this machine;
+        -m 'not rhino' skips it by default anyway. Do not read the checked
+        boxes as a pytest -m rhino pass.
+  Instead: all 47 Rhino-marked tests (24 serialization + 23 topology) were
+  executed inside a live Rhino 8 through the LAMCP bridge (see CONTEXT.md
+  "Rhino Development Workflow"), where all 47 pass. That is real kernel
+  verification but not a pytest run; the pytest -m rhino box stays unchecked.
+  The LAMCP bridge is a usable Rhino gate for later slices.
+
+Next: slice 02 — v6 format: explicit loop roles, non-nullable pcurves.
