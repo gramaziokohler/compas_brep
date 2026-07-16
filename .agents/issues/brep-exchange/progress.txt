@@ -249,3 +249,127 @@ Next: slice 04 — Rhino cylinder surfaces (tracer).
   Note the OCC orientation defect above will mask volume checks on curved
   rebuilds until it is fixed — do not read a curved-face volume failure in 04 as
   something 04 caused. Check it against an OCC-authored shape first.
+
+--------------------------------------------------------------------------
+2026-07-16 — Slice 04 (Rhino cylinder surfaces, tracer): DONE
+commit 71b54fb
+
+Rhino extracts/writes/reads/rebuilds a cylindrical face. No codec change (the
+tag already existed), and the schema test's `cylinder` xfail is gone on both
+backends. New fixture rhino_cylinder.json; rhino_box_with_hole.json's wall
+flipped nurbs -> cylinder.
+
+THE TAG WAS THE EASY HALF. READ THIS BEFORE SLICE 05.
+  A COMPAS CylindricalSurface is parameterized (angle, height), and OCC's
+  pcurves already are. Rhino parameterizes a cylinder wall by ARC LENGTH: its
+  native u is radius*angle, so r=0.5 runs u to pi for a full turn and r=0.3 runs
+  it to 0.6pi. Emitting the cylinder tag with Rhino's pcurves untouched puts
+  every trim at the wrong angle — a document worse than the nurbs tag it
+  replaces, because it looks right and no face-count or tag test catches it.
+  _cylinder_and_param_map recovers the map by probing, then VERIFIES it across
+  the whole domain. Slice 05 must do the same for sphere/cone/torus and must not
+  assume the map: measure it. Do not assume u is the angular direction either —
+  on a fillet face u is axial and v is angular.
+
+Measured, not assumed — a fillet face is a cylinder Rhino cannot tag:
+  Rhino's 12 fillet faces on a filleted box ARE exactly cylinders to
+  TryGetCylinder (at 1e-9), and OCC tags all 12 `cylinder`. They stay `nurbs`
+  here: Rhino stores them as rational NURBS whose angle is NOT linear in either
+  parameter (measured: second differences ~0.01 rad), so no affine map exists
+  and the pcurves cannot be carried across exactly. `nurbs` reproduces them
+  exactly — they are natively NURBS — so nothing is lost geometrically, only the
+  analytic tag. A REAL remaining OCC/Rhino divergence. Closing it needs the
+  parameterization question settled, which is the same question slice 02 raised
+  for `plane` (frame + uv_domain in the document; ADR-0002 declined it). That
+  decision is now overdue: it blocks fillets here, and slice 05 will hit it the
+  moment a sphere/torus face is stored as a NURBS rather than a RevSurface.
+
+TWO PRE-EXISTING CROSS-BACKEND DEFECTS, FOUND BY READING AN OCC DOCUMENT IN
+RHINO — WHICH NOTHING HAD EVER DONE. Both are fixed here; both changed the
+committed fixtures.
+  1. curve_2d meant OPPOSITE things in the two writers. OCC writes a pcurve in
+     its EDGE's direction and reads it that way; Rhino wrote it in the TRIM's.
+     Measured on both: for a reversed trim, OCC's pcurve start is dist 0.0 from
+     the edge start, Rhino's was dist 0.0 from the edge END. Rhino's own PLANAR
+     rebuild already assumed edge-direction (it projects the edge curve, then
+     reverses on is_reversed), so the non-planar writer was the lone dissenter.
+     Edge-direction won.
+  2. Rhino's pcurve DOMAIN was unrelated to its edge curve's. OCC requires the
+     two to share a parameterization; Rhino does not (a trim's domain is its
+     own). Rhino's circular seam pcurve ran (0, pi) while its edge curve ran
+     (-pi, 0); OCC read that as an edge with no range and refused to sew the
+     face at all — "Standard_Failure: Bnd_Box is void". _align_pcurve_to_edge
+     remaps knots only (control points untouched), so it is exact.
+  Together: NO RHINO-AUTHORED NON-PLANAR FACE HAS EVER BEEN READABLE BY OCC
+  CORRECTLY. This is most of slice 03's "OCC flips the orientation of curved
+  faces": the filleted box fixture goes 4.054412 -> 7.063681 on this change
+  alone (true 7.563414). It is NOT all of it — filleted_box and sphere remain
+  wrong and stay strict xfail, and slice 03 already proved an OCC-authored
+  filleted box breaks the same way inside OCC. A separate OCC-side defect
+  remains.
+
+A VOLUME TRAP — do not repeat my first wrong conclusion:
+  OCC->Rhino gets the volume wrong (cylinder 1.047198 vs 1.570796; holed box
+  0.0). It reads as something slice 04 broke. It is not. With the PRE-slice-04
+  code an OCC-authored PLAIN BOX rebuilds in Rhino at volume -0.0, IsSolid
+  False — planar only, no cylinder in sight — while OCC cylinders simply raised
+  BrepError. OCC->Rhino has never produced a solid for ANYTHING. Slice 04's
+  criterion is TryGetCylinder on the rebuilt face, "not merely a volume match",
+  and that passes. NO SLICE OWNS THE OCC->RHINO VOLUME DEFECT. It needs its own
+  issue, alongside the OCC-side one slice 03 filed.
+
+The cylinder fixture's residual 1.5e-4 is slice 06's, and the attribution was
+checked rather than guessed:
+  Rhino writes a circle edge as an EXACT rational degree-2 NURBS (weights
+  0.7071); OCC writes it as a degree-11 POLYNOMIAL APPROXIMATION (all weights
+  1.0). A NURBS circle's parameter is not its angle, so the wall's pcurve
+  (linear in angle) and its edge curve trace the same circle at different rates
+  — OCC's rebuilt wall is off by 1.5e-4. Analytic `circle` edge tags are exactly
+  what fixes this: slice 06 should tighten the fixture's volume_atol to TOL.
+  The invalidity is the already-known seam defect and is NOT Rhino-specific —
+  an OCC-authored cylinder rebuilds invalid with the same edge count (6).
+
+Also collapsed a duplicate: there were TWO identical pcurve extractors,
+_extract_trim_curve_2d (topology.py, for the wrappers) and _extract_trim_pcurve
+(conversion.py, for the serializer). I fixed one and the serializer silently
+kept emitting raw arc-length pcurves — the bug looked like "my code doesn't
+run". They are now one function.
+
+Three Rhino tests asserted the OLD behaviour and were updated, not deleted:
+test_property_types_face_surface_nurbs_on_cylinder literally asserted that a
+cylinder face extracts as a NurbsSurface — it pinned the bug this slice fixes.
+
+CONTEXT.md drift, still deliberate: its v6 section claims edge curves carry
+analytic tags and that "both backends read and write every tag". Still slice 06.
+The Surface Type Support table's claim that Rhino "must reach the same analytic
+coverage" is now true for cylinder only.
+
+Testing status — READ THIS:
+  invoke lint ..................... passes (ruff; what CI runs)
+  invoke test ..................... 297 passed, 6 xfailed (what CI runs)
+  pytest -m occ -q ................ 261 passed, 6 xfailed (was 252 + 9 new)
+  pytest -m rhino ................. NOT RUN. No rhinoinside on this machine and
+        -m 'not rhino' skips it by default. Do not read the checked boxes as a
+        pytest -m rhino pass.
+  Instead, through the LAMCP bridge in live Rhino 8: all 78 Rhino-marked tests
+  pass (30 serialization + 23 topology + 5 fixture regeneration + 5 schema +
+  15 new cylinder), 6 xfail, 0 XPASS. All 5 fixtures regenerate with zero drift
+  using the real documents_differ code. Real kernel verification, not a pytest
+  run.
+  The harness was self-checked first (it must report failure, error and strict
+  XPASS, not swallow them) before its green was trusted, and the new tests were
+  checked against sabotage: disabling _canonical_pcurve fails 6 of the 15 new
+  tests; disabling _align_pcurve_to_edge fails 4 of the 5 fixture regenerations.
+  A test that passes with the code removed is not a test.
+
+  Bridge gotcha, still true and still costly: after reinstalling, purge every
+  'compas*' module in a SEPARATE bridge call from the import.
+
+Next: slice 05 — Rhino sphere/cone/torus surfaces.
+  Start from _cylinder_and_param_map: sphere/cone/torus need the same
+  probe-then-verify treatment, and their canonical parameterizations differ
+  (a sphere is (longitude, latitude), not (angle, height)). Check Brep.from_
+  sphere's native surface type first — Rhino's sphere is a RevSurface, so it may
+  map affinely like the cylinder wall did, but MEASURE it. Note the sphere
+  fixture's OCC rebuild is still broken (strict xfail) for reasons this slice
+  did not fully close.
