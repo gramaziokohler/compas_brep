@@ -34,8 +34,9 @@ SURFACE_TAGS = ["plane", "nurbs", "cylinder", "cone", "sphere", "torus"]
 EDGE_CURVE_TAGS = ["line", "nurbs", "circle", "arc", "ellipse"]
 
 # Surface tags the Rhino writer cannot produce yet — it emits `nurbs` instead.
-# Slice 05 (sphere/cone/torus) flips these green. `cylinder` came out in slice 04.
-RHINO_UNWRITABLE_SURFACE_TAGS = {"cone", "sphere", "torus"}
+# Empty: `cylinder` came out in slice 04, and `cone`/`sphere`/`torus` in slice 05,
+# so the Rhino writer now emits every analytic surface tag in the format.
+RHINO_UNWRITABLE_SURFACE_TAGS: set[str] = set()
 
 # Analytic edge curve tags neither writer produces yet — both emit `nurbs`.
 # CONTEXT.md's v6 section already claims these exist; slice 06 makes that true.

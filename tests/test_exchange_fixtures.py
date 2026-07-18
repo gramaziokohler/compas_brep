@@ -12,7 +12,10 @@ from __future__ import annotations
 import json
 
 import pytest
+from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
+from compas.geometry import SphericalSurface
+from compas.geometry import ToroidalSurface
 from compas.tolerance import TOL
 from exchange_fixtures import FIXTURE_DIR
 from exchange_fixtures import OCC_SOURCES
@@ -28,11 +31,11 @@ from compas_brep.exchange import EXCHANGE_VERSION
 
 # What each Rhino-authored fixture is expected to say.
 #
-# The surface tags are Rhino's as it stands: a sphere still arrives tagged "nurbs"
-# because the Rhino writer cannot yet emit that analytic tag (slice 05). When it can,
-# these expectations change along with the fixtures -- that is the point of pinning
-# them. Slice 04 was the first to collect: a cylinder wall now arrives tagged
-# "cylinder", here and on the holed box.
+# The surface tags are Rhino's as it stands. Slice 04 was the first to collect: a
+# cylinder wall arrives tagged "cylinder", here and on the holed box. Slice 05
+# finished the analytic set -- the sphere, cone, and torus fixtures now carry their
+# own analytic tags instead of "nurbs", and the sphere fixture's OCC rebuild volume
+# came within the 1e-3 bar as a result (it was a strict xfail as a NURBS blob).
 #
 # The filleted box's 20 curved faces stay "nurbs" even though 12 of them are exactly
 # cylinders to Rhino, and OCC tags those 12 "cylinder". Rhino stores a fillet as a
@@ -69,11 +72,11 @@ EXPECTED = {
     },
     "sphere": {
         "faces": 1,
-        "surface_tags": {"nurbs"},
+        "surface_tags": {"sphere"},
         "loop_roles": {"outer"},
         "volume": 4.18879,
         "volume_atol": 1e-3,
-        "rebuild_broken": True,
+        "rebuild_broken": False,
     },
     "box_with_hole": {
         "faces": 7,
@@ -94,6 +97,26 @@ EXPECTED = {
         "surface_tags": {"plane", "cylinder"},
         "loop_roles": {"outer"},
         "volume": 1.570796,
+        "volume_atol": 1e-3,
+        "rebuild_broken": False,
+    },
+    # The cone and torus join the cylinder as analytic surfaces whose seam / cap
+    # edges are still written as NURBS circles, so the same 1e-3 residual applies
+    # and the same slice 06 tightens it. A cone's caps make it a solid with a
+    # planar base (like the cylinder); a torus has neither cap nor seam vertex.
+    "cone": {
+        "faces": 2,
+        "surface_tags": {"plane", "cone"},
+        "loop_roles": {"outer"},
+        "volume": 0.261799,
+        "volume_atol": 1e-3,
+        "rebuild_broken": False,
+    },
+    "torus": {
+        "faces": 1,
+        "surface_tags": {"torus"},
+        "loop_roles": {"outer"},
+        "volume": 1.776529,
         "volume_atol": 1e-3,
         "rebuild_broken": False,
     },
@@ -252,6 +275,38 @@ def test_occ_reads_the_rhino_cylinder_radius_and_axis():
     assert TOL.is_allclose(list(wall.surface.frame.zaxis), [0.0, 0.0, 1.0])
 
 
+# (fixture name, predicate, COMPAS surface type) -- slice 05's analytic surfaces,
+# authored by Rhino and read here by OCC on CI.
+_RHINO_ANALYTIC_FIXTURES = [
+    ("sphere", "is_sphere", SphericalSurface),
+    ("cone", "is_cone", ConicalSurface),
+    ("torus", "is_torus", ToroidalSurface),
+]
+
+
+@pytest.mark.occ
+@pytest.mark.parametrize("name, predicate, surface_type", _RHINO_ANALYTIC_FIXTURES)
+def test_occ_reads_a_rhino_authored_analytic_surface(name, predicate, surface_type):
+    # Slice 05 on CI without a Rhino license: Rhino authored a sphere / cone / torus
+    # and tagged it analytically, and OCC must rebuild the matching analytic surface
+    # rather than a NURBS approximation. The document also spells the pole / apex as
+    # Rhino's singular trim, which OCC must read.
+    restored = Brep.__from_data__(load_fixture(name))
+
+    faces = [f for f in restored.faces if getattr(f, predicate)]
+    assert len(faces) == 1
+    assert isinstance(faces[0].surface, surface_type)
+
+
+@pytest.mark.occ
+def test_occ_reads_the_rhino_cone_radius_and_height():
+    # The convention the two kernels disagree on, pinned by value rather than volume.
+    cone = next(f for f in Brep.__from_data__(load_fixture("cone")).faces if f.is_cone)
+
+    assert TOL.is_close(cone.surface.radius, 0.5)
+    assert TOL.is_close(cone.surface.height, 1.0)
+
+
 # =============================================================================
 # 3. The legacy v4 document still reads
 # =============================================================================
@@ -333,12 +388,22 @@ def test_occ_regenerates_its_fixture_unchanged(name, request):
     assert difference is None, f"OCC fixture {name!r} has drifted at {difference}"
 
 
+# The analytic surface tag each OCC-authored mirror fixture must carry. If OCC ever
+# stopped tagging one of these, the Rhino-marked reader that consumes it would be
+# testing nothing -- and it runs nowhere CI can see it fail, so this OCC-marked guard
+# is what keeps it honest.
+_OCC_FIXTURE_TAGS = {
+    "cylinder": {"plane", "cylinder"},
+    "sphere": {"sphere"},
+    "cone": {"plane", "cone"},
+    "torus": {"torus"},
+}
+
+
 @pytest.mark.occ
-def test_occ_fixture_cylinder_carries_the_analytic_tag():
-    # Guards the fixture the Rhino-marked reader depends on: if OCC ever stopped
-    # tagging this wall `cylinder`, that reader would be testing nothing, and it runs
-    # nowhere CI can see it fail.
-    data = load_occ_fixture("cylinder")
+@pytest.mark.parametrize("name", sorted(_OCC_FIXTURE_TAGS))
+def test_occ_fixture_carries_its_analytic_tag(name):
+    data = load_occ_fixture(name)
 
     assert data["version"] == EXCHANGE_VERSION
-    assert _surface_tags(data) == {"plane", "cylinder"}
+    assert _surface_tags(data) == _OCC_FIXTURE_TAGS[name]

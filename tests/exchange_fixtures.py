@@ -24,8 +24,10 @@ import json
 from pathlib import Path
 
 from compas.geometry import Box
+from compas.geometry import Cone
 from compas.geometry import Cylinder
 from compas.geometry import Sphere
+from compas.geometry import Torus
 from compas.tolerance import TOL
 
 from compas_brep import Brep
@@ -58,12 +60,24 @@ def build_cylinder() -> Brep:
     return Brep.from_cylinder(Cylinder(0.5, 2.0))
 
 
+def build_cone() -> Brep:
+    """A cone: the analytic ``cone`` tag, and the apex singularity."""
+    return Brep.from_cone(Cone(0.5, 1.0))
+
+
+def build_torus() -> Brep:
+    """A torus: the analytic ``torus`` tag, and a surface periodic in *both* directions."""
+    return Brep.from_torus(Torus(1.0, 0.3))
+
+
 SOURCES = {
     "box": build_box,
     "filleted_box": build_filleted_box,
     "sphere": build_sphere,
     "box_with_hole": build_box_with_hole,
     "cylinder": build_cylinder,
+    "cone": build_cone,
+    "torus": build_torus,
 }
 
 # The fixtures above are Rhino-authored and read by OCC. These are the mirror: OCC
@@ -72,6 +86,9 @@ SOURCES = {
 # neither backend is ever importable in the same process as the other.
 OCC_SOURCES = {
     "cylinder": build_cylinder,
+    "sphere": build_sphere,
+    "cone": build_cone,
+    "torus": build_torus,
 }
 
 

@@ -11,11 +11,14 @@ from __future__ import annotations
 import math
 
 import Rhino  # type: ignore
+from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
 from compas.geometry import Frame
 from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
+from compas.geometry import SphericalSurface
+from compas.geometry import ToroidalSurface
 from compas.geometry import Vector
 from compas.tolerance import TOL
 
@@ -24,6 +27,9 @@ from compas_brep.errors import BrepError
 from compas_brep.exchange import EXCHANGE_VERSION
 from compas_brep.exchange import LOOP_INNER
 from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import analytic_surface_params
+from compas_brep.exchange import analytic_surface_point
+from compas_brep.exchange import analytic_surface_v_is_periodic
 from compas_brep.exchange import loop_to_data
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
@@ -153,80 +159,159 @@ def _wrap_to_pi(angle):
     return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
-def _cylinder_and_param_map(rhino_surface):
-    """Return ``(cylinder, param_map)`` for a surface the document can tag ``cylinder``.
+def _compas_analytic_surface(rhino_surface):
+    """Return the COMPAS analytic surface a Rhino surface *is*, or None.
 
-    The document's cylinder is a COMPAS ``CylindricalSurface``, whose parameters are
-    ``(angle, height)`` about the tagged frame — the same space OCC's pcurves are
-    already written in. Rhino does not agree: it parameterizes a cylinder wall by
-    *arc length* around the circle, so its native ``u`` is ``radius * angle``. A
-    pcurve written straight out of Rhino would therefore place every trim at the
-    wrong angle on any reader, which is worse than the ``nurbs`` tag it replaces.
-    ``param_map`` converts native ``(u, v)`` into ``(angle, height)``.
+    This answers only "what shape is this", not "can the document carry it" —
+    :func:`_analytic_surface_and_param_map` decides that. Each ``TryGet*`` is
+    asked at ``TOL.absolute``, so a face that is a cylinder only to a looser
+    tolerance stays ``nurbs`` rather than being silently idealized.
+    """
+    success, cylinder = rhino_surface.TryGetCylinder(TOL.absolute)
+    if success:
+        return CylindricalSurface(cylinder.Radius, frame=_frame_from_rhino_plane(cylinder.BasePlane))
 
-    The map is recovered by probing rather than assumed, then checked across the
-    whole domain: only an affine map can be carried onto a pcurve's control points
-    exactly, and not every cylindrical Rhino surface has one. A fillet face is the
-    case that matters — it is exactly a cylinder to ``TryGetCylinder``, but Rhino
-    stores it as a rational NURBS whose angle is not linear in either parameter, and
-    it also swaps the roles of ``u`` and ``v``. Those return ``(None, None)`` and are
-    tagged ``nurbs``, which is not a degradation: the face is natively a NURBS
-    surface, so the ``nurbs`` tag reproduces it exactly.
+    success, sphere = rhino_surface.TryGetSphere(TOL.absolute)
+    if success:
+        return SphericalSurface(sphere.Radius, frame=_frame_from_rhino_plane(sphere.EquatorialPlane))
+
+    success, torus = rhino_surface.TryGetTorus(TOL.absolute)
+    if success:
+        return ToroidalSurface(torus.MajorRadius, torus.MinorRadius, frame=_frame_from_rhino_plane(torus.Plane))
+
+    success, cone = rhino_surface.TryGetCone(TOL.absolute)
+    if success:
+        return _compas_cone_from_rhino(cone)
+
+    return None
+
+
+def _compas_cone_from_rhino(cone):
+    """Convert a Rhino cone to a COMPAS ``ConicalSurface``, or None if degenerate.
+
+    The two conventions do not line up, and the issue asked for this to be
+    confirmed rather than assumed. Measured: Rhino puts its plane's **origin at
+    the apex** with the z-axis pointing towards the base. COMPAS is the other way
+    up — the frame sits on the **base** circle, ``radius`` is the base radius, and
+    the apex is at ``+height * z``. So the COMPAS frame's z-axis is the reverse of
+    Rhino's, which also reverses the direction ``u`` is measured in; the parameter
+    map recovers that rather than this function hard-coding it.
+    """
+    apex = cone.ApexPoint
+    base = cone.BasePoint
+    axis = apex - base
+    height = axis.Length
+    if height < TOL.absolute or cone.Radius < TOL.absolute:
+        # A flat disc or a needle: no meaningful cone frame, and `atan(-r/h)` is
+        # about to be a division by zero. OCC's extractor declines these too.
+        return None
+
+    axis.Unitize()
+    zaxis = Vector(axis.X, axis.Y, axis.Z)
+    # Rhino's plane x-axis is perpendicular to its own z-axis, which is +-this one,
+    # so it is a valid x-axis for the COMPAS frame either way.
+    xaxis = Vector(cone.Plane.XAxis.X, cone.Plane.XAxis.Y, cone.Plane.XAxis.Z)
+    frame = Frame(Point(base.X, base.Y, base.Z), xaxis, zaxis.cross(xaxis))
+    return ConicalSurface(cone.Radius, height, frame=frame)
+
+
+def _analytic_surface_and_param_map(rhino_surface):
+    """Return ``(compas_surface, param_map)`` for a surface the document can tag.
+
+    The document parameterizes every analytic tag the way OCC does — ``u`` the
+    angle about the frame's z-axis, ``v`` what the tag makes it (see
+    ``compas_brep.exchange``). Rhino agrees with none of it: it parameterizes
+    these surfaces by **arc length**, so a cylinder wall's native ``u`` is
+    ``radius * angle`` and a sphere's ``v`` is ``radius * latitude``. A pcurve
+    written straight out of Rhino would put every trim at the wrong place on any
+    reader — a document worse than the ``nurbs`` tag it replaces, because it looks
+    right. ``param_map`` converts native ``(u, v)`` into the document's.
+
+    The map is recovered by probing and then checked across the whole domain,
+    never assumed: only an affine map can be carried onto a pcurve's control
+    points exactly, and not every analytically-shaped Rhino surface has one. A
+    fillet face is the case that matters — exactly a cylinder to
+    ``TryGetCylinder``, but stored as a rational NURBS whose angle is not linear
+    in either parameter. Those return ``(None, None)`` and are tagged ``nurbs``,
+    which is not a degradation: the face is natively a NURBS surface, so the
+    ``nurbs`` tag reproduces it exactly.
 
     Returns
     -------
     tuple
-        ``(Rhino.Geometry.Cylinder, callable)``, or ``(None, None)``.
+        ``(COMPAS analytic surface, callable)``, or ``(None, None)``.
 
     """
-    success, cylinder = rhino_surface.TryGetCylinder(TOL.absolute)
-    if not success:
+    surface = _compas_analytic_surface(rhino_surface)
+    if surface is None:
         return None, None
 
-    base = cylinder.BasePlane
-    origin = base.Origin
+    param_map = _recover_param_map(rhino_surface, surface)
+    if param_map is None:
+        return None, None
+    return surface, param_map
 
-    def angle_height(u, v):
-        offset = rhino_surface.PointAt(u, v) - origin
-        return math.atan2(offset * base.YAxis, offset * base.XAxis), offset * base.ZAxis
 
+def _recover_param_map(rhino_surface, surface):
+    """Recover the affine map from a Rhino surface's ``(u, v)`` to the document's.
+
+    Probed from the middle of the domain rather than a corner: a corner of an
+    analytic surface is where the degeneracies are — a sphere's pole is at both
+    ends of ``v``, and the seam sits at the ends of ``u``.
+    """
     u_domain = rhino_surface.Domain(0)
     v_domain = rhino_surface.Domain(1)
     du = (u_domain.Max - u_domain.Min) * _PARAM_PROBE
     dv = (v_domain.Max - v_domain.Min) * _PARAM_PROBE
     if du == 0.0 or dv == 0.0:
-        return None, None
+        return None
 
-    angle_00, height_00 = angle_height(u_domain.Min, v_domain.Min)
-    angle_u, height_u = angle_height(u_domain.Min + du, v_domain.Min)
-    angle_v, height_v = angle_height(u_domain.Min, v_domain.Min + dv)
+    v_periodic = analytic_surface_v_is_periodic(surface)
 
-    d_angle_du = _wrap_to_pi(angle_u - angle_00) / du
-    d_angle_dv = _wrap_to_pi(angle_v - angle_00) / dv
-    d_height_du = (height_u - height_00) / du
-    d_height_dv = (height_v - height_00) / dv
-    angle_0 = angle_00 - d_angle_du * u_domain.Min - d_angle_dv * v_domain.Min
-    height_0 = height_00 - d_height_du * u_domain.Min - d_height_dv * v_domain.Min
+    def document_params(u, v):
+        point = rhino_surface.PointAt(u, v)
+        return analytic_surface_params(surface, Point(point.X, point.Y, point.Z))
+
+    def delta(a, b, periodic):
+        # Both document parameters that wrap do so every 2*pi, and a probe step is
+        # far smaller than that -- so a "jump" is the branch cut, not motion.
+        return _wrap_to_pi(b - a) if periodic else b - a
+
+    u_0, v_0 = u_domain.Mid, v_domain.Mid
+    doc_u_00, doc_v_00 = document_params(u_0, v_0)
+    doc_u_u, doc_v_u = document_params(u_0 + du, v_0)
+    doc_u_v, doc_v_v = document_params(u_0, v_0 + dv)
+
+    d_doc_u_du = delta(doc_u_00, doc_u_u, True) / du
+    d_doc_u_dv = delta(doc_u_00, doc_u_v, True) / dv
+    d_doc_v_du = delta(doc_v_00, doc_v_u, v_periodic) / du
+    d_doc_v_dv = delta(doc_v_00, doc_v_v, v_periodic) / dv
+
+    doc_u_origin = doc_u_00 - d_doc_u_du * u_0 - d_doc_u_dv * v_0
+    doc_v_origin = doc_v_00 - d_doc_v_du * u_0 - d_doc_v_dv * v_0
 
     def param_map(u, v):
         return (
-            angle_0 + d_angle_du * u + d_angle_dv * v,
-            height_0 + d_height_du * u + d_height_dv * v,
+            doc_u_origin + d_doc_u_du * u + d_doc_u_dv * v,
+            doc_v_origin + d_doc_v_du * u + d_doc_v_dv * v,
         )
 
-    if not _param_map_holds(rhino_surface, cylinder, param_map):
-        return None, None
-    return cylinder, param_map
+    if not _param_map_holds(rhino_surface, surface, param_map):
+        return None
+    return param_map
 
 
-def _param_map_holds(rhino_surface, cylinder, param_map):
+def _param_map_holds(rhino_surface, surface, param_map):
     """Check a recovered map reproduces the surface across its whole domain.
 
-    The probe that recovers the map only sees one corner of it. This is what tells
-    an arc-length-parameterized cylinder wall (affine, exact) apart from a rational
-    NURBS one that merely happens to be cylindrical (not affine).
+    The probe that recovers the map only sees one point of it. Evaluating the
+    document's own parameterization here — rather than a formula rewritten in this
+    module — is what makes this a check against the format instead of a check
+    against what this backend believes the format to be.
+
+    This is also what tells an arc-length-parameterized wall (affine, exact) apart
+    from a rational NURBS one that merely happens to be cylindrical (not affine).
     """
-    base = cylinder.BasePlane
     u_domain = rhino_surface.Domain(0)
     v_domain = rhino_surface.Domain(1)
 
@@ -234,14 +319,9 @@ def _param_map_holds(rhino_surface, cylinder, param_map):
         for j in range(_PARAM_CHECK_SAMPLES):
             u = u_domain.ParameterAt(i / (_PARAM_CHECK_SAMPLES - 1))
             v = v_domain.ParameterAt(j / (_PARAM_CHECK_SAMPLES - 1))
-            angle, height = param_map(u, v)
-            expected = (
-                base.Origin
-                + base.XAxis * (cylinder.Radius * math.cos(angle))
-                + base.YAxis * (cylinder.Radius * math.sin(angle))
-                + base.ZAxis * height
-            )
-            if rhino_surface.PointAt(u, v).DistanceTo(expected) > TOL.absolute:
+            expected = analytic_surface_point(surface, *param_map(u, v))
+            point = rhino_surface.PointAt(u, v)
+            if point.DistanceTo(Rhino.Geometry.Point3d(expected.x, expected.y, expected.z)) > TOL.absolute:
                 return False
     return True
 
@@ -249,13 +329,13 @@ def _param_map_holds(rhino_surface, cylinder, param_map):
 def _canonical_pcurve(pcurve, rhino_face):
     """Re-express a native pcurve in the parameter space the document defines.
 
-    Only cylindrical faces need this today; every other surface tag is either
-    parameterized the same way on both backends or, like ``plane``, has its pcurve
-    re-derived on rebuild instead. The map is affine, and a NURBS curve — rational
-    or not — is affine-invariant, so mapping the control points and leaving the
-    knots, weights and degree alone is exact rather than a refit.
+    Every analytic tag needs this — Rhino measures all of them by arc length —
+    while ``plane`` has its pcurve re-derived on rebuild instead and ``nurbs``
+    carries its own parameterization with it. The map is affine, and a NURBS curve
+    — rational or not — is affine-invariant, so mapping the control points and
+    leaving the knots, weights and degree alone is exact rather than a refit.
     """
-    _, param_map = _cylinder_and_param_map(rhino_face.UnderlyingSurface())
+    _, param_map = _analytic_surface_and_param_map(rhino_face.UnderlyingSurface())
     if param_map is None:
         return pcurve
 
@@ -274,15 +354,17 @@ def _canonical_pcurve(pcurve, rhino_face):
 
 
 def _extract_surface(rhino_face):
-    """Extract surface data from a Rhino face, returning Plane, CylindricalSurface or NurbsSurface.
+    """Extract a Rhino face's surface as the COMPAS type the document tags it with.
+
+    Analytic faces come back as their analytic type — the bar ADR-0001 sets is
+    representational fidelity, so a cylinder must leave here as a
+    ``CylindricalSurface`` and not as a NURBS approximation of one. Anything the
+    document has no analytic tag for is a NURBS surface natively, so ``nurbs``
+    reproduces it exactly.
 
     Parameters
     ----------
     rhino_face : Rhino.Geometry.BrepFace
-
-    Returns
-    -------
-    :class:`compas.geometry.Plane` or :class:`compas.geometry.CylindricalSurface` or :class:`compas_brep.NurbsSurface`
 
     """
     underlying = rhino_face.UnderlyingSurface()
@@ -301,12 +383,17 @@ def _extract_surface(rhino_face):
                 Vector(normal.X, normal.Y, normal.Z),
             )
 
-    cylinder, _ = _cylinder_and_param_map(underlying)
-    if cylinder is not None:
-        return CylindricalSurface(cylinder.Radius, frame=_frame_from_rhino_plane(cylinder.BasePlane))
+    surface, _ = _analytic_surface_and_param_map(underlying)
+    if surface is not None:
+        return surface
 
-    # Convert to NURBS surface for non-planar
     nurbs = underlying.ToNurbsSurface()
+    if nurbs is None:
+        # Every Rhino surface converts to NURBS, so this is not a known shape --
+        # but the loss policy (ADR-0001) is to raise rather than to skip the face
+        # or approximate it, which is what dropped every analytic face for a
+        # release.
+        raise BrepError(f"Rhino backend cannot represent a face on surface type {type(underlying).__name__}")
     return _rhino_nurbs_surface_to_compas(nurbs)
 
 
@@ -511,22 +598,41 @@ def _rhino_plane_from_compas(plane):
     )
 
 
+def _face_boundary_points(face):
+    """Every 3D point that must sit inside a rebuilt planar face's surface patch.
+
+    The edge *curves'* control points, not just the vertices: a circular cap loop
+    has a single vertex on its rim, so sizing a patch from vertices leaves most of
+    the disc off the surface — the whole circle then trims to a smaller one. A
+    rational circle's control polygon bounds the circle, so its control points size
+    the patch correctly. Falls back to a vertex where a trim has no edge curve.
+    """
+    for loop in face.loops:
+        for trim in loop.trims:
+            curve = trim.edge.curve if trim.edge is not None else None
+            if isinstance(curve, Line):
+                yield curve.start
+                yield curve.end
+            elif isinstance(curve, NurbsCurve):
+                yield from curve._points
+            elif trim.vertex is not None:
+                yield trim.vertex.point
+
+
 def _plane_surface_for_face(plane, face):
     """Build a bounded Rhino PlaneSurface large enough to contain a face's boundary."""
     rhino_plane = _rhino_plane_from_compas(plane)
 
     us = []
     vs = []
-    for loop in face.loops:
-        for vertex in loop.vertices:
-            p = vertex.point
-            success, u, v = rhino_plane.ClosestParameter(Rhino.Geometry.Point3d(p.x, p.y, p.z))
-            if success:
-                us.append(u)
-                vs.append(v)
+    for point in _face_boundary_points(face):
+        success, u, v = rhino_plane.ClosestParameter(Rhino.Geometry.Point3d(point.x, point.y, point.z))
+        if success:
+            us.append(u)
+            vs.append(v)
 
     if not us:
-        raise BrepError("Cannot rebuild a planar face with no boundary vertices")
+        raise BrepError("Cannot rebuild a planar face with no boundary curves")
 
     # Pad so the trimmed boundary sits strictly inside the surface domain.
     pad = max(max(us) - min(us), max(vs) - min(vs)) * 0.1 + 1.0
@@ -600,73 +706,160 @@ def _face_pcurve_points(face):
     return [point for loop in face.loops for trim in loop.trims if trim.curve_2d for point in trim.curve_2d._points]
 
 
-def _cylinder_angle_shift(face):
-    """How far to rotate a rebuilt cylinder's frame so its seam clears the trims.
+def _is_analytic(surface):
+    return isinstance(surface, (CylindricalSurface, SphericalSurface, ToroidalSurface, ConicalSurface))
 
-    A Rhino cylinder surface spans exactly one period — u over ``[0, 2pi]`` — while
-    the document's cylinder is unbounded and periodic, so a writer is free to place
-    trims outside that range. Rotating the frame moves the seam; clipping the trims
-    would move the geometry.
+
+def _seam_shift(values):
+    """Where a periodic direction must start so the rebuilt surface's seam clears the trims.
+
+    A Rhino surface of revolution spans exactly one period, while the document's
+    analytic surfaces are unbounded and periodic — so a writer is free to place
+    trims outside ``[0, 2pi]``. Moving the seam moves nothing but the seam;
+    clipping the trims would move the geometry.
     """
-    angles = [point.x for point in _face_pcurve_points(face)]
-    if not angles:
+    if not values:
         return 0.0
-    if min(angles) < -TOL.absolute or max(angles) > 2 * math.pi + TOL.absolute:
-        return min(angles)
+    if min(values) < -TOL.absolute or max(values) > 2 * math.pi + TOL.absolute:
+        return min(values)
     return 0.0
 
 
-def _cylinder_surface_for_face(surface, face):
-    """Build a bounded Rhino cylinder surface for a face tagged ``cylinder``.
+def _parameter_shift(surface, face):
+    """How far the rebuilt surface's parameter origin must move to clear the trims.
 
-    A Rhino ``RevSurface`` built from a ``Cylinder`` is parameterized exactly as the
-    document's pcurves are — u the angle over ``[0, 2pi]``, v the height along the
-    axis — so the trims land without conversion. This is the one place that
-    parameterization is pinned; a cylinder rebuilt any other way (``ToBrep``, a
-    NURBS conversion) comes back arc-length-parameterized and every trim lands at
-    the wrong angle.
-
-    The height range is not carried by the document — a ``CylindricalSurface`` is
-    unbounded — so it is taken from the trims, which is exactly the extent the face
-    occupies.
+    Returned in the document's parameter space, so the same pair both places the
+    surface and follows the pcurves onto it.
     """
-    heights = [point.y for point in _face_pcurve_points(face)]
-    if not heights:
-        raise BrepError("Cannot rebuild a cylindrical face with no pcurves")
+    if not _is_analytic(surface):
+        return 0.0, 0.0
+
+    points = _face_pcurve_points(face)
+    u_shift = _seam_shift([point.x for point in points])
+    v_shift = _seam_shift([point.y for point in points]) if analytic_surface_v_is_periodic(surface) else 0.0
+    return u_shift, v_shift
+
+
+def _document_v_range(surface, face, v_shift):
+    """The span of ``v`` a rebuilt analytic surface must cover.
+
+    Three cases, and they are the tag's own geometry rather than a policy: a
+    sphere's ``v`` is a latitude, so it is already bounded and the surface is the
+    whole of it; a torus's ``v`` runs around the pipe, so it closes after one
+    period; a cylinder's and a cone's are unbounded, so the extent has to come
+    from the trims — which is exactly the extent the face occupies.
+    """
+    if isinstance(surface, SphericalSurface):
+        return -math.pi / 2, math.pi / 2
+    if analytic_surface_v_is_periodic(surface):
+        return v_shift, v_shift + 2 * math.pi
+
+    vs = [point.y for point in _face_pcurve_points(face)]
+    if not vs:
+        raise BrepError(f"Cannot rebuild a {type(surface).__name__} face with no pcurves")
+    return min(vs), max(vs)
+
+
+def _rhino_point(point):
+    return Rhino.Geometry.Point3d(point.x, point.y, point.z)
+
+
+def _rhino_vector(vector):
+    return Rhino.Geometry.Vector3d(vector.x, vector.y, vector.z)
+
+
+def _analytic_profile(surface, u, v_min, v_max):
+    """The ``u = const`` generating curve of an analytic surface, parameterized by the document's ``v``.
+
+    Every point of it comes from the document's own evaluator, so the profile is
+    exact by construction rather than by a formula this module restates: a
+    cylinder's and a cone's generating lines are affine in ``v``, and a sphere's
+    and a torus's are circles swept by ``v`` as an angle.
+    """
+    frame = surface.frame
+    radial = frame.xaxis * math.cos(u) + frame.yaxis * math.sin(u)
+
+    if isinstance(surface, (CylindricalSurface, ConicalSurface)):
+        start = analytic_surface_point(surface, u, v_min)
+        end = analytic_surface_point(surface, u, v_max)
+        return Rhino.Geometry.LineCurve(Rhino.Geometry.Line(_rhino_point(start), _rhino_point(end)), v_min, v_max)
+
+    if isinstance(surface, SphericalSurface):
+        centre, radius = frame.point, surface.radius
+    else:
+        centre, radius = frame.point + radial * surface.radius_axis, surface.radius_pipe
+
+    # In this plane the angle from the x-axis is the document's v exactly: a
+    # latitude for the sphere, the angle about the pipe for the torus.
+    plane = Rhino.Geometry.Plane(_rhino_point(centre), _rhino_vector(radial), _rhino_vector(frame.zaxis))
+    arc = Rhino.Geometry.Arc(Rhino.Geometry.Circle(plane, radius), Rhino.Geometry.Interval(v_min, v_max))
+    return Rhino.Geometry.ArcCurve(arc, v_min, v_max)
+
+
+def _analytic_surface_for_face(surface, face):
+    """Build a Rhino surface for an analytic face, parameterized as the document is.
+
+    This is the one place the rebuilt parameterization is pinned, and it is why
+    the trims land without conversion. It cannot be delegated to Rhino's own
+    constructors: measured, ``Sphere.ToRevSurface`` happens to agree with the
+    document, but ``Torus.ToRevSurface`` is arc-length in *both* directions and
+    ``Cone.ToRevSurface`` measures ``v`` as a height from the apex where the
+    document measures a distance along the generating line from the base. Any of
+    those puts every trim in the wrong place. Revolving the document's own
+    generating curve agrees with the document by construction, for all four.
+    """
+    u_shift, v_shift = _parameter_shift(surface, face)
+    v_min, v_max = _document_v_range(surface, face, v_shift)
 
     frame = surface.frame
-    plane = Rhino.Geometry.Plane(
-        Rhino.Geometry.Point3d(frame.point.x, frame.point.y, frame.point.z),
-        Rhino.Geometry.Vector3d(frame.xaxis.x, frame.xaxis.y, frame.xaxis.z),
-        Rhino.Geometry.Vector3d(frame.yaxis.x, frame.yaxis.y, frame.yaxis.z),
-    )
-    angle_shift = _cylinder_angle_shift(face)
-    if angle_shift:
-        plane.Rotate(angle_shift, plane.ZAxis)
+    axis = Rhino.Geometry.Line(_rhino_point(frame.point), _rhino_point(frame.point + frame.zaxis))
+    profile = _analytic_profile(surface, u_shift, v_min, v_max)
 
-    cylinder = Rhino.Geometry.Cylinder(Rhino.Geometry.Circle(plane, surface.radius))
-    cylinder.Height1 = min(heights)
-    cylinder.Height2 = max(heights)
-    return cylinder.ToRevSurface()
+    revolved = Rhino.Geometry.RevSurface.Create(profile, axis)
+    if revolved is None:
+        raise BrepError(f"Failed to rebuild a Rhino surface for a {type(surface).__name__} face")
+    return revolved
 
 
 def _surface_to_rhino(surface, face):
     """Build the Rhino surface a face sits on."""
     if isinstance(surface, Plane):
         return _plane_surface_for_face(surface, face)
-    if isinstance(surface, CylindricalSurface):
-        return _cylinder_surface_for_face(surface, face)
+    if _is_analytic(surface):
+        return _analytic_surface_for_face(surface, face)
     if isinstance(surface, NurbsSurface):
         return nurbs_surface_to_rhino(surface)
     raise BrepError(f"Rhino backend cannot rebuild a face on surface type {type(surface).__name__}")
 
 
-def _trim_pcurve_to_rhino(trim, angle_shift):
-    """Convert a trim's serialized pcurve to a Rhino curve, following any seam rotation."""
+def _trim_pcurve_to_rhino(trim, shift):
+    """Convert a trim's serialized pcurve to a Rhino curve, following any seam shift."""
     pcurve = nurbs_curve_to_rhino(trim.curve_2d)
-    if angle_shift:
-        pcurve.Translate(Rhino.Geometry.Vector3d(-angle_shift, 0.0, 0.0))
+    u_shift, v_shift = shift
+    if u_shift or v_shift:
+        pcurve.Translate(Rhino.Geometry.Vector3d(-u_shift, -v_shift, 0.0))
     return pcurve
+
+
+def _is_degenerate(rhino_curve):
+    """Whether an edge curve has no extent — a boundary collapsed to a point.
+
+    Measured by length, not by whether the endpoints coincide: a full circular
+    seam starts and ends at the same point too, and is not degenerate. OCC writes
+    a sphere's pole as a zero-length line of exactly this kind.
+    """
+    return rhino_curve.GetLength() <= TOL.absolute
+
+
+def _singular_trim_vertex(trim, vertex_index, collapsed_edges):
+    """The index of the vertex a trim collapses to, or None if it runs along an edge.
+
+    Covers both of the document's spellings: a trim with no edge (Rhino's) and a
+    trim along a degenerate edge (OCC's).
+    """
+    if trim.edge is None:
+        return vertex_index[id(trim.vertex)]
+    return collapsed_edges.get(id(trim.edge))
 
 
 def brep_to_rhino(brep):
@@ -697,10 +890,21 @@ def brep_to_rhino(brep):
         builder.add_vertex(vertex.point)
 
     edge_index = {}
+    collapsed_edges = {}
     for edge in brep._edges:
+        curve = _edge_curve_to_rhino(edge.curve)
+        if _is_degenerate(curve):
+            # The document has two spellings for "this boundary collapses to a
+            # point", and this is the one Rhino does not use: OCC writes a pole or
+            # an apex as a zero-length edge, while Rhino writes a trim with no edge
+            # at all. Rhino cannot hold a degenerate edge -- it rejects the whole
+            # Brep -- so the trims along it become singular trims, which is Rhino's
+            # spelling of the same thing.
+            collapsed_edges[id(edge)] = vertex_index[id(edge.first_vertex)]
+            continue
         edge_index[id(edge)] = len(edge_index)
         builder.add_edge(
-            _edge_curve_to_rhino(edge.curve),
+            curve,
             vertex_index[id(edge.first_vertex)],
             vertex_index[id(edge.last_vertex)],
         )
@@ -712,8 +916,8 @@ def brep_to_rhino(brep):
 
         is_planar = isinstance(surface, Plane)
         rhino_plane = _rhino_plane_from_compas(surface) if is_planar else None
-        # A rotated cylinder frame moves the seam; the pcurves follow it.
-        angle_shift = _cylinder_angle_shift(face) if isinstance(surface, CylindricalSurface) else 0.0
+        # A moved seam moves the rebuilt surface's parameter origin; the pcurves follow it.
+        shift = _parameter_shift(surface, face)
 
         loops = [(face.outer_loop, Rhino.Geometry.BrepLoopType.Outer)]
         loops += [(loop, Rhino.Geometry.BrepLoopType.Inner) for loop in face._inner_loops]
@@ -721,32 +925,35 @@ def brep_to_rhino(brep):
         for loop, loop_type in loops:
             loop_builder = face_builder.add_loop(loop_type)
             for trim in loop.trims:
-                if trim.edge is None:
-                    # Singular trim (e.g. at the pole of a sphere): it collapses to
-                    # a vertex, so it has no edge curve to project — the serialized
-                    # pcurve is the only description of it.
-                    pcurve = _trim_pcurve_to_rhino(trim, angle_shift)
-                    loop_builder.add_trim(
-                        pcurve,
-                        -1,
-                        False,
-                        _iso_status_for_pcurve(pcurve, rhino_surface),
-                        vertex_index[id(trim.vertex)],
-                    )
-                    continue
+                singular_vertex = _singular_trim_vertex(trim, vertex_index, collapsed_edges)
 
-                if is_planar:
+                if singular_vertex is None and is_planar:
                     # A plane's parameterization is not pinned by the document
                     # (point and normal fix no x-axis), so the serialized pcurve
                     # cannot be trusted here — re-derive it against the rebuilt plane.
                     pcurve = _project_curve_to_plane(trim.edge.curve, rhino_plane)
                 else:
-                    pcurve = _trim_pcurve_to_rhino(trim, angle_shift)
+                    # A singular trim (a sphere's pole, a cone's apex) collapses to a
+                    # vertex and has no edge curve to project, so its serialized
+                    # pcurve is the only description of it.
+                    pcurve = _trim_pcurve_to_rhino(trim, shift)
 
-                # Both pcurves above run in the edge's direction, as the document
-                # defines; Rhino wants the trim's.
+                # Every pcurve above runs in its edge's direction, as the document
+                # defines; Rhino wants the trim's. This applies to a singular trim
+                # too — OCC reverses the one along a pole, and a loop whose trims do
+                # not run head to tail in parameter space is not a loop.
                 if trim.is_reversed:
                     pcurve.Reverse()
+
+                if singular_vertex is not None:
+                    loop_builder.add_trim(
+                        pcurve,
+                        -1,
+                        False,
+                        _iso_status_for_pcurve(pcurve, rhino_surface),
+                        singular_vertex,
+                    )
+                    continue
 
                 loop_builder.add_trim(
                     pcurve,
