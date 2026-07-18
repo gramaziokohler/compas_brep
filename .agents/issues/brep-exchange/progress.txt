@@ -373,3 +373,142 @@ Next: slice 05 — Rhino sphere/cone/torus surfaces.
   map affinely like the cylinder wall did, but MEASURE it. Note the sphere
   fixture's OCC rebuild is still broken (strict xfail) for reasons this slice
   did not fully close.
+
+--------------------------------------------------------------------------
+2026-07-18 — Slice 05 (Rhino sphere/cone/torus surfaces): DONE
+commit 31eb59d
+
+Sphere, cone, torus now extract/write/read/rebuild as their COMPAS analytic
+types through Rhino. All four analytic schema xfails gone on both backends
+(RHINO_UNWRITABLE_SURFACE_TAGS is empty). Coverage now matches OCC.
+
+THE PARAMETERIZATION IS STILL THE SLICE, AS SLICE 04 WARNED — but the shape
+of the answer changed. Slice 04's _cylinder_and_param_map probed Rhino's
+(u,v) and mapped to (angle,height) with a formula written in the Rhino
+backend. That does not scale to four tags with four different v meanings.
+Instead the document's parameter space is now stated ONCE, as an evaluator,
+in exchange.py (analytic_surface_point / _params / _v_is_periodic): u is the
+angle about the frame z for every tag; v is height (cylinder), latitude
+(sphere), pipe-angle (torus), or slant distance from the base (cone). The
+Rhino probe-then-verify map recovers native->document by calling that
+evaluator, so it checks against the FORMAT, not against what this backend
+believes the format is. _param_map_holds evaluates the same function rather
+than a re-derived formula.
+
+Measured, not assumed (the issue asked): Rhino parameterizes ALL of these by
+arc length, confirmed at non-unit radii (r=1 is a trap — arc length == angle
+there, so a sphere/torus looks affine and isn't distinguishable). The cone
+convention genuinely differs: Rhino's plane origin is the APEX with z toward
+the base; COMPAS is base-origin, apex at +height*z. _compas_cone_from_rhino
+reverses it. OCC->Rhino->OCC keeps radius 0.5, height 1.0.
+
+THE DOCUMENT'S PARAMETER SPACE IS OCC'S, AND THAT IS NOW PINNED ON CI.
+test_exchange_parameterization.py evaluates every analytic tag against the
+real OCP gp_ surface (Value(u,v)) at a tilted frame. If the evaluator ever
+drifts from OCC, every pcurve silently means something else and nothing else
+would catch it (writer and reader drift together). Needs OCC only.
+
+REBUILD CANNOT DELEGATE TO RHINO'S CONSTRUCTORS. Measured: Sphere.ToRevSurface
+happens to agree with the document, but Torus.ToRevSurface is arc-length in
+BOTH directions and Cone.ToRevSurface measures v as height-from-apex, not
+slant-from-base. Any of those lands every trim wrong. _analytic_surface_for_face
+revolves the document's OWN generating curve (built from analytic_surface_point),
+so it agrees by construction for all four. The cylinder's ToRevSurface path is
+gone, replaced by this.
+
+TWO PRE-EXISTING DEFECTS, BOTH FOUND BY READING AN OCC DOCUMENT IN RHINO —
+which slice 04 did for the cylinder but NOT for pole/apex shapes. Both fixed.
+  1. OCC and Rhino spell a collapsed boundary DIFFERENTLY. OCC writes a pole
+     or apex as a zero-length ("degenerate") edge; Rhino writes a singular
+     trim (edge -1, no edge curve) — the mechanism slice 01 built. Rhino
+     cannot hold a degenerate edge (rejects the whole Brep: "Line points are
+     coincident"). brep_to_rhino now detects a degenerate edge by LENGTH (not
+     coincident endpoints — a closed circular seam has those too) and routes
+     its trims to AddSingularTrim. Also had to apply is_reversed to singular
+     trims: OCC reverses the pole trim, and a loop whose trims don't run head
+     to tail in parameter space is not a loop ("do not match"). SPHERE AND
+     TORUS ARE THE FIRST SHAPES OCC->RHINO HAS EVER PRODUCED AS VALID SOLIDS
+     (slice 04 noted OCC->Rhino made a solid of nothing). Cone/cylinder come
+     back valid-but-not-solid — the same planar-cap defect, not this.
+  2. A planar cap's surface patch was sized from loop VERTICES. A circular cap
+     loop has ONE vertex, on its rim. The patch was padded 1.0 around that one
+     point, so a disc of radius > ~0.5 fell partly outside the patch and
+     trimmed SMALL. The cylinder (r=0.5) squeaked under the pad; the cone
+     (r=0.6) did not — its cap came back radius ~0.566, area 1.007 vs 1.131,
+     volume 0.534 vs 0.565. Now sized from the boundary CURVES' control points
+     (a rational circle's control polygon bounds the circle). Latent since
+     slice 01; the cone is just the first face to cross the threshold.
+
+A VOLUME/PARAM TRAP, measured not assumed: the sphere's "samples match at
+matching parameters" check (slice 04's cylinder criterion) FAILED at first —
+rebuilt point_at(0,0) was the opposite pole. Not a bug: a sphere has no
+preferred pole, so Rhino's TryGetSphere picks an equatorial-plane orientation
+arbitrarily and re-extraction can flip v. The two spheres are the SAME point
+set (Hausdorff 4.9e-12 both ways), same radius/centre, round-trip valid +
+solid + volume-exact. The surface-identity test is now a set comparison, not
+pointwise (u,v); pcurve landing is verified by the valid+volume round-trip,
+which is what a mislanded pcurve breaks. Cone and torus DO re-extract stably
+(they have a real axis), but the test is uniform.
+
+Fixtures: rhino_sphere flipped nurbs->sphere (its OCC rebuild volume now
+clears the 1e-3 bar as an analytic surface, so it is no longer a strict xfail
+— rebuild_broken False). rhino_cone/torus new. OCC-authored occ_sphere/cone/
+torus committed as the mirror for the Rhino read direction (neither kernel is
+importable in the other's process). rhino_cylinder and rhino_box_with_hole
+were NOT re-committed: the refactored mid-domain probe perturbs their pcurves
+by ~5e-12 (within TOL — documents_differ still passes), and reverting keeps
+this commit's fixture diff to the real change.
+
+Loss policy: a surface Rhino cannot represent raises BrepError
+(_surface_to_rhino on an unknown COMPAS type; the extract side raises if
+ToNurbsSurface returns None, defensive since every Rhino surface converts).
+Tested; the raises-shim self-checked first.
+
+CONTEXT.md drift, still deliberate: the v6 section's edge-tag claim
+(line|circle|arc|ellipse, "both backends read and write every tag") is still
+slice 06 — the three edge-curve xfails remain on both backends. The Surface
+Type Support table's "Rhino must reach the same analytic coverage" is now true
+for the full analytic set (cylinder+sphere+cone+torus), not cylinder only.
+
+Carried forward — KNOWN, not slice-05's:
+  - Cylinder/cone rebuild valid-but-not-solid in OCC->Rhino: the planar-cap /
+    seam story, still open. No slice owns the OCC->Rhino "not a solid" defect
+    for capped shapes; slice 04 filed it needing its own issue.
+  - filleted_box and (OCC-authored) curved-face orientation: still strict
+    xfail, still an OCC-side defect (slice 03 proved OCC-authored breaks the
+    same inside OCC). Untouched here.
+  - Seam invalidity on cylinder is slice 06 (analytic circle edge tags).
+
+Testing status — READ THIS:
+  invoke lint ..................... passes (ruff; what CI runs)
+  invoke test ..................... 337 passed, 5 xfailed (what CI runs)
+  pytest -m occ -q ................ 284 passed, 5 xfailed (was 261 + 6xf;
+        +23 new occ tests, and the sphere fixture xfail became a pass)
+  pytest -m rhino ................. NOT RUN. No rhinoinside on this machine and
+        -m 'not rhino' skips it by default. Do not read the checked boxes as a
+        pytest -m rhino pass.
+  Instead, through the LAMCP bridge in live Rhino 8:
+    - 95 Rhino-marked tests pass (27 sphere/cone/torus + 15 cylinder +
+      30 serialization + 23 topology), 0 fail
+    - all 7 Rhino-authored fixtures regenerate with ZERO drift using the real
+      documents_differ code
+    - the full Rhino schema table matches: all 6 surface tags write+rebuild,
+      0 XPASS; circle/arc/ellipse still xfail
+    - OCC-authored sphere/cone/torus documents read in Rhino as native
+      analytic faces (TryGet* on the rebuilt face), cone keeps radius+height
+  The harness was self-checked first (raises() must flag a missing raise and a
+  wrong error type; it does), and the two fixes were checked against their own
+  before-state: without the degenerate-edge bridge the OCC sphere/cone RAISE;
+  without the boundary-curve cap sizing the cone cap is radius ~0.566. A test
+  that passes with the fix removed is not a test.
+
+  Bridge gotcha, still true: after reinstalling, purge every 'compas*' module
+  in a SEPARATE bridge call from the import (compas's @plugin registry holds
+  old code objects otherwise).
+
+Next: slice 06 — analytic edge curve tags (circle/arc/ellipse).
+  The three edge-curve xfails are live on BOTH backends. Slice 04 flagged the
+  seam residual (Rhino writes an exact rational circle, OCC a degree-11
+  polynomial approximation; a NURBS circle's parameter is not its angle) —
+  circle edge tags are what make a seam exact and let the cylinder/sphere/cone/
+  torus fixture volume_atol tighten from 1e-3 to TOL. Start there.
