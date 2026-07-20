@@ -512,3 +512,154 @@ Next: slice 06 — analytic edge curve tags (circle/arc/ellipse).
   polynomial approximation; a NURBS circle's parameter is not its angle) —
   circle edge tags are what make a seam exact and let the cylinder/sphere/cone/
   torus fixture volume_atol tighten from 1e-3 to TOL. Start there.
+
+--------------------------------------------------------------------------
+2026-07-20 — Slice 06 (analytic edge curve tags): DONE ON OCC, UNRUN ON RHINO
+commit 650d4e3
+
+Edge curves widen to line | circle | arc | ellipse | nurbs. The three edge
+xfails are gone on both backends. OCC writes, reads, and rebuilds all five;
+the Rhino half is written and NEVER EXECUTED — see the testing status.
+
+READ THIS FIRST — THE BRIDGE WAS DOWN, AND THAT IS NEW.
+  Every earlier slice verified its Rhino half in live Rhino 8 through LAMCP.
+  This one could not: bridge_health reported connection refused, and there is
+  no rhinoinside on this machine. So the Rhino code here has been run by
+  NOTHING — not pytest, not a harness, not a human clicking in Rhino. Slices
+  01-05 could say "real kernel verification, not a pytest run". This one
+  cannot say even that. Treat every Rhino line in this commit as unreviewed
+  by a kernel.
+
+THE DESIGN POINT, AND IT WAS SETTLED BY MEASUREMENT, NOT PREFERENCE.
+  An analytic edge carries its conic AND the parameter interval it runs over.
+  The interval looked redundant at first — an arc "is" its angles — so I went
+  looking for whether real intervals fit COMPAS Arc's 0 <= angle <= 2*pi.
+  They do not, and not marginally:
+    - a sphere's meridian:      [3pi/2, 5pi/2]
+    - a tilted cut's ellipse:   [3pi/2, 3pi/2 + 2pi]
+  Both would be REJECTED by COMPAS Arc's constructor. Both are the first two
+  shapes the schema test reaches for. So `circle` and `arc` both carry a
+  COMPAS Circle plus a domain, and differ only in whether the domain is a
+  full turn. COMPAS Arc is deliberately unused: making it fit needs a frame
+  rotation, and rotating the frame shifts the parameterization, which means
+  shifting every pcurve on the edge to match — work that buys nothing because
+  the domain has to be on the wire regardless. An ellipse cannot be rotated
+  at all (not rotationally symmetric), which kills the idea outright.
+
+  Why the domain matters at all, since it is easy to read as bookkeeping: a
+  trim's pcurve is written over its edge curve's interval. Get the interval
+  wrong on read and every pcurve on that edge lands somewhere else. This is
+  the same class of bug as slice 04's arc-length cylinder walls.
+
+  The curve parameter space is stated ONCE in exchange.py
+  (analytic_curve_point) and pinned against the real OCP gp_ curves on CI,
+  exactly as slice 05 did for surfaces. t is the angle about the frame z from
+  the frame x-axis; for an ellipse that is NOT the geometric angle of the
+  point, and there is a test whose only job is to catch that mistake (on a
+  circle the two agree, so only an ellipse can tell them apart).
+
+MEASURED PAYOFF, against a stashed baseline rather than assumed:
+                    before              after
+  cylinder vol err  1.24e-07            2.22e-16   edges 3->3
+  cone     vol err  1.55e-08            5.55e-17   edges 3->2 BECOMES 3->3
+  sphere   vol err  8.88e-16            8.88e-16   edges 3->1 (unchanged)
+  torus    vol err  2.22e-16            2.22e-16   edges 2->2
+  The cone regaining its lost edge was not predicted by anyone. The OCC
+  fixtures also shrank ~500 lines: a circle is 4 numbers, not 12 control
+  points and a knot vector.
+
+SLICE 02 PREDICTED THIS SLICE WOULD FIX THE SEAM INVALIDITY. IT DOES NOT.
+  Measured, because the prediction was inherited and I did not want to pass
+  it on unchecked: the rebuilt cylinder reports BRepCheck invalid BOTH
+  before and after this commit. I did not regress it and I did not fix it.
+  Diagnosed rather than guessed — BRepCheck_NotConnected on a wire,
+  BRepCheck_UnorientableShape on the wall face. Cause is the edge-sharing
+  defect slice 03 already filed: _edge_to_occ_edge builds each face's edges
+  independently, so OCC mints fresh vertices per edge and the wire never
+  closes. That is a structural change to the rebuild (a shared vertex/edge
+  table), it is NOT what analytic edge tags are about, and NO SLICE OWNS IT.
+  It still needs its own issue, now with a diagnosis attached.
+
+A TEST PREMISE I GOT WRONG TWICE — both worth keeping:
+  1. "A filleted box has nurbs edges." It does NOT. Measured: every blend
+     edge on a filleted box is a circular arc or a line, tag set is exactly
+     {line, arc}. A fillet is the best SOURCE of the `arc` tag in the suite,
+     not of `nurbs`. The nurbs case needs a freeform patch's boundary.
+  2. "A quarter of an ellipse's parameter range is not a quarter of its
+     perimeter." Over [0, pi/2] it IS — that is exactly one quadrant, and
+     symmetry makes it proportional, so the obvious test passes against the
+     WRONG implementation. The test now uses [0, pi/4], which is not a fixed
+     fraction of anything.
+
+The Rhino writer is built to fail safe, which is the only reason I was
+willing to commit it unrun:
+  _analytic_edge_curve recovers the document interval by unwrapping the
+  angle along the edge, then VERIFIES it at every sample. If the native
+  parameterization is not affine in the document's, it returns None and the
+  edge goes out as `nurbs`. Rhino stores a circle as an exact rational
+  quadratic, so `nurbs` reproduces these curves exactly — nothing geometric
+  is lost when the fallback fires, only the analytic tag. This is the
+  discipline slice 04 arrived at, and it means the worst case of an unrun
+  writer is "no better than before", not "a document that looks right and is
+  wrong". The rebuild side has no fits either: a full circle becomes a
+  Rhino Circle spun so its parameter zero sits at the document's t0 (exact,
+  a circle is rotationally symmetric), a partial one an Arc over the angle
+  interval, and an ellipse the exact conic cut by parameter. Sampling and
+  interpolating a conic would have been a silent degradation and was backed
+  out once I noticed I had written one.
+  Rhino API risk I could not test: Arc() rejects a 2*pi sweep (an Arc is not
+  a circle in RhinoCommon), which is why the full-turn branch exists at all.
+  If the first licensed run fails, look there first.
+
+RHINO_UNWRITABLE_EDGE_CURVE_TAGS is EMPTY, and that is a deliberate bet.
+  It is empty because the FORMAT requires those tags, not because Rhino was
+  seen writing them. A speculative strict xfail would be worse than useless:
+  if Rhino can already write the tag it XPASSes and fails anyway, and if it
+  cannot, the xfail hides a real gap behind a green run. An empty set makes
+  a Rhino gap show up as a plain failure on the first licensed run, which is
+  what this suite exists for.
+
+FIXTURES — the asymmetry matters:
+  OCC-authored (occ_cylinder/cone/sphere/torus): REGENERATED, now carry
+  exact circular seams, guarded on CI by
+  test_occ_fixture_carries_exact_analytic_seams (asserts the analytic tags
+  AND that no `nurbs` edge remains).
+  Rhino-authored (all 7): NOT regenerated — cannot be, without a license.
+  They still carry `nurbs` seams, so their volume_atol stays 1e-3 instead of
+  tightening to TOL as slice 04 expected. The comment in EXPECTED now says
+  so explicitly rather than leaving the stale prediction in place.
+  FIRST THING TO DO ON A LICENSED MACHINE:
+    pytest -m rhino tests/test_exchange_fixtures.py --refresh-fixtures
+  and expect the Rhino fixtures' seam edges to flip nurbs -> circle/arc. If
+  they do NOT flip, the Rhino writer's verify step is rejecting something and
+  that is the bug to chase.
+
+CONTEXT.md drift, finally closed: its v6 section has claimed since v6 landed
+that edge curves carry analytic tags and "both backends read and write every
+tag". The OCC half is now true and the Rhino half is written; the section
+gained the parameter-space definition and the domain rationale. Slices 02,
+04, and 05 each flagged this drift and left it — it is no longer a lie, with
+the Rhino caveat recorded here rather than in CONTEXT.md.
+
+Testing status — READ THIS:
+  invoke lint ..................... passes (ruff; what CI runs)
+  invoke test ..................... 373 passed, 2 xfailed (what CI runs)
+  pytest -m occ -q ................ 305 passed, 2 xfailed
+        (was 284 passed / 5 xfailed: the 3 edge xfails became passes, +25 new)
+  pytest -m rhino ................. NOT RUN, AND NOT RUNNABLE HERE. No
+        rhinoinside, and the LAMCP bridge refused the connection, so unlike
+        slices 01-05 there is no live-Rhino substitute either. The Rhino code
+        in this commit has been executed by nothing.
+  The new tests were checked against sabotage before their green was trusted:
+  disabling the two conic branches in OCC's extractor fails 11 of them,
+  including every tag assertion in the schema test. A test that passes with
+  the code removed is not a test.
+
+Next: no slice remains in this chain. Two issues are unowned and both now
+have diagnoses rather than just symptoms:
+  1. OCC rebuild does not share edges between faces — causes the seam
+     invalidity slice 02 hung on slice 06, and slice 03's 48->32 edge
+     collapse. Needs a shared vertex/edge table in brep_to_occ.
+  2. OCC->Rhino produces valid-but-not-solid for capped shapes (slice 04/05).
+  Plus the standing task above: refresh the Rhino fixtures on a licensed
+  machine and confirm the Rhino writer actually emits the new tags.
