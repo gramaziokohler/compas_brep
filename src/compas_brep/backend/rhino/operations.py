@@ -9,14 +9,13 @@ import Rhino.Geometry as rg  # type: ignore
 from compas.datastructures import Mesh
 from compas.geometry import Box
 from compas.geometry import Frame
-from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polyline
 from compas.tolerance import TOL
 from compas_rhino.conversions import plane_to_rhino
 
-from compas_brep.curves import NurbsCurve
+from compas_brep.curves import edge_curve_from_data
 from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepError
 from compas_brep.errors import BrepFilletError
@@ -318,13 +317,8 @@ def rhino_rebuild(brep: Brep, data: dict) -> None:
     for ed in data["edges"]:
         start = vertices[ed["start"]]
         end = vertices[ed["end"]]
-        cd = ed["curve"]
-        if cd["type"] == "line":
-            pts = cd["data"]
-            curve = Line(Point(*pts[0]), Point(*pts[1]))
-        else:
-            curve = NurbsCurve.__from_data__(cd["data"])
-        edges.append(BrepEdge(start, end, curve=curve))
+        curve, domain = edge_curve_from_data(ed["curve"])
+        edges.append(BrepEdge(start, end, curve=curve, domain=domain))
 
     version = document_version(data)
 

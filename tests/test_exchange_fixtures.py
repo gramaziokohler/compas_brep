@@ -86,12 +86,22 @@ EXPECTED = {
         "volume_atol": 1e-3,
         "rebuild_broken": False,
     },
-    # The wall's surface is now analytic and exact, but its cap edges are still
-    # written as NURBS circles, and a NURBS circle's parameter is not its angle.
-    # The wall's pcurves run linearly in angle, so pcurve and edge curve trace the
-    # same circle at different rates and OCC's rebuilt wall is slightly off. Slice 06
-    # (analytic edge curve tags) is what makes a seam an exact circle; this atol
-    # should tighten to TOL when it lands.
+    # The wall's surface is analytic and exact, but these fixtures' cap edges are
+    # still written as NURBS circles, and a NURBS circle's parameter is not its
+    # angle. The wall's pcurves run linearly in angle, so pcurve and edge curve
+    # trace the same circle at different rates and OCC's rebuilt wall is slightly
+    # off — hence 1e-3 rather than TOL.
+    #
+    # Slice 06 was expected to tighten this and did NOT, for a reason worth stating:
+    # these are RHINO-authored fixtures, and slice 06 landed with no Rhino license
+    # and no bridge, so they could not be regenerated. The Rhino writer now emits
+    # analytic edge tags in code, but no Rhino has run it. These documents are the
+    # pre-slice-06 ones and still carry `nurbs` seams.
+    #
+    # Refreshing them on a licensed machine is what tightens this atol to TOL:
+    #     pytest -m rhino tests/test_exchange_fixtures.py --refresh-fixtures
+    # The OCC-authored mirror fixtures WERE regenerated and do carry exact circular
+    # seams — see `test_occ_fixture_carries_exact_analytic_seams`.
     "cylinder": {
         "faces": 3,
         "surface_tags": {"plane", "cylinder"},
@@ -101,8 +111,8 @@ EXPECTED = {
         "rebuild_broken": False,
     },
     # The cone and torus join the cylinder as analytic surfaces whose seam / cap
-    # edges are still written as NURBS circles, so the same 1e-3 residual applies
-    # and the same slice 06 tightens it. A cone's caps make it a solid with a
+    # edges are still written as NURBS circles, so the same 1e-3 residual and the
+    # same not-yet-refreshed story above apply. A cone's caps make it a solid with a
     # planar base (like the cylinder); a torus has neither cap nor seam vertex.
     "cone": {
         "faces": 2,
@@ -407,3 +417,27 @@ def test_occ_fixture_carries_its_analytic_tag(name):
 
     assert data["version"] == EXCHANGE_VERSION
     assert _surface_tags(data) == _OCC_FIXTURE_TAGS[name]
+
+
+# The analytic *edge* tag each mirror fixture must carry, as of slice 06. A cylinder
+# and a cone carry full circular cap edges; a sphere's meridian is a half turn, so it
+# is an arc. These are the committed documents with exact circular seams that the
+# Rhino-marked reader consumes, and this is the CI-side guard on them: if OCC ever
+# reverted to writing a seam as a NURBS approximation, the reader on the other side
+# would quietly go back to testing nothing.
+_OCC_FIXTURE_EDGE_TAGS = {
+    "cylinder": {"line", "circle"},
+    "sphere": {"line", "arc"},
+    "cone": {"line", "circle"},
+    "torus": {"circle"},
+}
+
+
+@pytest.mark.occ
+@pytest.mark.parametrize("name", sorted(_OCC_FIXTURE_EDGE_TAGS))
+def test_occ_fixture_carries_exact_analytic_seams(name):
+    data = load_occ_fixture(name)
+    tags = {edge["curve"]["type"] for edge in data["edges"]}
+
+    assert tags == _OCC_FIXTURE_EDGE_TAGS[name]
+    assert "nurbs" not in tags, f"the {name!r} fixture still carries an approximated seam"

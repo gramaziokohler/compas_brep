@@ -11,8 +11,10 @@ from __future__ import annotations
 import math
 
 import Rhino  # type: ignore
+from compas.geometry import Circle
 from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
+from compas.geometry import Ellipse
 from compas.geometry import Frame
 from compas.geometry import Line
 from compas.geometry import Plane
@@ -23,10 +25,13 @@ from compas.geometry import Vector
 from compas.tolerance import TOL
 
 from compas_brep.curves import NurbsCurve
+from compas_brep.curves import edge_curve_to_data
 from compas_brep.errors import BrepError
 from compas_brep.exchange import EXCHANGE_VERSION
 from compas_brep.exchange import LOOP_INNER
 from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import analytic_curve_is_full_turn
+from compas_brep.exchange import analytic_curve_point
 from compas_brep.exchange import analytic_surface_params
 from compas_brep.exchange import analytic_surface_point
 from compas_brep.exchange import analytic_surface_v_is_periodic
@@ -457,7 +462,21 @@ def _rhino_nurbs_surface_to_compas(rhino_nurbs):
 
 
 def _extract_edge_curve(rhino_edge):
-    """Extract 3D curve from a Rhino BrepEdge, returning Line or NurbsCurve.
+    """Extract the 3D curve of a Rhino BrepEdge, discarding its parameter interval.
+
+    Prefer :func:`_extract_edge_curve_and_domain` -- an analytic curve without its
+    interval is a closed conic, which is not what the edge runs along.
+
+    Parameters
+    ----------
+    rhino_edge : Rhino.Geometry.BrepEdge
+
+    """
+    return _extract_edge_curve_and_domain(rhino_edge)[0]
+
+
+def _extract_edge_curve_and_domain(rhino_edge):
+    """Extract a Rhino edge's 3D curve together with the interval it runs over.
 
     Parameters
     ----------
@@ -465,29 +484,120 @@ def _extract_edge_curve(rhino_edge):
 
     Returns
     -------
-    :class:`compas.geometry.Line` or :class:`compas_brep.NurbsCurve`
+    tuple
+        ``(curve, domain)`` -- a ``Line``, ``Circle``, ``Ellipse`` or ``NurbsCurve``,
+        and the document parameter interval for the analytic ones (``None`` otherwise).
 
     """
     edge_curve = rhino_edge.EdgeCurve
     if edge_curve is None:
         sp = rhino_edge.PointAtStart
         ep = rhino_edge.PointAtEnd
-        return Line(Point(sp.X, sp.Y, sp.Z), Point(ep.X, ep.Y, ep.Z))
+        return Line(Point(sp.X, sp.Y, sp.Z), Point(ep.X, ep.Y, ep.Z)), None
 
     if edge_curve.IsLinear():
         sp = edge_curve.PointAtStart
         ep = edge_curve.PointAtEnd
-        return Line(Point(sp.X, sp.Y, sp.Z), Point(ep.X, ep.Y, ep.Z))
+        return Line(Point(sp.X, sp.Y, sp.Z), Point(ep.X, ep.Y, ep.Z)), None
 
-    # Convert to NURBS curve for arcs, circles, ellipses, and general curves
+    analytic = _analytic_edge_curve(edge_curve)
+    if analytic is not None:
+        return analytic
+
+    # NURBS for everything else -- and for an analytic curve whose parameterization
+    # does not carry across, which ``_analytic_edge_curve`` reports by returning None.
     nurbs = edge_curve.ToNurbsCurve()
     if nurbs is not None:
-        return _rhino_nurbs_curve_to_compas(nurbs)
+        return _rhino_nurbs_curve_to_compas(nurbs), None
 
     # Fallback: straight line approximation
     sp = edge_curve.PointAtStart
     ep = edge_curve.PointAtEnd
-    return Line(Point(sp.X, sp.Y, sp.Z), Point(ep.X, ep.Y, ep.Z))
+    return Line(Point(sp.X, sp.Y, sp.Z), Point(ep.X, ep.Y, ep.Z)), None
+
+
+def _analytic_edge_curve(edge_curve):
+    """Recognize a Rhino edge curve as a document conic, or return None.
+
+    Returning None is not a failure to be worked around -- it routes the edge to
+    the ``nurbs`` tag, which reproduces these curves *exactly* (Rhino stores a
+    circle as an exact rational quadratic). Nothing geometric is lost, only the
+    analytic tag, so this is not the silent degradation ADR-0001 forbids.
+
+    None is returned whenever the native parameterization does not map affinely
+    onto the document's, because a trim's pcurve is remapped onto its edge curve's
+    domain affinely (:func:`_align_pcurve_to_edge`). Emitting an analytic tag
+    without that affinity would land every pcurve on the edge at the wrong angle --
+    a document that looks right and is wrong, which is worse than the ``nurbs`` tag
+    it replaces. This is the same trap slice 04 hit with Rhino's arc-length
+    cylinder walls, and the reason the map here is measured rather than assumed.
+    """
+    circle_ok, circle = edge_curve.TryGetCircle(TOL.absolute)
+    if circle_ok:
+        curve = Circle(circle.Radius, frame=_frame_from_rhino_plane(circle.Plane))
+        return _analytic_edge_curve_if_affine(edge_curve, curve)
+
+    arc_ok, arc = edge_curve.TryGetArc(TOL.absolute)
+    if arc_ok:
+        curve = Circle(arc.Radius, frame=_frame_from_rhino_plane(arc.Plane))
+        return _analytic_edge_curve_if_affine(edge_curve, curve)
+
+    ellipse_ok, ellipse = edge_curve.TryGetEllipse(TOL.absolute)
+    if ellipse_ok:
+        curve = Ellipse(
+            ellipse.Radius1,
+            ellipse.Radius2,
+            frame=_frame_from_rhino_plane(ellipse.Plane),
+        )
+        return _analytic_edge_curve_if_affine(edge_curve, curve)
+
+    return None
+
+
+def _analytic_edge_curve_if_affine(edge_curve, curve):
+    """Recover the document interval for ``curve``, verified across the whole edge.
+
+    The interval comes from unwrapping the document angle along the edge, so it is
+    continuous across the branch cut and correct for an edge that crosses it or
+    closes on itself. It is then checked at every sample, which is what separates a
+    genuinely affine parameterization from one that merely agrees at the ends.
+    """
+    domain = edge_curve.Domain
+    angles = []
+    for i in range(_PARAM_CHECK_SAMPLES):
+        point = edge_curve.PointAt(domain.ParameterAt(i / (_PARAM_CHECK_SAMPLES - 1)))
+        angle = _analytic_curve_param(curve, Point(point.X, point.Y, point.Z))
+        if angles:
+            # Unwrap: a step between adjacent samples is far below pi, so a jump is
+            # the branch cut rather than real motion.
+            angle = angles[-1] + _wrap_to_pi(angle - angles[-1])
+        angles.append(angle)
+
+    document_domain = (angles[0], angles[-1])
+    if document_domain[0] == document_domain[1]:
+        return None
+
+    for i in range(_PARAM_CHECK_SAMPLES):
+        fraction = i / (_PARAM_CHECK_SAMPLES - 1)
+        expected = analytic_curve_point(curve, angles[0] + (angles[-1] - angles[0]) * fraction)
+        point = edge_curve.PointAt(domain.ParameterAt(fraction))
+        if point.DistanceTo(Rhino.Geometry.Point3d(expected.x, expected.y, expected.z)) > TOL.absolute:
+            return None
+
+    return curve, document_domain
+
+
+def _analytic_curve_param(curve, point):
+    """The document parameter of a point on a conic, folded into ``(-pi, pi]``."""
+    frame = curve.frame
+    offset = Point(*point) - frame.point
+    x = offset.dot(frame.xaxis)
+    y = offset.dot(frame.yaxis)
+    if isinstance(curve, Ellipse):
+        # Scale to the unit circle first: the document parameter of an ellipse is
+        # not the geometric angle of the point.
+        x, y = x / curve.major, y / curve.minor
+    return math.atan2(y, x)
 
 
 def _rhino_nurbs_curve_to_compas(rhino_nurbs):
@@ -570,16 +680,97 @@ def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):  # noqa: ARG
 # =============================================================================
 
 
-def _edge_curve_to_rhino(curve):
-    """Convert a canonical edge curve (Line or NurbsCurve) to a Rhino Curve."""
+def _edge_curve_to_rhino(curve, domain=None):
+    """Convert a canonical edge curve to a Rhino Curve."""
     if isinstance(curve, Line):
         return Rhino.Geometry.LineCurve(
             Rhino.Geometry.Point3d(curve.start.x, curve.start.y, curve.start.z),
             Rhino.Geometry.Point3d(curve.end.x, curve.end.y, curve.end.z),
         )
+    if isinstance(curve, (Circle, Ellipse)):
+        return _analytic_curve_to_rhino(curve, domain)
     if isinstance(curve, NurbsCurve):
         return nurbs_curve_to_rhino(curve)
     raise BrepError(f"Cannot rebuild a Rhino edge from curve of type {type(curve).__name__}")
+
+
+def _plane_rotated_to(plane, angle):
+    """Spin a plane about its normal so its x-axis lands at ``angle``.
+
+    Exact for a circle, which is rotationally symmetric about that axis. It is not
+    available for an ellipse, which is why a partial ellipse is cut by parameter
+    instead.
+    """
+    if angle == 0.0:
+        return plane
+    xaxis = plane.XAxis * math.cos(angle) + plane.YAxis * math.sin(angle)
+    yaxis = plane.YAxis * math.cos(angle) - plane.XAxis * math.sin(angle)
+    return Rhino.Geometry.Plane(plane.Origin, xaxis, yaxis)
+
+
+def _analytic_curve_to_rhino(curve, domain):
+    """Build a Rhino curve running along ``curve`` over the document's ``domain``.
+
+    Both branches are exact constructions, not fits. A conic sampled and
+    interpolated would be the silent degradation ADR-0001 forbids -- and it would
+    be invisible, since an interpolated circle passes every check that looks at
+    points rather than at the curve's type.
+
+    Rhino's ``Arc`` takes its interval as an angle range about the plane's x-axis,
+    which is the document's parameter exactly, so the circle branch needs no map.
+    An ellipse has no arc primitive: the full conic is exact, and a partial one is
+    cut out of it by parameter, which is also exact.
+    """
+    if domain is None:
+        domain = (0.0, 2.0 * math.pi)
+
+    plane = Rhino.Geometry.Plane(
+        Rhino.Geometry.Point3d(*curve.frame.point),
+        Rhino.Geometry.Vector3d(*curve.frame.xaxis),
+        Rhino.Geometry.Vector3d(*curve.frame.yaxis),
+    )
+
+    if isinstance(curve, Circle):
+        if analytic_curve_is_full_turn(domain):
+            # A Rhino ``Arc`` cannot be a full circle -- it is an arc, and a 2*pi
+            # sweep is not a valid one. The closed case is a ``Circle`` instead, spun
+            # so that its own parameter zero sits at the document's ``t0``. Rotating
+            # a circle's plane about its normal is exact and costs nothing, which is
+            # what makes this available here and not for the ellipse below.
+            rebuilt = Rhino.Geometry.ArcCurve(Rhino.Geometry.Circle(_plane_rotated_to(plane, domain[0]), curve.radius))
+        else:
+            rebuilt = Rhino.Geometry.ArcCurve(
+                Rhino.Geometry.Arc(
+                    Rhino.Geometry.Circle(plane, curve.radius),
+                    Rhino.Geometry.Interval(domain[0], domain[1]),
+                )
+            )
+        if rebuilt is None or not rebuilt.IsValid:
+            raise BrepError(f"Could not rebuild a Rhino circular edge from {curve} over {domain}")
+        return rebuilt
+
+    rebuilt = Rhino.Geometry.Ellipse(plane, curve.major, curve.minor).ToNurbsCurve()
+    if rebuilt is None:
+        raise BrepError(f"Could not rebuild a Rhino ellipse from {curve}")
+
+    if analytic_curve_is_full_turn(domain):
+        return rebuilt
+
+    # A partial ellipse: cut the exact conic at the two document parameters. Their
+    # native parameters come from a closest-point solve because an ellipse's NURBS
+    # parameter is not its angle -- the very reason this cannot be a proportional cut.
+    natives = []
+    for t in domain:
+        point = analytic_curve_point(curve, t)
+        ok, native_t = rebuilt.ClosestPoint(Rhino.Geometry.Point3d(point.x, point.y, point.z))
+        if not ok:
+            raise BrepError(f"Could not locate parameter {t} on a rebuilt Rhino ellipse")
+        natives.append(native_t)
+
+    trimmed = rebuilt.Trim(natives[0], natives[1])
+    if trimmed is None:
+        raise BrepError(f"Could not trim a Rhino ellipse to {domain}")
+    return trimmed
 
 
 def _rhino_plane_from_compas(plane):
@@ -892,7 +1083,7 @@ def brep_to_rhino(brep):
     edge_index = {}
     collapsed_edges = {}
     for edge in brep._edges:
-        curve = _edge_curve_to_rhino(edge.curve)
+        curve = _edge_curve_to_rhino(edge.curve, edge.domain)
         if _is_degenerate(curve):
             # The document has two spellings for "this boundary collapses to a
             # point", and this is the one Rhino does not use: OCC writes a pole or
@@ -1098,21 +1289,26 @@ def _extract_trim_pcurve(rhino_trim):
     if rhino_trim.IsReversed():
         nurbs.Reverse()
     pcurve = _canonical_pcurve(_rhino_nurbs_curve_to_compas(nurbs), rhino_trim.Face)
-    return _align_pcurve_to_edge(pcurve, _extract_edge_curve(edge))
+    return _align_pcurve_to_edge(pcurve, *_extract_edge_curve_and_domain(edge))
 
 
-def _edge_curve_domain(curve):
+def _edge_curve_domain(curve, domain=None):
     """The parameter range a reader will give this edge curve once it rebuilds it.
 
     A line is written as two points, so both backends rebuild it over ``[0, length]``.
-    A NURBS curve carries its own knots.
+    A NURBS curve carries its own knots. An analytic conic carries the document
+    interval the edge runs over, which is exactly this.
     """
     if isinstance(curve, Line):
         return 0.0, curve.length
+    if isinstance(curve, (Circle, Ellipse)):
+        if domain is None:
+            raise BrepError(f"A {type(curve).__name__} edge curve has no parameter interval to align its pcurve to.")
+        return domain
     return curve._knots[0], curve._knots[-1]
 
 
-def _align_pcurve_to_edge(pcurve, edge_curve):
+def _align_pcurve_to_edge(pcurve, edge_curve, edge_domain=None):
     """Reparameterize a pcurve onto its edge curve's domain.
 
     A pcurve and the 3D curve of the edge it runs along describe the same curve in
@@ -1126,7 +1322,7 @@ def _align_pcurve_to_edge(pcurve, edge_curve):
     Only the knots move — the control points, weights and degree are untouched — so
     the pcurve's geometry is unchanged and this is exact rather than a refit.
     """
-    start, end = _edge_curve_domain(edge_curve)
+    start, end = _edge_curve_domain(edge_curve, edge_domain)
     knots = pcurve._knots
     span = knots[-1] - knots[0]
     if span == 0.0 or (knots[0] == start and knots[-1] == end):
@@ -1183,17 +1379,8 @@ def rhino_brep_to_data(brep) -> dict:
         start_id = vertex_id_map.get(sv.VertexIndex, 0) if sv is not None else 0
         end_id = vertex_id_map.get(ev.VertexIndex, 0) if ev is not None else 0
 
-        curve = _extract_edge_curve(re)
-        if isinstance(curve, Line):
-            curve_data = {
-                "type": "line",
-                "data": [
-                    [curve.start.x, curve.start.y, curve.start.z],
-                    [curve.end.x, curve.end.y, curve.end.z],
-                ],
-            }
-        else:
-            curve_data = {"type": "nurbs", "data": curve.__data__}
+        curve, domain = _extract_edge_curve_and_domain(re)
+        curve_data = edge_curve_to_data(curve, domain)
 
         edge_id_map[re.EdgeIndex] = len(edge_list)
         edge_list.append({"start": start_id, "end": end_id, "curve": curve_data})

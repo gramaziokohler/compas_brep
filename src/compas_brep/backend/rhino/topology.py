@@ -50,26 +50,40 @@ class RhinoBrepEdge(BrepEdge):
         self._start = start_vertex
         self._end = end_vertex
         self._curve: Any = None
+        self._domain: Any = None
 
     @property
     def native_edge(self) -> Any:
         return self._rhino_edge
 
+    def _extract(self) -> None:
+        """Pull curve and domain from native in one call -- they are one answer."""
+        from .conversion import _extract_edge_curve_and_domain
+
+        self._curve, self._domain = _extract_edge_curve_and_domain(self._rhino_edge)
+
     @property
     def curve(self) -> Any:
         if self._curve is None:
-            from .conversion import _extract_edge_curve
-
-            self._curve = _extract_edge_curve(self._rhino_edge)
+            self._extract()
         return self._curve
 
     @curve.setter
     def curve(self, value: Any) -> None:
         self._curve = value
 
+    @property
+    def domain(self) -> Any:
+        if self._curve is None:
+            self._extract()
+        return self._domain
+
+    @domain.setter
+    def domain(self, value: Any) -> None:
+        self._domain = value
+
     def __repr__(self) -> str:
-        curve_type = "line" if self.is_line else "nurbs"
-        return f"RhinoBrepEdge({self._start} -> {self._end}, {curve_type})"
+        return f"RhinoBrepEdge({self._start} -> {self._end}, {self.curve_type})"
 
 
 class RhinoBrepTrim(BrepTrim):

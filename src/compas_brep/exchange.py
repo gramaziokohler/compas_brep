@@ -12,8 +12,10 @@ from __future__ import annotations
 import math
 from collections.abc import Iterator
 
+from compas.geometry import Circle
 from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
+from compas.geometry import Ellipse
 from compas.geometry import Point
 from compas.geometry import SphericalSurface
 from compas.geometry import ToroidalSurface
@@ -92,14 +94,7 @@ def analytic_surface_point(surface, u: float, v: float) -> Point:
     else:
         raise BrepError(f"Not an analytic surface of the exchange format: {type(surface).__name__}")
 
-    return Point(
-        *(
-            origin
-            + frame.xaxis * (radial * math.cos(u))
-            + frame.yaxis * (radial * math.sin(u))
-            + frame.zaxis * axial
-        )
-    )
+    return Point(*(origin + frame.xaxis * (radial * math.cos(u)) + frame.yaxis * (radial * math.sin(u)) + frame.zaxis * axial))
 
 
 def analytic_surface_params(surface, point) -> tuple[float, float]:
@@ -135,6 +130,70 @@ def analytic_surface_v_is_periodic(surface) -> bool:
     latitude: it is bounded, not periodic.
     """
     return isinstance(surface, ToroidalSurface)
+
+
+# =============================================================================
+# The parameter space of an analytic edge curve tag
+# =============================================================================
+#
+# The same problem as the analytic surfaces above, one dimension down. Tagging an
+# edge `circle` says nothing unless both backends agree where the curve starts and
+# which way it runs -- and it matters more here than it looks, because a trim's
+# pcurve is written over its edge curve's parameter interval. An edge curve whose
+# parameterization the reader reconstructs differently from the writer lands every
+# pcurve on that edge somewhere else.
+#
+# The definition, stated once: `t` is the angle about the frame's z-axis measured
+# from the frame's x-axis, and the point is
+#
+#     centre + a * cos(t) * xaxis + b * sin(t) * yaxis
+#
+# with `a == b == radius` for a circle. This is OCC's native parameterization of
+# `Geom_Circle` / `Geom_Ellipse`, for the same reason the surfaces adopt OCC's --
+# it costs the OCC backend nothing and keeps it the format's primary author
+# (ADR-0002). `test_exchange_parameterization.py` pins it against the real kernel.
+#
+# Note that `t` is NOT arc length, and NOT a NURBS parameter. Rhino's arc-length
+# convention is the Rhino backend's problem to map, exactly as it is for surfaces.
+
+
+def analytic_curve_point(curve, t: float) -> Point:
+    """Evaluate an analytic edge curve at ``t`` in the document's parameter space.
+
+    Parameters
+    ----------
+    curve
+        A COMPAS ``Circle`` or ``Ellipse`` -- the conic underlying a ``circle``,
+        ``arc``, or ``ellipse`` edge tag.
+    t
+        The angle about the frame's z-axis, in radians, measured from the frame's
+        x-axis.
+
+    Notes
+    -----
+    This is deliberately not ``curve.point_at``: COMPAS normalizes the parameter
+    to ``[0, 1]`` over the curve's own extent, and the document does not -- the
+    document's interval is the edge's, carried beside the curve.
+
+    """
+    if isinstance(curve, Circle):
+        a = b = curve.radius
+    elif isinstance(curve, Ellipse):
+        a, b = curve.major, curve.minor
+    else:
+        raise BrepError(f"Not an analytic edge curve of the exchange format: {type(curve).__name__}")
+
+    frame = curve.frame
+    return Point(*(frame.point + frame.xaxis * (a * math.cos(t)) + frame.yaxis * (b * math.sin(t))))
+
+
+def analytic_curve_is_full_turn(domain: tuple[float, float]) -> bool:
+    """Whether an edge's parameter interval covers the conic's whole ``2 * pi``.
+
+    This is what separates the ``circle`` tag from ``arc``: both carry a COMPAS
+    ``Circle``, and the interval says how much of it the edge actually runs along.
+    """
+    return abs(abs(domain[1] - domain[0]) - 2.0 * math.pi) < 1e-9
 
 
 def document_version(data: dict) -> int:

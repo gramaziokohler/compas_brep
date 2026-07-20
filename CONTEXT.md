@@ -107,7 +107,10 @@ Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices
   - Loops carry an explicit role: `{"type": "outer" | "inner", "trims": [...]}`. Position is no longer load-bearing.
   - `curve_2d` is **non-nullable**. A writer that cannot produce a pcurve raises.
   - Edge curves gain analytic tags: `line | circle | arc | ellipse | nurbs` (was `line | nurbs`). An exact cylinder now carries exact circular seams, removing the edge/surface tolerance mismatch that forced hand-tuned join tolerances.
+  - An analytic edge carries its conic **and the parameter interval the edge runs over** (`{"curve": ..., "domain": [t0, t1]}`). The interval is not redundant: a trim's pcurve is written over it, and the intervals real kernels produce do not fit COMPAS `Arc`'s `0 <= angle <= 2*pi` (OCC writes a sphere's meridian over `[3π/2, 5π/2]`). `circle` and `arc` therefore both carry a COMPAS `Circle`, differing only in whether the interval is a full turn; COMPAS `Arc` is deliberately unused. Codec in `curves/_codec.py`.
   - Both backends read and write every tag. This is a contract, not a convention — see the schema test.
+
+**Edge curve parameter space.** `t` is the angle about the frame's z-axis from the frame's x-axis: `centre + a·cos(t)·x + b·sin(t)·y`, with `a == b == radius` for a circle. This is OCC's native `Geom_Circle` / `Geom_Ellipse` parameterization, pinned against the real kernel on CI by `test_exchange_parameterization.py`. Note it is **not** the geometric angle of the point for an ellipse, and not arc length — Rhino measures these by arc length and must map onto this, exactly as it does for the analytic surfaces.
 
 The surface codec (`surfaces/_codec.py`) reads v4, v5, and v6 documents transparently.
 

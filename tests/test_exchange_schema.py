@@ -38,9 +38,18 @@ EDGE_CURVE_TAGS = ["line", "nurbs", "circle", "arc", "ellipse"]
 # so the Rhino writer now emits every analytic surface tag in the format.
 RHINO_UNWRITABLE_SURFACE_TAGS: set[str] = set()
 
-# Analytic edge curve tags neither writer produces yet — both emit `nurbs`.
-# CONTEXT.md's v6 section already claims these exist; slice 06 makes that true.
-UNWRITTEN_EDGE_CURVE_TAGS = {"circle", "arc", "ellipse"}
+# Edge curve tags a writer cannot produce yet.
+#
+# Empty on both sides as of slice 06: `circle`, `arc`, and `ellipse` join `line` and
+# `nurbs`, which is what CONTEXT.md's v6 section has claimed all along.
+#
+# The Rhino set is empty because the format requires those tags, NOT because a live
+# Rhino was watched writing them — slice 06 was implemented with no bridge and no
+# license available, so `pytest -m rhino` has never run against this code. An empty
+# set here means a Rhino gap shows up as a failure on the first licensed run, which
+# is the outcome this suite wants; a speculative xfail would hide it instead.
+OCC_UNWRITABLE_EDGE_CURVE_TAGS: set[str] = set()
+RHINO_UNWRITABLE_EDGE_CURVE_TAGS: set[str] = set()
 
 
 # =============================================================================
@@ -122,7 +131,7 @@ def test_occ_roundtrips_surface_tag(tag):
 @pytest.mark.occ
 @pytest.mark.parametrize("tag", EDGE_CURVE_TAGS)
 def test_occ_roundtrips_edge_curve_tag(tag, request):
-    _expect_xfail(request, UNWRITTEN_EDGE_CURVE_TAGS, tag, f"the {tag!r} edge curve tag is slice 06; the OCC writer emits 'nurbs' for it today")
+    _expect_xfail(request, OCC_UNWRITABLE_EDGE_CURVE_TAGS, tag, f"the OCC writer emits 'nurbs' for a {tag!r} edge")
 
     written, rewritten = _roundtrip(EDGE_CURVE_TAG_SOURCES[tag]())
 
@@ -149,7 +158,7 @@ def test_rhino_roundtrips_surface_tag(tag, request):
 @pytest.mark.rhino
 @pytest.mark.parametrize("tag", EDGE_CURVE_TAGS)
 def test_rhino_roundtrips_edge_curve_tag(tag, request):
-    _expect_xfail(request, UNWRITTEN_EDGE_CURVE_TAGS, tag, f"the {tag!r} edge curve tag is slice 06; the Rhino writer emits 'nurbs' for it today")
+    _expect_xfail(request, RHINO_UNWRITABLE_EDGE_CURVE_TAGS, tag, f"the Rhino writer emits 'nurbs' for a {tag!r} edge")
 
     written, rewritten = _roundtrip(EDGE_CURVE_TAG_SOURCES[tag]())
 

@@ -9,12 +9,15 @@ All COMPAS↔OCC conversion logic lives here:
 from __future__ import annotations
 
 from math import atan
+from math import pi
 from math import tan
 from typing import TYPE_CHECKING
 from typing import Any
 
+from compas.geometry import Circle
 from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
+from compas.geometry import Ellipse
 from compas.geometry import Frame
 from compas.geometry import Line
 from compas.geometry import Plane
@@ -34,16 +37,20 @@ from OCP.BRepTools import BRepTools
 from OCP.BRepTools import BRepTools_WireExplorer
 from OCP.Geom import Geom_BSplineCurve
 from OCP.Geom import Geom_BSplineSurface
+from OCP.Geom import Geom_Circle
 from OCP.Geom import Geom_ConicalSurface
 from OCP.Geom import Geom_CylindricalSurface
+from OCP.Geom import Geom_Ellipse
 from OCP.Geom import Geom_RectangularTrimmedSurface
 from OCP.Geom import Geom_SphericalSurface
 from OCP.Geom import Geom_ToroidalSurface
 from OCP.Geom2d import Geom2d_BSplineCurve
 from OCP.Geom2d import Geom2d_Line
 from OCP.Geom2dConvert import Geom2dConvert
+from OCP.GeomAbs import GeomAbs_Circle
 from OCP.GeomAbs import GeomAbs_Cone
 from OCP.GeomAbs import GeomAbs_Cylinder
+from OCP.GeomAbs import GeomAbs_Ellipse
 from OCP.GeomAbs import GeomAbs_Line
 from OCP.GeomAbs import GeomAbs_Plane
 from OCP.GeomAbs import GeomAbs_Sphere
@@ -51,7 +58,9 @@ from OCP.GeomAbs import GeomAbs_Torus
 from OCP.GeomConvert import GeomConvert
 from OCP.gp import gp_Ax2  # noqa: F401
 from OCP.gp import gp_Ax3
+from OCP.gp import gp_Circ
 from OCP.gp import gp_Dir  # noqa: F401
+from OCP.gp import gp_Elips
 from OCP.gp import gp_Pln  # noqa: F401
 from OCP.gp import gp_Pnt  # noqa: F401
 from OCP.gp import gp_Pnt2d  # noqa: F401
@@ -75,6 +84,7 @@ from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
 from compas_brep.curves import NurbsCurve
+from compas_brep.curves import edge_curve_to_data
 from compas_brep.errors import BrepError
 from compas_brep.exchange import EXCHANGE_VERSION
 from compas_brep.exchange import LOOP_INNER
@@ -467,20 +477,78 @@ def _bspline_surface_to_nurbs(bspline: Any) -> NurbsSurface:
     )
 
 
-def _extract_edge_curve(occ_edge: Any) -> Line | NurbsCurve:
-    """Extract 3D curve from an OCC edge, returning Line or NurbsCurve."""
+def _occ_ax2_to_frame(position: Any) -> Frame:
+    """Convert a ``gp_Ax2`` to a COMPAS frame, preserving its x-axis.
+
+    The x-axis is not decoration: it is where parameter 0 sits, and the document's
+    analytic curves are parameterized from it.
+    """
+    origin = position.Location()
+    xdir = position.XDirection()
+    ydir = position.YDirection()
+    return Frame(
+        Point(origin.X(), origin.Y(), origin.Z()),
+        Vector(xdir.X(), xdir.Y(), xdir.Z()),
+        Vector(ydir.X(), ydir.Y(), ydir.Z()),
+    )
+
+
+def _extract_edge_curve(occ_edge: Any) -> Line | Circle | Ellipse | NurbsCurve:
+    """Extract the 3D curve of an OCC edge, discarding its parameter interval.
+
+    Prefer :func:`_extract_edge_curve_and_domain` -- an analytic curve without its
+    interval is a closed conic, which is not what the edge runs along.
+    """
+    return _extract_edge_curve_and_domain(occ_edge)[0]
+
+
+def _extract_edge_curve_and_domain(
+    occ_edge: Any,
+) -> tuple[Line | Circle | Ellipse | NurbsCurve, tuple[float, float] | None]:
+    """Extract an OCC edge's 3D curve together with the interval it runs over.
+
+    A circular or elliptical edge comes back as the COMPAS conic plus its parameter
+    interval, rather than as a NURBS approximation of itself. That is what lets an
+    exact cylinder carry exact circular seams: OCC writes a circle as a degree-11
+    polynomial approximation whose parameter is not its angle, so a NURBS seam and
+    the wall's pcurve (linear in angle) trace the same circle at different rates.
+    """
     adaptor = BRepAdaptor_Curve(occ_edge)
     ctype = adaptor.GetType()
+    domain = (adaptor.FirstParameter(), adaptor.LastParameter())
 
     if ctype == GeomAbs_Line:
         first = adaptor.Value(adaptor.FirstParameter())
         last = adaptor.Value(adaptor.LastParameter())
-        return Line(
-            Point(first.X(), first.Y(), first.Z()),
-            Point(last.X(), last.Y(), last.Z()),
+        return (
+            Line(
+                Point(first.X(), first.Y(), first.Z()),
+                Point(last.X(), last.Y(), last.Z()),
+            ),
+            None,
         )
 
-    # For circles, BSplines, and other curve types, convert to BSpline
+    if ctype == GeomAbs_Circle:
+        circ = adaptor.Circle()
+        return Circle(circ.Radius(), frame=_occ_ax2_to_frame(circ.Position())), domain
+
+    if ctype == GeomAbs_Ellipse:
+        elips = adaptor.Ellipse()
+        return (
+            Ellipse(
+                elips.MajorRadius(),
+                elips.MinorRadius(),
+                frame=_occ_ax2_to_frame(elips.Position()),
+            ),
+            domain,
+        )
+
+    return _extract_edge_curve_as_nurbs(occ_edge, adaptor), None
+
+
+def _extract_edge_curve_as_nurbs(occ_edge: Any, adaptor: Any) -> Line | NurbsCurve:
+    """Convert any non-analytic OCC edge curve to a NurbsCurve."""
+    # For BSplines and other curve types, convert to BSpline
     first_param = adaptor.FirstParameter()
     last_param = adaptor.LastParameter()
 
@@ -608,17 +676,8 @@ def occ_brep_to_data(brep: Brep) -> dict:
                 start_id = _vertex_id(verts[0])
                 end_id = _vertex_id(verts[1])
 
-        curve = _extract_edge_curve(occ_edge)
-        if isinstance(curve, Line):
-            curve_data = {
-                "type": "line",
-                "data": [
-                    [curve.start.x, curve.start.y, curve.start.z],
-                    [curve.end.x, curve.end.y, curve.end.z],
-                ],
-            }
-        else:
-            curve_data = {"type": "nurbs", "data": curve.__data__}
+        curve, domain = _extract_edge_curve_and_domain(occ_edge)
+        curve_data = edge_curve_to_data(curve, domain)
 
         idx = len(edge_list)
         edge_list.append({"start": start_id, "end": end_id, "curve": curve_data})
@@ -800,6 +859,49 @@ def _pcurve_to_geom2d(pcurve: NurbsCurve) -> Any:
     return Geom2d_BSplineCurve(poles, weights, knots, mults, pcurve._degree)
 
 
+def _analytic_curve_to_occ(curve: Circle | Ellipse) -> Any:
+    """Convert a COMPAS ``Circle`` / ``Ellipse`` to its native OCC conic.
+
+    The frame's x-axis carries over as the conic's ``XDirection``, which is what
+    makes OCC's parameterization agree with the document's -- see
+    :func:`compas_brep.exchange.analytic_curve_point`.
+    """
+    ax2 = _frame_to_ax2(curve.frame)
+    if isinstance(curve, Circle):
+        return Geom_Circle(gp_Circ(ax2, curve.radius))
+    return Geom_Ellipse(gp_Elips(ax2, curve.major, curve.minor))
+
+
+def _edge_to_occ_edge(edge: Any) -> Any:
+    """Build a native OCC edge from a canonical ``BrepEdge``, or None if degenerate.
+
+    Every rebuild path goes through here so that an edge curve type is handled in
+    one place rather than in each wire builder independently.
+    """
+    curve = edge.curve
+    sp = edge.first_vertex.point
+    ep = edge.last_vertex.point
+
+    if isinstance(curve, (Circle, Ellipse)):
+        # Before the coincident-endpoint check below: a full circular seam starts
+        # and ends at the same point without being degenerate.
+        occ_curve = _analytic_curve_to_occ(curve)
+        domain = edge.domain if edge.domain is not None else (0.0, 2.0 * pi)
+        return BRepBuilderAPI_MakeEdge(occ_curve, domain[0], domain[1]).Edge()
+
+    if isinstance(curve, NurbsCurve):
+        return BRepBuilderAPI_MakeEdge(_nurbs_curve_to_occ(curve)).Edge()
+
+    dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+    if dist < 1e-9:
+        return None
+
+    return BRepBuilderAPI_MakeEdge(
+        gp_Pnt(sp.x, sp.y, sp.z),
+        gp_Pnt(ep.x, ep.y, ep.z),
+    ).Edge()
+
+
 def _build_trimmed_face(occ_surface: Any, face: BrepFace) -> Any:
     """Build an OCC face from any Geom_Surface with pcurve-based trimming.
 
@@ -819,21 +921,9 @@ def _build_trimmed_face(occ_surface: Any, face: BrepFace) -> Any:
         builder.MakeWire(wire)
 
         for trim in loop.trims:
-            edge = trim.edge
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            p0 = gp_Pnt(sp.x, sp.y, sp.z)
-            p1 = gp_Pnt(ep.x, ep.y, ep.z)
-            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-
-            if isinstance(curve, NurbsCurve):
-                occ_curve = _nurbs_curve_to_occ(curve)
-                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-            elif dist < 1e-9:
+            occ_edge = _edge_to_occ_edge(trim.edge)
+            if occ_edge is None:
                 continue
-            else:
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
 
             geom2d = _pcurve_to_geom2d(trim.curve_2d)
             builder.UpdateEdge(occ_edge, geom2d, occ_face, 1e-6)
@@ -859,23 +949,9 @@ def _loop_to_occ_wire(loop):
 
     if loop.trims:
         for trim in loop.trims:
-            edge = trim.edge
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            p0 = gp_Pnt(sp.x, sp.y, sp.z)
-            p1 = gp_Pnt(ep.x, ep.y, ep.z)
-            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-
-            if isinstance(curve, NurbsCurve):
-                occ_curve = _nurbs_curve_to_occ(curve)
-                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-            elif dist < 1e-9:
+            occ_edge = _edge_to_occ_edge(trim.edge)
+            if occ_edge is None:
                 continue  # Degenerate edge
-            elif isinstance(curve, Line):
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
-            else:
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
 
             # Apply orientation from trim
             if trim.is_reversed:
@@ -885,22 +961,9 @@ def _loop_to_occ_wire(loop):
     else:
         # Legacy path: direct edges
         for edge in loop.edges:
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            p0 = gp_Pnt(sp.x, sp.y, sp.z)
-            p1 = gp_Pnt(ep.x, ep.y, ep.z)
-            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-
-            if isinstance(curve, NurbsCurve):
-                occ_curve = _nurbs_curve_to_occ(curve)
-                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-            elif dist < 1e-9:
+            occ_edge = _edge_to_occ_edge(edge)
+            if occ_edge is None:
                 continue
-            elif isinstance(curve, Line):
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
-            else:
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
 
             wire_builder.Add(occ_edge)
 

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from compas.geometry import Line
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polyline
@@ -36,7 +35,7 @@ from OCP.TopAbs import TopAbs_SHELL
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
 
-from compas_brep.curves import NurbsCurve
+from compas_brep.curves import edge_curve_from_data
 from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepError
 from compas_brep.exchange import LOOP_OUTER
@@ -387,13 +386,8 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
     for ed in data["edges"]:
         start = vertices[ed["start"]]
         end = vertices[ed["end"]]
-        cd = ed["curve"]
-        if cd["type"] == "line":
-            pts = cd["data"]
-            curve = Line(Point(*pts[0]), Point(*pts[1]))
-        else:
-            curve = NurbsCurve.__from_data__(cd["data"])
-        edges.append(BrepEdge(start, end, curve=curve))
+        curve, domain = edge_curve_from_data(ed["curve"])
+        edges.append(BrepEdge(start, end, curve=curve, domain=domain))
 
     version = document_version(data)
 
