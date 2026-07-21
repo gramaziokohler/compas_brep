@@ -663,3 +663,103 @@ have diagnoses rather than just symptoms:
   2. OCC->Rhino produces valid-but-not-solid for capped shapes (slice 04/05).
   Plus the standing task above: refresh the Rhino fixtures on a licensed
   machine and confirm the Rhino writer actually emits the new tags.
+
+--------------------------------------------------------------------------
+2026-07-21 — Rhino end-to-end testing session (first live run of slice 06)
+
+The bridge came back up. This is the first time ANY of slice 06's Rhino code, and
+the fixture-refresh task standing since slice 04, has run against a real kernel.
+
+Found the OLD (pre-session) committed code does not just have gaps — it HARD
+CRASHES on anything with an analytic planar-cap edge: `BrepError: Cannot project
+curve of type Circle onto a plane`. Confirmed by reverting to committed code
+in live Rhino and reproducing it on `box_with_hole`. The Rhino planar-face
+projection path had only ever handled Line/NurbsCurve; slice 06 widened edge tags
+to include circle/ellipse without widening this. Fixed here (uncommitted going in,
+committed now): `_project_curve_to_plane` and `_face_boundary_points` gained conic
+branches (`_analytic_control_points`, `_is_collapsed_analytic`).
+
+Also fixed, found by the same testing pass, both on the OCC side:
+  - `_ax3_to_frame` didn't handle a left-handed (`gp_Ax3.Direct() == False`)
+    analytic placement — builds the frame's z opposite `Direction()`, which is
+    what OCC's own pcurves are measured against. A plain cylinder's placement
+    happens to be right-handed so this never showed; a fillet produces both
+    handedness, and the rebuilt face landed a distance `2v` from its own edges.
+    `_flip_pcurve_u` / `_face_placement_is_indirect` carry the correction through
+    the writer's is_reversed flag and pcurve mirroring.
+  - `occ_area`/`occ_volume`/`occ_centroid` called OCC's `GProp` integrators with no
+    tolerance, which defaults far looser than it looks: exact on analytic
+    geometry, ~0.9% heavy on a rational NURBS solid. Now converges at
+    `TOL.absolute`.
+
+Built a minimal pytest-lite harness (fixture/mark/parametrize/raises/xfail; no real
+`pytest` package exists inside the Rhino process) since no committed harness
+survived from slices 01-05 — self-checked against deliberately failing, raising,
+strict-xfail, dynamic-xfail, and occ-marked-must-not-run synthetic tests before
+trusting it, same discipline as prior slices.
+
+Ran it against all Rhino-marked tests: 113 collected, 105/113 passed, 13 failed on
+the first pass. Refreshed all 7 Rhino fixtures (`--refresh-fixtures`) — 5 changed
+(seams flipped nurbs -> circle/arc as slice 06 predicted; box/filleted_box
+unaffected, no analytic edges there). That alone fixed 5 of the 13 failures
+(fixture-drift, not a code defect). Tightened `volume_atol` in
+tests/test_exchange_fixtures.py from 1e-3 to 1e-6 for cylinder/cone/torus/
+box_with_hole/sphere now that their seams are exact — verified against the
+full-precision Rhino volume (residual ~3e-7, from the EXPECTED table's volumes
+being hand-typed to 6 decimals, not from any real imprecision). filleted_box stays
+1e-3 (still `nurbs` fillet faces, still `rebuild_broken` strict-xfail on the OCC
+side, untouched).
+
+Two more of the 13 were a test-design problem, not a code bug, and are fixed here:
+`test_rhino_roundtrips_edge_curve_tag['arc'/'ellipse']`. MEASURED, not assumed —
+  - `arc`'s old source (`filleted_box`) is a genuine gap: a fillet blend edge is a
+    rational NurbsCurve whose native parameter is NOT affine in angle (measured
+    deviation up to 4.8e-3 at r=0.3, vs the 1e-9 bar `_analytic_edge_curve_if_affine`
+    holds it to), so the writer's fail-safe correctly falls back to `nurbs`. Swapped
+    the shared `EDGE_CURVE_TAG_SOURCES["arc"]` to `Brep.from_sphere` instead — its
+    meridian is a genuine `Rhino.Geometry.ArcCurve`, angle-affine, and both backends
+    already tag it `arc` (checked on both).
+  - `ellipse` has no fix available: every elliptical edge compas_brep can currently
+    construct in Rhino comes from a numeric op (boolean or `.trimmed()`), which
+    Rhino represents as a generic NurbsCurve — `TryGetEllipse` doesn't recognize it
+    even at `TOL.absolute`, because Rhino's own boolean/trim tolerance is looser
+    than that. Tried `.trimmed(plane)` as an alternative to the boolean source:
+    same result, still NurbsCurve, still unrecognized. There is no analytic
+    construction path for an ellipse in the current API the way `from_sphere` gives
+    one for `arc`. Added `"ellipse"` to `RHINO_UNWRITABLE_EDGE_CURVE_TAGS` with the
+    measurement recorded in the comment — this is the "first licensed run finds a
+    real gap" outcome slice 06 designed the empty set to surface, not a defect to
+    paper over.
+
+The remaining 6 of 13 are ONE defect, newly reproduced (never run against a kernel
+before): a REVERSED analytic curved face (a hole's cylindrical wall, some fillet
+patches) rebuilds `IsValidWithLog() == True` but `AreaMassProperties.Compute`
+returns `None` for that face and the whole Brep measures `IsSolid False`, volume
+`0.0`. Isolated to `face.is_reversed`: the identical unreversed
+`Brep.from_cylinder(0.5, 2.0)` round-trips exactly (`IsSolid True`, volume error
+`0.0`). Checked, not assumed, that this session's own face-reversal loop-winding
+fix (the `trims = list(reversed(loop.trims)) if face.is_reversed ...` block) is not
+the cause: reverted it and re-ran the identical `box_with_hole` case, identical
+failure both ways. This is almost certainly the same defect slices 04 and 05 each
+flagged and left unowned ("OCC->Rhino has never produced a solid for ANYTHING" /
+"valid-but-not-solid for capped shapes") but neither could reproduce against a real
+kernel at the time. Filed as its own issue with the isolation and a suggested
+starting point: 07-rhino-reversed-analytic-face-not-solid.md. NOT fixed here.
+
+Testing status — READ THIS:
+  pytest -m occ -q ................ 305 passed, 2 xfailed (unchanged by this
+        session's test edits; the OCC side of every fix here was already covered)
+  invoke test ...................... unchanged pass count (no new OCC-visible tests)
+  pytest -m rhino .................. STILL NOT RUNNABLE AS pytest (no rhinoinside,
+        no real pytest inside the Rhino process). Run through the harness above,
+        inside live Rhino 8 via LAMCP: 113 collected, 106 passed, 1 xfailed
+        (ellipse, as designed), 6 failed — all 6 are the one filed, unfixed defect
+        above. This is the first- ever kernel execution of slice 06's Rhino code
+        and the fixture-refresh task standing since slice 04.
+  The harness itself was self-checked first against synthetic pass/fail/raises/
+  xfail/strict-xfail/dynamic-xfail/occ-excluded cases before its results were
+  trusted.
+
+Next: fix .agents/issues/brep-exchange/07-rhino-reversed-analytic-face-not-solid.md.
+  Also open: the two issues carried forward above (OCC edge-sharing, and whatever
+  of the "OCC->Rhino not solid" observations issue 07 doesn't turn out to subsume).

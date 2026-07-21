@@ -789,6 +789,19 @@ def _rhino_plane_from_compas(plane):
     )
 
 
+def _analytic_control_points(curve, domain):
+    """The control points of the exact Rhino rebuild of a conic edge, as COMPAS points.
+
+    A rational conic's control polygon bounds the conic, which is what makes these
+    usable for sizing a planar patch: every point of the curve lies inside their
+    hull, so a patch that holds the hull holds the curve.
+    """
+    nurbs = _edge_curve_to_rhino(curve, domain).ToNurbsCurve()
+    for i in range(nurbs.Points.Count):
+        location = nurbs.Points[i].Location
+        yield Point(location.X, location.Y, location.Z)
+
+
 def _face_boundary_points(face):
     """Every 3D point that must sit inside a rebuilt planar face's surface patch.
 
@@ -806,6 +819,15 @@ def _face_boundary_points(face):
                 yield curve.end
             elif isinstance(curve, NurbsCurve):
                 yield from curve._points
+            elif isinstance(curve, (Circle, Ellipse)):
+                if _is_collapsed_analytic(curve):
+                    # An apex contributes its point, not a control polygon.
+                    yield curve.frame.point
+                else:
+                    # A conic carries no control points of its own, so they come
+                    # from the same exact rebuild the edge itself gets. Sampling
+                    # the conic would under-size the patch between samples.
+                    yield from _analytic_control_points(curve, trim.edge.domain)
             elif trim.vertex is not None:
                 yield trim.vertex.point
 
@@ -832,7 +854,7 @@ def _plane_surface_for_face(plane, face):
     return Rhino.Geometry.PlaneSurface(rhino_plane, u_interval, v_interval)
 
 
-def _project_curve_to_plane(curve, rhino_plane):
+def _project_curve_to_plane(curve, rhino_plane, domain=None):
     """Project a canonical edge curve into a Rhino plane's (u, v) parameter space.
 
     A plane maps 3D to (u, v) affinely, so control points can be mapped directly
@@ -841,7 +863,13 @@ def _project_curve_to_plane(curve, rhino_plane):
     """
 
     def to_uv(point):
-        success, u, v = rhino_plane.ClosestParameter(Rhino.Geometry.Point3d(point.x, point.y, point.z))
+        # Takes a COMPAS point or a Rhino Point3d -- the conic branch below maps
+        # control points, which Rhino hands back in its own type.
+        if isinstance(point, Rhino.Geometry.Point3d):
+            rhino_point = point
+        else:
+            rhino_point = Rhino.Geometry.Point3d(point.x, point.y, point.z)
+        success, u, v = rhino_plane.ClosestParameter(rhino_point)
         if not success:
             raise BrepError("Failed to project a curve onto the face plane")
         return u, v
@@ -862,6 +890,19 @@ def _project_curve_to_plane(curve, rhino_plane):
             pcurve.Points.SetPoint(i, Rhino.Geometry.Point3d(u, v, 0.0), weight)
         for i, k in enumerate(_expand_knots(curve._knots, curve._mults)[1:-1]):
             pcurve.Knots[i] = k
+        return pcurve
+
+    if isinstance(curve, (Circle, Ellipse)):
+        # The conic already lies in this plane, so mapping its exact rebuild's
+        # rational control points through the same affine (u, v) map -- weights,
+        # knots, and degree untouched -- gives a pcurve that is the conic, not a
+        # fit of it.
+        nurbs = _edge_curve_to_rhino(curve, domain).ToNurbsCurve()
+        pcurve = nurbs.Duplicate()
+        for i in range(nurbs.Points.Count):
+            control = nurbs.Points[i]
+            u, v = to_uv(control.Location)
+            pcurve.Points.SetPoint(i, Rhino.Geometry.Point3d(u, v, 0.0), control.Weight)
         return pcurve
 
     raise BrepError(f"Cannot project curve of type {type(curve).__name__} onto a plane")
@@ -1032,6 +1073,25 @@ def _trim_pcurve_to_rhino(trim, shift):
     return pcurve
 
 
+def _is_collapsed_analytic(curve):
+    """Whether a conic edge has collapsed to a point.
+
+    A cone's apex is a circle of radius zero, and the radius OCC computes for it
+    is 4e-17 rather than an exact 0. Rhino refuses to build a circle that small --
+    it returns an invalid curve rather than a degenerate one -- so this has to be
+    asked of the document's curve, before the rebuild, and cannot be folded into
+    :func:`_is_degenerate`, which measures a curve Rhino has already built.
+
+    An ellipse is collapsed only when its *major* radius vanishes; a vanishing
+    minor radius is a segment, which still has extent.
+    """
+    if isinstance(curve, Circle):
+        return curve.radius <= TOL.absolute
+    if isinstance(curve, Ellipse):
+        return curve.major <= TOL.absolute
+    return False
+
+
 def _is_degenerate(rhino_curve):
     """Whether an edge curve has no extent — a boundary collapsed to a point.
 
@@ -1083,6 +1143,11 @@ def brep_to_rhino(brep):
     edge_index = {}
     collapsed_edges = {}
     for edge in brep._edges:
+        if _is_collapsed_analytic(edge.curve):
+            # Same collapse as below, caught before the rebuild because Rhino
+            # cannot build the curve at all at this radius.
+            collapsed_edges[id(edge)] = vertex_index[id(edge.first_vertex)]
+            continue
         curve = _edge_curve_to_rhino(edge.curve, edge.domain)
         if _is_degenerate(curve):
             # The document has two spellings for "this boundary collapses to a
@@ -1115,14 +1180,29 @@ def brep_to_rhino(brep):
 
         for loop, loop_type in loops:
             loop_builder = face_builder.add_loop(loop_type)
-            for trim in loop.trims:
+            # The two kernels wind a loop against different normals: the document's
+            # pcurves run counter-clockwise about the *face's* normal, Rhino's about
+            # the *surface's*, with the reversal flag carrying the difference between
+            # them. On a reversed face those disagree, so the document's loop arrives
+            # clockwise in Rhino's parameter space -- and a clockwise outer loop
+            # bounds the unbounded side, which is why such a face measures a negative
+            # area (a box: six faces cancelling to zero area and a Brep that is
+            # valid, manifold, and not solid) or fails to measure at all.
+            #
+            # Walking the loop backwards restores Rhino's winding. It does not move
+            # the face: reversing a closed loop's traversal keeps its point set and
+            # only swaps which side is bounded, so the patch is the same one the
+            # document describes, and the face's normal stays the document's because
+            # the reversal flag above is untouched.
+            trims = list(reversed(loop.trims)) if face.is_reversed else list(loop.trims)
+            for trim in trims:
                 singular_vertex = _singular_trim_vertex(trim, vertex_index, collapsed_edges)
 
                 if singular_vertex is None and is_planar:
                     # A plane's parameterization is not pinned by the document
                     # (point and normal fix no x-axis), so the serialized pcurve
                     # cannot be trusted here — re-derive it against the rebuilt plane.
-                    pcurve = _project_curve_to_plane(trim.edge.curve, rhino_plane)
+                    pcurve = _project_curve_to_plane(trim.edge.curve, rhino_plane, trim.edge.domain)
                 else:
                     # A singular trim (a sphere's pole, a cone's apex) collapses to a
                     # vertex and has no edge curve to project, so its serialized
@@ -1133,7 +1213,13 @@ def brep_to_rhino(brep):
                 # defines; Rhino wants the trim's. This applies to a singular trim
                 # too — OCC reverses the one along a pole, and a loop whose trims do
                 # not run head to tail in parameter space is not a loop.
-                if trim.is_reversed:
+                #
+                # On a reversed face the loop is being walked backwards, so each trim
+                # also runs backwards along its edge relative to the document: the
+                # two reversals compose, and it is the composed direction that both
+                # orients the pcurve and tells Rhino how the trim uses its edge.
+                is_reversed = trim.is_reversed != face.is_reversed
+                if is_reversed:
                     pcurve.Reverse()
 
                 if singular_vertex is not None:
@@ -1149,7 +1235,7 @@ def brep_to_rhino(brep):
                 loop_builder.add_trim(
                     pcurve,
                     edge_index[id(trim.edge)],
-                    trim.is_reversed,
+                    is_reversed,
                     Rhino.Geometry.IsoStatus.NONE,
                     -1,
                 )

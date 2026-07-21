@@ -46,9 +46,14 @@ from compas_brep.exchange import EXCHANGE_VERSION
 # faces exactly. This is a real remaining divergence between the backends, not a
 # rounding difference.
 #
-# ``volume_atol`` is the bar the OCC rebuild is held to. A planar box is exact; a
-# document whose curved faces are NURBS carries approximation error at the scale of
-# the wall's own discretization, so the holed box is held to 1e-3 rather than TOL.
+# ``volume_atol`` is the bar the OCC rebuild is held to. A planar box is exact.
+# ``filleted_box`` carries approximation error at the scale of its NURBS fillet
+# faces' own discretization, so it stays at 1e-3. The other curved fixtures were
+# refreshed after slice 06 and now carry exact analytic seams (see below), so
+# they're held to 1e-6 -- not `TOL.absolute` (1e-9) itself, because the `volume`
+# values above are hand-typed to 6 decimals and the residual against the full-
+# precision Rhino volume is on the order of 1e-7, from that rounding rather than
+# from any imprecision in the rebuild.
 #
 # ``rebuild_broken`` marks a fixture whose OCC rebuild is wrong today -- see the
 # xfails below. It is not a property of the fixture: the same shape authored by OCC
@@ -75,7 +80,7 @@ EXPECTED = {
         "surface_tags": {"sphere"},
         "loop_roles": {"outer"},
         "volume": 4.18879,
-        "volume_atol": 1e-3,
+        "volume_atol": 1e-6,
         "rebuild_broken": False,
     },
     "box_with_hole": {
@@ -83,43 +88,32 @@ EXPECTED = {
         "surface_tags": {"plane", "cylinder"},
         "loop_roles": {"outer", "inner"},
         "volume": 7.434513,
-        "volume_atol": 1e-3,
+        "volume_atol": 1e-6,
         "rebuild_broken": False,
     },
-    # The wall's surface is analytic and exact, but these fixtures' cap edges are
-    # still written as NURBS circles, and a NURBS circle's parameter is not its
-    # angle. The wall's pcurves run linearly in angle, so pcurve and edge curve
-    # trace the same circle at different rates and OCC's rebuilt wall is slightly
-    # off — hence 1e-3 rather than TOL.
-    #
-    # Slice 06 was expected to tighten this and did NOT, for a reason worth stating:
-    # these are RHINO-authored fixtures, and slice 06 landed with no Rhino license
-    # and no bridge, so they could not be regenerated. The Rhino writer now emits
-    # analytic edge tags in code, but no Rhino has run it. These documents are the
-    # pre-slice-06 ones and still carry `nurbs` seams.
-    #
-    # Refreshing them on a licensed machine is what tightens this atol to TOL:
-    #     pytest -m rhino tests/test_exchange_fixtures.py --refresh-fixtures
-    # The OCC-authored mirror fixtures WERE regenerated and do carry exact circular
-    # seams — see `test_occ_fixture_carries_exact_analytic_seams`.
+    # The wall's surface is analytic and exact. Its seam / cap edges are now exact
+    # circles too, refreshed from live Rhino via the LAMCP bridge (the reason this
+    # was still 1e-3 was that slice 06 landed with no bridge and no license, so
+    # these fixtures could not be regenerated — see git history for the pre-refresh
+    # comment). The OCC-authored mirror fixtures carry the same exact seams — see
+    # `test_occ_fixture_carries_exact_analytic_seams`.
     "cylinder": {
         "faces": 3,
         "surface_tags": {"plane", "cylinder"},
         "loop_roles": {"outer"},
         "volume": 1.570796,
-        "volume_atol": 1e-3,
+        "volume_atol": 1e-6,
         "rebuild_broken": False,
     },
-    # The cone and torus join the cylinder as analytic surfaces whose seam / cap
-    # edges are still written as NURBS circles, so the same 1e-3 residual and the
-    # same not-yet-refreshed story above apply. A cone's caps make it a solid with a
-    # planar base (like the cylinder); a torus has neither cap nor seam vertex.
+    # The cone and torus join the cylinder with exact analytic seams, refreshed the
+    # same way. A cone's caps make it a solid with a planar base (like the
+    # cylinder); a torus has neither cap nor seam vertex.
     "cone": {
         "faces": 2,
         "surface_tags": {"plane", "cone"},
         "loop_roles": {"outer"},
         "volume": 0.261799,
-        "volume_atol": 1e-3,
+        "volume_atol": 1e-6,
         "rebuild_broken": False,
     },
     "torus": {
@@ -127,7 +121,7 @@ EXPECTED = {
         "surface_tags": {"torus"},
         "loop_roles": {"outer"},
         "volume": 1.776529,
-        "volume_atol": 1e-3,
+        "volume_atol": 1e-6,
         "rebuild_broken": False,
     },
 }

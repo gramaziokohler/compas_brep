@@ -40,16 +40,20 @@ RHINO_UNWRITABLE_SURFACE_TAGS: set[str] = set()
 
 # Edge curve tags a writer cannot produce yet.
 #
-# Empty on both sides as of slice 06: `circle`, `arc`, and `ellipse` join `line` and
-# `nurbs`, which is what CONTEXT.md's v6 section has claimed all along.
+# Empty on the OCC side: `circle`, `arc`, and `ellipse` join `line` and `nurbs`,
+# which is what CONTEXT.md's v6 section has claimed all along.
 #
-# The Rhino set is empty because the format requires those tags, NOT because a live
-# Rhino was watched writing them — slice 06 was implemented with no bridge and no
-# license available, so `pytest -m rhino` has never run against this code. An empty
-# set here means a Rhino gap shows up as a failure on the first licensed run, which
-# is the outcome this suite wants; a speculative xfail would hide it instead.
+# `ellipse` is a real, measured Rhino gap, found on the first licensed run (the set
+# was empty until then, deliberately, so this would show up rather than hide):
+# every elliptical edge compas_brep can currently construct in Rhino comes from a
+# numeric op (`trimmed`, or a boolean like the one below) — there is no analytic
+# construction path in the current API, the way `from_sphere`'s meridian gives a
+# genuine `Rhino.Geometry.ArcCurve` for `arc`. A boolean/trim intersection curve is
+# a generic `NurbsCurve`, and `TryGetEllipse` does not recognize it even at
+# `TOL.absolute` — Rhino's own boolean/trim tolerance is looser than that. Writing
+# `nurbs` instead is the writer's designed fallback, not a defect in it.
 OCC_UNWRITABLE_EDGE_CURVE_TAGS: set[str] = set()
-RHINO_UNWRITABLE_EDGE_CURVE_TAGS: set[str] = set()
+RHINO_UNWRITABLE_EDGE_CURVE_TAGS: set[str] = {"ellipse"}
 
 
 # =============================================================================
@@ -89,8 +93,13 @@ EDGE_CURVE_TAG_SOURCES = {
     "nurbs": _nurbs_patch,
     # A full circular seam / cap edge.
     "circle": lambda: Brep.from_cylinder(Cylinder(0.5, 2.0)),
-    # A fillet corner is a quarter circle: a circle with a bounded parameter range.
-    "arc": lambda: Brep.from_box(Box(2.0, 2.0, 2.0)).filleted(0.3),
+    # A sphere's meridian: a circle with a bounded parameter range. NOT a fillet
+    # corner, despite also being geometrically a quarter/half circle — measured on
+    # Rhino, a fillet's blend edge is a rational NURBS whose native parameter is not
+    # affine in angle (deviates up to 5e-3 from the assumed linear map at r=0.3), so
+    # it correctly falls back to `nurbs` rather than mis-tagging. A sphere's
+    # meridian is a genuine `Rhino.Geometry.ArcCurve` and passes the affine check.
+    "arc": lambda: Brep.from_sphere(Sphere(1.0)),
     "ellipse": _cylinder_cut_by_a_tilted_box,
 }
 

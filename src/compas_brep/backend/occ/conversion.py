@@ -335,15 +335,64 @@ def _extract_pcurve(occ_edge: Any, occ_face: Any) -> NurbsCurve | None:
 
 
 def _ax3_to_frame(ax3) -> Frame:
-    """Convert an OCC gp_Ax3 to a COMPAS Frame."""
+    """Convert an OCC gp_Ax3 to a COMPAS Frame.
+
+    A COMPAS Frame is always right-handed -- its z-axis *is* x cross y -- while a
+    ``gp_Ax3`` need not be: a left-handed ("indirect") one carries a ``Direction()``
+    equal to minus x cross y. OCC parameterizes its analytic surfaces along
+    ``Direction()``, so building the frame from x and y alone hands the document an
+    axis pointing the opposite way to the one the pcurves were measured against.
+    Nothing catches it on a shape whose placements happen to be right-handed --
+    a plain cylinder is one -- but a fillet produces both, and there the rebuilt
+    face lands a distance ``2v`` from its own edges.
+
+    Negating y instead keeps the frame's z on ``Direction()``, which is what the
+    document means by the axis. The cost is that u then runs the other way, and
+    that is paid in :func:`_flip_pcurve_u` where the pcurves are written.
+    """
     loc = ax3.Location()
     xdir = ax3.XDirection()
     ydir = ax3.YDirection()
+    yaxis = Vector(ydir.X(), ydir.Y(), ydir.Z())
+    if not ax3.Direct():
+        yaxis = yaxis * -1.0
     return Frame(
         Point(loc.X(), loc.Y(), loc.Z()),
         Vector(xdir.X(), xdir.Y(), xdir.Z()),
-        Vector(ydir.X(), ydir.Y(), ydir.Z()),
+        yaxis,
     )
+
+
+def _face_placement_is_indirect(occ_face: Any) -> bool:
+    """Whether a face's analytic placement is left-handed.
+
+    Only the four surfaces carried by a ``gp_Ax3`` can be: a plane is written as a
+    point and a normal taken straight from its axis, and pins no u at all.
+    """
+    adaptor = BRepAdaptor_Surface(occ_face)
+    stype = adaptor.GetType()
+    if stype == GeomAbs_Cylinder:
+        return not adaptor.Cylinder().Position().Direct()
+    if stype == GeomAbs_Sphere:
+        return not adaptor.Sphere().Position().Direct()
+    if stype == GeomAbs_Torus:
+        return not adaptor.Torus().Position().Direct()
+    if stype == GeomAbs_Cone:
+        return not adaptor.Cone().Position().Direct()
+    return False
+
+
+def _flip_pcurve_u(pcurve: NurbsCurve) -> NurbsCurve:
+    """Mirror a pcurve's u, undoing the y-axis negation in :func:`_ax3_to_frame`.
+
+    Negating the frame's y-axis reverses the sense in which u sweeps, so a pcurve
+    measured in OCC's parameter space needs ``u -> -u`` to describe the same curve
+    in the document's. Only the control points move; knots, weights, and degree
+    are unaffected, because mirroring u is affine in the parameter plane and does
+    not touch the curve's own parameterization.
+    """
+    pcurve._points = [Point(-point.x, point.y, point.z) for point in pcurve._points]
+    return pcurve
 
 
 def _frame_to_ax3(frame: Frame):
@@ -690,10 +739,18 @@ def occ_brep_to_data(brep: Brep) -> dict:
     face_exp = TopExp_Explorer(shape, TopAbs_FACE)
     while face_exp.More():
         occ_face = TopoDS.Face_s(face_exp.Current())
-        is_reversed = occ_face.Orientation() == TopAbs_REVERSED
 
         surface = _extract_surface(occ_face)
         surface_data = surface_to_data(surface)
+        # A left-handed placement was straightened in _ax3_to_frame; the pcurves
+        # below are still in OCC's u and have to be mirrored to match.
+        u_is_flipped = _face_placement_is_indirect(occ_face)
+        # Mirroring u negates du, so the document's surface normal (du cross dv)
+        # points opposite OCC's. The face itself has not moved, so the orientation
+        # flag has to absorb that flip -- otherwise the face keeps OCC's flag
+        # against a surface that now faces the other way, and the rebuilt face is
+        # inside out.
+        is_reversed = (occ_face.Orientation() == TopAbs_REVERSED) != u_is_flipped
 
         occ_outer_wire = BRepTools.OuterWire_s(occ_face)
 
@@ -712,6 +769,8 @@ def occ_brep_to_data(brep: Brep) -> dict:
                 pcurve = _extract_pcurve(occ_edge, occ_face)
                 if pcurve is None:
                     raise BrepError(f"Cannot serialize a trim without a pcurve (edge {edge_idx})")
+                if u_is_flipped:
+                    pcurve = _flip_pcurve_u(pcurve)
                 trims.append(
                     {
                         "edge": edge_idx,
