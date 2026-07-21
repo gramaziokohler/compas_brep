@@ -246,11 +246,12 @@ def test_occ_rebuild_keeps_the_hole_a_hole():
 
 
 @pytest.mark.occ
-@pytest.mark.xfail(
-    strict=True,
-    reason="A rebuilt cylinder wall loses its seam edge and reports invalid — the known defect carried from slice 02, owned by slice 06 (analytic edge tags).",
-)
 def test_occ_rebuild_of_the_hole_is_valid():
+    # Was a strict xfail from slice 02 through 06: a rebuilt cylinder wall lost its
+    # seam edge and reported invalid. Fixed by issue 08's shared vertex/edge table
+    # in brep_to_occ -- the seam is now one shared TopoDS_Edge with both its pcurve
+    # representations attached, not two independently built edges left for
+    # BRepBuilderAPI_Sewing to merge by tolerance.
     assert Brep.__from_data__(load_fixture("box_with_hole")).is_valid
 
 

@@ -761,5 +761,167 @@ Testing status — READ THIS:
   trusted.
 
 Next: fix .agents/issues/brep-exchange/07-rhino-reversed-analytic-face-not-solid.md.
-  Also open: the two issues carried forward above (OCC edge-sharing, and whatever
-  of the "OCC->Rhino not solid" observations issue 07 doesn't turn out to subsume).
+
+--------------------------------------------------------------------------
+2026-07-21 — OCC edge-sharing defect sharpened, filed as issue 08
+
+The "OCC edge-sharing" item carried forward above (from slices 02/03/06) was
+never a filed issue, just a recurring progress-note mention, and was described
+each time as a seam-invalidity / edge-count problem. It is worse than that.
+
+Found while checking whether `compas.data.json_dump`/`json_load` round-trips a
+`Brep` correctly (they do, mechanically — confirmed separately). They exposed
+that `Brep.__from_data__(doc).__data__` is NOT idempotent for OCC: every call
+re-extracts topology from a freshly rebuilt native shape instead of passing the
+document's connectivity through, and two consecutive round trips are enough to
+collapse a real cone (`tests/fixtures/occ_cone.json`, 2 faces, volume 0.2618)
+into a degenerate single vertex/edge/face, volume 0.0. A third round trip stays
+there — it's a stable fixed point, not unbounded degradation, but it never
+recovers. Reproduced with plain `json.load`/`Brep.__from_data__`/`.__data__` and
+zero `compas.data` involved, to rule out the JSON layer — the defect is entirely
+in the OCC rebuild/re-extract cycle (`brep_to_occ` in
+src/compas_brep/backend/occ/conversion.py), consistent with what slice 06 already
+pointed at ("needs a shared vertex/edge table in brep_to_occ") but never measured
+as an instability under repetition.
+
+Filed as .agents/issues/brep-exchange/08-occ-rebuild-does-not-share-edges.md with
+the full reproduction, why it's worse than previously scoped, and a suggested
+starting point. NOT fixed — filing only, per instruction.
+
+Next: fix issue 07 or issue 08, whichever is picked up first — 08 is now the more
+severe of the two (it can corrupt an OCC-authored Brep with no Rhino involved at
+all, via nothing more exotic than an ordinary compas.data.json_dump/json_load).
+
+--------------------------------------------------------------------------
+2026-07-21 — Issue 08 fixed (OCC rebuild now shares vertices/edges): DONE
+
+Picked 08 over 07: no formal blocker between them (neither issue file declares
+one), 08 is OCC-only so it is fully testable in this environment without a
+Rhino license or the LAMCP bridge, and 08 was already the more severe per the
+entry above.
+
+THE FIX: brep_to_occ now builds two caches (vertex, keyed by id(BrepVertex);
+edge, keyed by id(BrepEdge)) local to one rebuild call, and every edge/vertex
+builder threads them through instead of minting a fresh native TopoDS_Edge/
+TopoDS_Vertex per trim occurrence. occ_rebuild already decodes each document
+vertex/edge index into ONE Python object shared by every trim that references
+it (`edges[edge_id]`) — brep_to_occ just wasn't honoring that sharing on the
+native side, leaving BRepBuilderAPI_Sewing's 1e-6 tolerance to merge near-
+duplicate edges/vertices back together after the fact, imperfectly and lossily.
+_edge_to_occ_edge/_loop_to_occ_wire/_build_trimmed_face all take the caches now;
+a shared edge's REVERSED usage on a second face is obtained via a new
+_reversed_edge() (returns a flipped COPY sharing the underlying TShape) rather
+than the old occ_edge.Reverse() (in-place mutation) — mutating a cached, shared
+edge would have corrupted every other face already holding a reference to it.
+
+TWO FOLLOW-ON BUGS THE NAIVE VERSION OF THIS FIX INTRODUCED, BOTH MEASURED
+AGAINST THE ISSUE'S OWN occ_cone.json REPRODUCTION BEFORE BEING TRUSTED FIXED:
+
+1. A periodic surface's seam edge (a cone/cylinder/sphere/torus wall's u-seam,
+   also a cone apex/sphere pole's degenerate loop) is walked TWICE by the SAME
+   face — once each direction, needing TWO pcurve representations on the SAME
+   (edge, face) pair. Naively calling BRep_Builder.UpdateEdge(edge, pcurve,
+   face, tol) once per trim occurrence made the second call silently overwrite
+   the first (only one single-pcurve representation is stored per (edge,
+   face)), collapsing the seam to one side and mistrimming the face — caught
+   because the cone's volume dropped from 0.2618 to 0.1047 on the FIRST rebuild
+   (not even round 2) once sharing was naive. Fixed by grouping a face's trims
+   by document edge identity first, and using BRep_Builder's two-pcurve
+   UpdateEdge(edge, C1, C2, face, tol) overload for any edge used twice by one
+   face — C1/C2 assigned by is_reversed (forward/backward), matching how
+   BRep_Tool.CurveOnSurface already picks between them by orientation on
+   extraction.
+
+2. Sharing the apex vertex by IDENTITY (not just by coincident position) for
+   a near-zero-radius "circle" apex/pole edge changed what OCC does with it:
+   MakeEdge(circle_curve, V_apex, V_apex, 0, 2pi) now auto-detects the edge is
+   degenerate (BRep_Tool.Degenerated_s -> True) — measured directly, not
+   assumed — where the OLD unshared code's auto-created, floating-point-jittery
+   vertices happened to dodge that detection and produce a technically-real (if
+   physically meaningless) tiny circle instead. Once flagged degenerate, OCC's
+   own re-extraction reports its curve type as GeomAbs_OtherCurve rather than
+   Circle, which round-trips through this codebase's *existing* Line/general
+   branch as a zero-length Line (start==end) — a shape occ_sphere.json's
+   committed pole edges ALREADY used, unrelated to this change. The pole-drop
+   path already in that branch (`dist < 1e-9: return None`) then discarded the
+   trim entirely on the NEXT rebuild, leaving the wire open at the pole:
+   BRepCheck_Analyzer correctly reports the shape invalid, though volume
+   integration was tolerant enough to still land close — which is likely why
+   this exact gap was never caught by the volume-only checks slices 02-06 ran.
+   Fixed by building a genuine degenerate edge (BRep_Builder.MakeEdge + two
+   Add() calls, one vertex forward one reversed, + Degenerated(edge, True) —
+   no 3D curve, matching how OCC's own degenerate edges are structured) instead
+   of dropping the trim, so the pole's pcurve still closes the wire in
+   parameter space even though it collapses to a point in 3D.
+
+MEASURED PAYOFF, against the issue's own reproduction and the four analytic
+OCC-authored fixtures, 5 consecutive round trips each, not just 2:
+  occ_cone:     v2 e3 f2 -> v4 e2 f2 -> v1 e1 f1 (vol 0.0)   [BEFORE, degrading]
+                v2 e3 f2, vol 0.2617993877991493, valid=True [AFTER, all 5 hops]
+  occ_sphere/torus/cylinder: same story — stable AND valid at every hop, where
+  before, sphere was already accidentally stable (see below) and cylinder/torus
+  were not checked hop-by-hop before this issue.
+  A NICE SURPRISE, not a criterion of this issue and not chased further: fixing
+  the degenerate-edge drop above also closed the seam-invalidity defect carried
+  since slice 02 for box_with_hole — `test_occ_rebuild_of_the_hole_is_valid` was
+  a strict xfail ("A rebuilt cylinder wall loses its seam edge and reports
+  invalid... owned by slice 06") and started passing, so the xfail is removed
+  (un-xfailing per that test's own comment convention, not deleting).
+  rhino_filleted_box, read on CI without a license: BEFORE this fix, its SECOND
+  round trip didn't just degrade, it CRASHED
+  (Geom_RectangularTrimmedSurface::V1==V2) — the first hop alone bloated to 72
+  vertices. AFTER: stable at 24/48/26 across 3 hops (still geometrically wrong —
+  the pre-existing nurbs-fillet-orientation defect from slice 03, `rebuild_broken:
+  True`, untouched — but no longer crashing or drifting).
+
+A CASE WHERE BASELINE WAS ALREADY "IDEMPOTENT" BY ACCIDENT, checked so as not to
+claim credit for something already true: occ_sphere/rhino_sphere were already
+stable pre-fix (pole edges already zero-length `line` in the committed document,
+already hit the pre-existing drop-on-degenerate path both before AND after this
+fix's first hop) — is_valid was False before and stays False after for
+rhino_sphere specifically (a DIFFERENT already-known defect, not this issue's:
+see issue 07, reversed analytic faces). This is why
+test_occ_round_trip_is_idempotent[sphere] and
+test_json_dump_load_preserves_volume_and_face_count[sphere] both PASSED even
+against the pre-fix code in the sabotage check below — correctly, since sphere
+genuinely wasn't unstable at baseline. cone/cylinder/torus all failed pre-fix,
+as expected.
+
+A residual NOT chased, out of this issue's scope (counts/volume idempotency, not
+validity): rhino_box_with_hole's OCC rebuild is now perfectly idempotent in
+counts and volume across 3 hops (10/15/7, 7.43451332235424, unchanged) but flips
+is_valid True -> False between hop 0 and hop 1 and stays False. Likely the same
+reversed-analytic-face family as issue 07, on the OCC side rather than Rhino's,
+but not diagnosed here — flagging rather than guessing.
+
+New test file tests/test_exchange_idempotency.py (9 tests): idempotency across
+2 hops for every OCC_SOURCES fixture (cone/sphere/cylinder/torus), the issue's
+own 3-hop cone reproduction with an explicit non-collapse assertion, and
+compas.data.json_dump/json_load preservation for the same four. Sabotage-
+checked before trusting green: reverting only src/compas_brep/backend/occ/
+conversion.py (keeping the new tests) fails 7 of 9 — the 2 sphere tests pass
+either way, correctly, per the accidental-baseline-stability note above.
+
+Testing status — READ THIS, baseline numbers re-measured (not estimated) by
+temporarily reverting conversion.py + test_exchange_fixtures.py and re-running:
+  invoke lint ...................... passes (ruff; what CI runs)
+  invoke test ....................... 383 passed, 1 xfailed
+        (baseline: 373 passed, 2 xfailed -- +9 new, +1 un-xfailed test now
+        passing so xfailed count drops by 1)
+  pytest -m occ -q .................. 315 passed, 1 xfailed
+        (baseline: 305 passed, 2 xfailed)
+  pytest -q (default, not rhino) .... 374 passed, 1 xfailed
+        (baseline: 373 passed, 2 xfailed -- default run doesn't collect
+        test_exchange_idempotency.py's occ-marked tests, so only +1 there)
+  pytest -m rhino .................... NOT RUN. No rhinoinside on this machine.
+        The lamcp MCP bridge connected during this session (unlike slice 06's
+        session where it was down), but this issue's fix and its tests are
+        entirely OCC-side — no Rhino code was touched — so the bridge was not
+        used. Rhino-authored fixtures (rhino_*.json) WERE read through this
+        fix (OCC reading committed Rhino documents, as every OCC-marked fixture
+        test already does), and behaved consistently with the OCC-authored
+        ones (rhino_filleted_box's crash-to-stable improvement above, for one).
+
+Next: issue 07 (Rhino reversed analytic face not solid) remains open, plus the
+box_with_hole is_valid residual flagged above (undiagnosed, possibly the same
+family as 07 but on the OCC side).
