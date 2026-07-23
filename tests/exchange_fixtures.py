@@ -20,9 +20,10 @@ the diff: a change here is a change to the cross-backend contract.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
+from compas.data import json_dump
+from compas.data import json_load
 from compas.geometry import Box
 from compas.geometry import Cone
 from compas.geometry import Cylinder
@@ -100,28 +101,25 @@ def occ_fixture_path(name: str) -> Path:
     return FIXTURE_DIR / f"occ_{name}.json"
 
 
-def load_fixture(name: str) -> dict:
-    with open(fixture_path(name)) as f:
-        return json.load(f)
+def load_fixture(name: str) -> Brep:
+    return json_load(fixture_path(name))
 
 
-def load_occ_fixture(name: str) -> dict:
-    with open(occ_fixture_path(name)) as f:
-        return json.load(f)
+def load_occ_fixture(name: str) -> Brep:
+    return json_load(occ_fixture_path(name))
 
 
-def _dump(path: Path, data: dict) -> None:
+def _dump(path: Path, brep: Brep) -> None:
     FIXTURE_DIR.mkdir(exist_ok=True)
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2, sort_keys=True)
+    json_dump(brep, path, pretty=True)
 
 
-def write_fixture(name: str, data: dict) -> None:
-    _dump(fixture_path(name), data)
+def write_fixture(name: str, brep: Brep) -> None:
+    _dump(fixture_path(name), brep)
 
 
-def write_occ_fixture(name: str, data: dict) -> None:
-    _dump(occ_fixture_path(name), data)
+def write_occ_fixture(name: str, brep: Brep) -> None:
+    _dump(occ_fixture_path(name), brep)
 
 
 def documents_differ(committed, regenerated, path: str = "") -> str | None:

@@ -38,7 +38,10 @@ def _round_trip(data: dict) -> tuple[Brep, dict]:
 def test_occ_round_trip_is_idempotent(name):
     # A second round trip through an already-rebuilt document must reproduce the
     # same connectivity and volume as the first -- not keep drifting toward collapse.
-    brep1, data1 = _round_trip(load_occ_fixture(name))
+    # load_occ_fixture already performs the first rebuild (json_load decodes the
+    # fixture through Brep.__from_data__), so brep1/data1 here is that first round trip.
+    brep1 = load_occ_fixture(name)
+    data1 = brep1.__data__
     brep2, data2 = _round_trip(data1)
 
     assert len(data1["vertices"]) == len(data2["vertices"])
@@ -51,9 +54,15 @@ def test_occ_round_trip_is_idempotent(name):
 def test_occ_cone_round_trip_never_collapses():
     # The issue's own reproduction: 3 consecutive round trips on a real cone must
     # neither keep changing connectivity nor let the volume drop to 0.0.
-    data = load_occ_fixture("cone")
-    volumes = []
-    for _ in range(3):
+    # load_occ_fixture already performs the first of the 3 (see note above).
+    brep = load_occ_fixture("cone")
+    data = brep.__data__
+    volumes = [brep.volume]
+    assert len(data["vertices"]) > 0
+    assert len(data["edges"]) > 0
+    assert len(data["faces"]) == 2
+
+    for _ in range(2):
         brep, data = _round_trip(data)
         volumes.append(brep.volume)
         assert len(data["vertices"]) > 0
@@ -70,7 +79,7 @@ def test_json_dump_load_preserves_volume_and_face_count(name, tmp_path):
     # compas.data.json_dump/json_load chains exactly the two hops
     # (__data__, __from_data__) that expose the instability -- this is what
     # surfaced the defect originally, before it was known to be backend-internal.
-    brep = Brep.__from_data__(load_occ_fixture(name))
+    brep = load_occ_fixture(name)
     path = tmp_path / "brep.json"
     json_dump(brep, path)
     restored = json_load(path)

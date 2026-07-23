@@ -12,6 +12,7 @@ import math
 from pathlib import Path
 
 import pytest
+from compas.data import json_load
 from compas.geometry import Box
 from compas.geometry import Cylinder
 from compas.geometry import Sphere
@@ -144,8 +145,7 @@ def test_round_trip_boolean_diff_mixed_surface_types_in_data(boolean_diff_brep):
 
 
 def _unit_box_occ_data():
-    with open(Path(__file__).parent / "fixtures" / "legacy_v4_box.json") as f:
-        return json.load(f)
+    return json_load(Path(__file__).parent / "fixtures" / "legacy_v4_box.json")
 
 
 def test_cross_backend_deserialization_occ_payload_deserializes():
