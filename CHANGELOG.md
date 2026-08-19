@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `BrepFace.boundary` and `BrepFace.holes`, and `BrepLoop.is_outer`, `BrepLoop.is_inner` and `BrepLoop.loop_type` along with the `LoopType` constants. Loops are tagged as outer/inner by the face that owns them.
+
 ### Changed
 
 ### Removed

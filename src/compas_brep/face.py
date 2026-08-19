@@ -37,6 +37,17 @@ class BrepFace:
         self._is_reversed = is_reversed
         self._domain_u = domain_u
         self._domain_v = domain_v
+        self._mark_loops()
+
+    def _mark_loops(self) -> None:
+        """Tag the loops of this face as outer/inner.
+
+        Called by every ``BrepFace`` constructor, including the backend subclasses,
+        so that ``loop.is_outer`` is meaningful for loops reached via ``Brep.loops``.
+        """
+        self._outer_loop.is_outer = True
+        for loop in self._inner_loops:
+            loop.is_outer = False
 
     def _compute_plane(self) -> Plane:
         """Compute the face plane from the outer loop vertices."""
@@ -113,6 +124,16 @@ class BrepFace:
         return self._outer_loop
 
     @property
+    def boundary(self) -> BrepLoop:
+        """Alias of :attr:`outer_loop`, for compatibility with ``compas_rhino``."""
+        return self._outer_loop
+
+    @property
+    def holes(self) -> list[BrepLoop]:
+        """The inner loops of this face."""
+        return list(self._inner_loops)
+
+    @property
     def edges(self) -> list[BrepEdge]:
         all_edges = []
         for loop in self.loops:
@@ -151,6 +172,7 @@ class BrepFace:
         return Polygon([v.point for v in self._outer_loop.vertices])
 
     def add_loop(self, loop: BrepLoop) -> None:
+        loop.is_outer = False
         self._inner_loops.append(loop)
 
     def __repr__(self) -> str:

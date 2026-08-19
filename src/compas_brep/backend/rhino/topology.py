@@ -145,6 +145,7 @@ class RhinoBrepLoop(BrepLoop):
         self._rhino_loop = rhino_loop
         self._trims = list(trims)
         self._edges: list[BrepEdge] = []
+        self._is_outer = True  # corrected by the owning face via BrepFace._mark_loops()
 
     @property
     def native_loop(self) -> Any:
@@ -171,6 +172,7 @@ class RhinoBrepFace(BrepFace):
         self._surface: Any = None
         self._domain_u: tuple[float, float] | None = None
         self._domain_v: tuple[float, float] | None = None
+        self._mark_loops()
 
     @property
     def native_face(self) -> Any:
