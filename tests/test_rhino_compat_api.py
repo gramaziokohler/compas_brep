@@ -10,6 +10,8 @@ import pytest
 from compas.geometry import Box
 from compas.geometry import Cylinder
 from compas.geometry import Frame
+from compas.geometry import Plane
+from compas.geometry import Vector
 
 from compas_brep import Brep
 from compas_brep import LoopType
@@ -32,6 +34,85 @@ def holed_brep():
     box = Brep.from_box(Box(10.0, 10.0, 2.0))
     cylinder = Brep.from_cylinder(Cylinder(2.0, 6.0, frame=Frame.worldXY()))
     return Brep.from_boolean_difference(box, cylinder)
+
+
+# =============================================================================
+# Face orientation
+# =============================================================================
+
+
+def test_opposite_box_faces_report_opposite_normals(box_brep):
+    normals = [face.normal_at() for face in box_brep.faces]
+
+    for axis in (Vector.Xaxis(), Vector.Yaxis(), Vector.Zaxis()):
+        along = [n for n in normals if abs(n.dot(axis)) > 0.9]
+        assert len(along) == 2
+        assert along[0].dot(along[1]) == pytest.approx(-1.0)
+
+
+def test_face_normal_matches_boundary_winding(box_brep):
+    for face in box_brep.faces:
+        assert face.normal_at().dot(face.to_polygon().normal) == pytest.approx(1.0)
+
+
+def test_boolean_produces_a_reversed_face(holed_brep):
+    """Rhino leaves a box unreversed, so the flip is only exercised after a boolean."""
+    assert any(face.is_reversed for face in holed_brep.faces)
+
+
+def test_face_normals_point_away_from_solid(holed_brep):
+    centroid = holed_brep.centroid
+    for face in holed_brep.faces:
+        if not face.is_planar:
+            continue  # the hole wall points inward by design
+        outward = Vector(*(face.frame_at().point - centroid))
+        assert outward.dot(face.normal_at()) > 0
+
+
+def test_hole_wall_normal_points_into_the_void(holed_brep):
+    face = next(f for f in holed_brep.faces if not f.is_planar)
+    frame = face.frame_at()
+    away_from_axis = Vector(frame.point.x, frame.point.y, 0.0)
+    away_from_axis.unitize()
+    assert frame.zaxis.dot(away_from_axis) == pytest.approx(-1.0, abs=1e-6)
+
+
+def test_frame_at_preserves_xaxis_when_flipping(box_brep):
+    for face in box_brep.faces:
+        frame = face.frame_at()
+        surface_frame = Frame.from_plane(face.surface)
+        assert frame.xaxis.dot(surface_frame.xaxis) == pytest.approx(1.0)
+        expected = -1.0 if face.is_reversed else 1.0
+        assert frame.zaxis.dot(surface_frame.zaxis) == pytest.approx(expected)
+
+
+def test_frame_at_does_not_alias_the_cached_surface(box_brep):
+    face = box_brep.faces[0]
+    before = Vector(*face.surface.normal)
+
+    frame = face.frame_at()
+    frame.point.x += 1000.0
+
+    assert face.surface.normal == before
+    assert face.frame_at().point.x != frame.point.x
+
+
+def test_frame_at_on_a_planar_face_defaults_to_the_centroid(box_brep):
+    for face in box_brep.faces:
+        assert face.frame_at().point.distance_to_point(face.centroid) == pytest.approx(0.0, abs=1e-9)
+
+
+# =============================================================================
+# Deriving a plane from a face
+# =============================================================================
+
+
+def test_oriented_plane_via_frame_at(box_brep):
+    planes = [Plane.from_frame(f.frame_at()) for f in box_brep.faces]
+    for axis in (Vector.Xaxis(), Vector.Yaxis(), Vector.Zaxis()):
+        along = [p.normal for p in planes if abs(p.normal.dot(axis)) > 0.9]
+        assert len(along) == 2
+        assert along[0].dot(along[1]) == pytest.approx(-1.0)
 
 
 # =============================================================================

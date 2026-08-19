@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `BrepFace.frame_at(u, v)` and `BrepFace.normal_at(u, v)`, which account for `BrepFace.is_reversed` so that opposite faces of a solid report opposite normals. `BrepFace.surface` is unchanged and still returns the raw, unflipped underlying surface.
+
 * Added `BrepFace.boundary` and `BrepFace.holes`, and `BrepLoop.is_outer`, `BrepLoop.is_inner` and `BrepLoop.loop_type` along with the `LoopType` constants. Loops are tagged as outer/inner by the face that owns them.
 
 ### Changed

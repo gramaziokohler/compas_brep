@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
+from compas.geometry import Frame
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polygon
@@ -175,8 +176,86 @@ class BrepFace:
         loop.is_outer = False
         self._inner_loops.append(loop)
 
+    # =========================================================================
+    # Surface evaluation
+    # =========================================================================
+
+    def frame_at(self, u: float | None = None, v: float | None = None) -> Frame:
+        """The frame of the face at the given surface parameters.
+
+        The zaxis of the returned frame is the *face* normal: for a face whose
+        :attr:`is_reversed` is True the underlying surface normal is flipped, so that
+        opposite faces of a solid report opposite normals. Use :attr:`surface` directly
+        to get the unflipped surface.
+
+        Parameters
+        ----------
+        u
+            The u parameter, in the parametrization of :attr:`surface`. Defaults to the
+            middle of :attr:`domain_u`.
+        v
+            The v parameter, in the parametrization of :attr:`surface`. Defaults to the
+            middle of :attr:`domain_v`.
+
+        Returns
+        -------
+        :class:`compas.geometry.Frame`
+            A new frame; modifying it does not affect the face.
+
+        Notes
+        -----
+        A planar face has no parametrization to speak of - :attr:`surface` is a
+        :class:`compas.geometry.Plane`, which carries no x-direction - so for planar
+        faces `u` and `v` are distances along the axes of the plane's own frame,
+        measured from the plane's origin, and omitting them puts the frame on the face
+        centroid rather than in the middle of the uv domain.
+
+        """
+        surface = self.surface
+        if isinstance(surface, Plane):
+            frame = Frame.from_plane(surface)
+            if u is None and v is None:
+                point = surface.projected_point(self.centroid)
+            else:
+                du = 0.0 if u is None else u
+                dv = 0.0 if v is None else v
+                point = frame.point + frame.xaxis * du + frame.yaxis * dv
+            frame = Frame(point, frame.xaxis, frame.yaxis)
+        else:
+            frame = surface.frame_at(
+                _default_parameter(u, self.domain_u),
+                _default_parameter(v, self.domain_v),
+            )
+
+        if self._is_reversed:
+            # Flip the yaxis (not the xaxis) so the zaxis - the normal - flips with it.
+            frame = Frame(frame.point, frame.xaxis, frame.yaxis.scaled(-1))
+        return frame
+
+    def normal_at(self, u: float | None = None, v: float | None = None) -> Vector:
+        """The outward normal of the face at the given surface parameters.
+
+        Accounts for :attr:`is_reversed`, see :meth:`frame_at`.
+
+        Returns
+        -------
+        :class:`compas.geometry.Vector`
+            A new vector; modifying it does not affect the face.
+
+        """
+        return self.frame_at(u, v).zaxis
+
     def __repr__(self) -> str:
         return f"BrepFace({len(self.vertices)} vertices, {self.surface_type})"
+
+
+def _default_parameter(value: float | None, domain: tuple[float, float] | None) -> float:
+    """Resolve an omitted surface parameter to the middle of the domain, or 0.0."""
+    if value is not None:
+        return value
+    if domain is None:
+        return 0.0
+    return 0.5 * (domain[0] + domain[1])
 
 
 def _plane_from_points(points: list[Point]) -> Plane:

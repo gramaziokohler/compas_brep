@@ -58,6 +58,8 @@ BrepFace.surface  →  Plane | CylindricalSurface | ConicalSurface | SphericalSu
 - Topology lists (`_vertices`, `_edges`, `_loops`, `_faces`) are caches populated lazily on first access via `brep_extract_topology`.
 - All inputs to and outputs from `Brep` methods are COMPAS types.
 
+**Face orientation.** `BrepFace.surface` is the *underlying* surface, exactly as the kernel stores it — it does not account for `BrepFace.is_reversed`, so opposite faces of a box return surfaces with identical normals. This matches both `compas_occ` and `compas_rhino`, and it is what `__data__` serializes (`surface` + `is_reversed` as a pair). Code that wants the face's own outward normal must use `frame_at()` / `normal_at()`, which apply the flip and return fresh objects. `frame_at()` is the single evaluator — point, normal, frame and (via `Plane.from_frame`) plane all come from it, for every surface type; there is deliberately no plane-only accessor, since that would work for one of the six surface types. Never mutate what `surface` returns: it is cached per face and shared with every other caller.
+
 ---
 
 ## Surface Type Support
