@@ -12,7 +12,9 @@ from compas.geometry import Vector
 from compas.tolerance import TOL
 
 from compas_brep.edge import BrepEdge
+from compas_brep.errors import BrepError
 from compas_brep.loop import BrepLoop
+from compas_brep.operations import face_to_nurbssurface
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.vertex import BrepVertex
 
@@ -135,6 +137,11 @@ class BrepFace:
         return list(self._inner_loops)
 
     @property
+    def native_face(self) -> object | None:
+        """The underlying backend face, or None for a face not backed by a kernel."""
+        return None
+
+    @property
     def edges(self) -> list[BrepEdge]:
         all_edges = []
         for loop in self.loops:
@@ -244,6 +251,23 @@ class BrepFace:
 
         """
         return self.frame_at(u, v).zaxis
+
+    @property
+    def nurbssurface(self) -> NurbsSurface:
+        """The underlying surface of this face as a NURBS surface.
+
+        Provided for compatibility with ``compas.geometry.BrepFace``. Like the old
+        implementations, this returns the *unflipped* underlying surface - it does not
+        account for :attr:`is_reversed`. Prefer :meth:`frame_at` where a face normal is
+        what is wanted.
+        """
+        surface = self.surface
+        if isinstance(surface, NurbsSurface):
+            return surface
+        if self.native_face is None:
+            raise BrepError(f"Converting a {self.surface_type} face to a NURBS surface requires a face backed by a geometry kernel.")
+
+        return face_to_nurbssurface(self)
 
     def __repr__(self) -> str:
         return f"BrepFace({len(self.vertices)} vertices, {self.surface_type})"

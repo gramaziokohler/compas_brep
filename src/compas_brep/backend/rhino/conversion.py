@@ -433,6 +433,24 @@ def _frame_from_rhino_plane(rhino_plane):
     )
 
 
+def rhino_face_to_nurbssurface(rhino_face):
+    """Convert the underlying surface of a Rhino BrepFace to a compas_brep NurbsSurface.
+
+    Parameters
+    ----------
+    rhino_face : Rhino.Geometry.BrepFace
+
+    Returns
+    -------
+    :class:`compas_brep.NurbsSurface`
+
+    """
+    nurbs = rhino_face.UnderlyingSurface().ToNurbsSurface()
+    if nurbs is None:
+        raise BrepError("Failed to convert the underlying surface of the Rhino face to NURBS.")
+    return _rhino_nurbs_surface_to_compas(nurbs)
+
+
 def _rhino_nurbs_surface_to_compas(rhino_nurbs):
     """Convert a Rhino.Geometry.NurbsSurface to a compas_brep NurbsSurface.
 

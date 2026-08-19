@@ -14,6 +14,7 @@ from compas.geometry import Vector
 
 from compas_brep import Brep
 from compas_brep import LoopType
+from compas_brep.surfaces import NurbsSurface
 
 pytestmark = pytest.mark.occ
 
@@ -130,6 +131,35 @@ def test_oriented_plane_via_frame_at(box_brep):
 
 
 # =============================================================================
+# Face: nurbssurface
+# =============================================================================
+
+
+def test_nurbssurface_of_a_planar_face(box_brep):
+    face = box_brep.faces[0]
+    surface = face.nurbssurface
+    assert isinstance(surface, NurbsSurface)
+
+    u = 0.5 * (surface.domain_u[0] + surface.domain_u[1])
+    v = 0.5 * (surface.domain_v[0] + surface.domain_v[1])
+    assert surface.point_at(u, v).distance_to_point(face.frame_at().point) == pytest.approx(0.0, abs=1e-6)
+    # like the old implementations, the NURBS surface is the unflipped one
+    assert abs(surface.normal_at(u, v).dot(face.surface.normal)) == pytest.approx(1.0)
+
+
+def test_nurbssurface_of_a_curved_face(holed_brep):
+    face = next(f for f in holed_brep.faces if f.is_cylinder)
+    assert isinstance(face.nurbssurface, NurbsSurface)
+
+
+def test_nurbssurface_returns_a_nurbs_surface_as_is():
+    brep = Brep.from_box(Box(1.0, 1.0, 1.0))
+    face = brep.faces[0]
+    face.surface = face.nurbssurface
+    assert face.nurbssurface is face.surface
+
+
+# =============================================================================
 # Face: loop accessors
 # =============================================================================
 
@@ -193,6 +223,23 @@ def test_loop_marking_survives_serialization(holed_brep):
 # =============================================================================
 # Faces not backed by a kernel
 # =============================================================================
+
+
+def test_nurbssurface_of_a_detached_face_is_a_clear_error():
+    from compas_brep import BrepEdge
+    from compas_brep import BrepError
+    from compas_brep import BrepFace
+    from compas_brep import BrepLoop
+    from compas_brep import BrepVertex
+
+    points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+    vertices = [BrepVertex(p) for p in points]
+    edges = [BrepEdge(vertices[i], vertices[(i + 1) % 4]) for i in range(4)]
+    face = BrepFace(BrepLoop(edges=edges))
+
+    assert face.native_face is None
+    with pytest.raises(BrepError):
+        face.nurbssurface
 
 
 def test_detached_face_frame_at_still_works():

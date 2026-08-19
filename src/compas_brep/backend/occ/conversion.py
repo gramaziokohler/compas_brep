@@ -451,6 +451,15 @@ def _extract_surface(occ_face: Any) -> Plane | CylindricalSurface | SphericalSur
                 return ConicalSurface(R0, height, frame=frame)
 
     # For other non-planar surfaces, convert to BSpline
+    return occ_face_to_nurbssurface(occ_face, stype=stype)
+
+
+def occ_face_to_nurbssurface(occ_face: Any, stype: Any = None) -> NurbsSurface:
+    """Convert the underlying surface of an OCC face to a compas_brep NurbsSurface.
+
+    Works for analytic surfaces (plane, cylinder, ...) as well as B-splines: the
+    surface is trimmed to the face's UV bounds and converted exactly where OCC can.
+    """
     surface_handle = BRep_Tool.Surface_s(occ_face)
     umin, umax, vmin, vmax = BRepTools.UVBounds_s(occ_face)
 
@@ -470,6 +479,8 @@ def _extract_surface(occ_face: Any) -> Plane | CylindricalSurface | SphericalSur
     except Exception as exc:
         # Never emit a silently-wrong dummy plane: a failed conversion must be loud
         # so a bogus surface can't enter a Brep. (Was: return Plane(0,0,0).)
+        if stype is None:
+            stype = BRepAdaptor_Surface(occ_face).GetType()
         raise BrepError(f"Failed to extract surface from OCC face (type {stype}): {exc}") from exc
 
     return _bspline_surface_to_nurbs(bspline)

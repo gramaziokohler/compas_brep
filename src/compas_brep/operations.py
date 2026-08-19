@@ -235,6 +235,12 @@ def brep_is_valid(brep: Brep) -> bool:
 
 
 @pluggable(category="brep-queries")
+def face_to_nurbssurface(face: Any) -> Any:
+    """Convert the underlying surface of a backend-backed face to a NurbsSurface."""
+    raise NotImplementedError
+
+
+@pluggable(category="brep-queries")
 def brep_tessellate(
     brep: Brep,
     linear_deflection: float = 0.1,

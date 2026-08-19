@@ -285,6 +285,13 @@ def brep_is_valid(brep):
 
 
 @plugin(category="brep-queries", requires=["OCP"])
+def face_to_nurbssurface(face):
+    from .conversion import occ_face_to_nurbssurface
+
+    return occ_face_to_nurbssurface(face.native_face)
+
+
+@plugin(category="brep-queries", requires=["OCP"])
 def brep_tessellate(brep, linear_deflection=0.1, n=16, n_curves=64):
     from .queries import occ_tessellate
 

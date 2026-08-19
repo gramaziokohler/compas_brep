@@ -15,6 +15,7 @@ from compas.geometry import Vector
 
 from compas_brep import Brep
 from compas_brep import LoopType
+from compas_brep.surfaces import NurbsSurface
 
 pytestmark = pytest.mark.rhino
 
@@ -86,6 +87,14 @@ def test_frame_at_preserves_xaxis_when_flipping(box_brep):
         assert frame.zaxis.dot(surface_frame.zaxis) == pytest.approx(expected)
 
 
+def test_frame_at_matches_the_old_compas_rhino_path(box_brep):
+    """Drop-in check: on unreversed faces the flip is a no-op, so nothing moved."""
+    for face in box_brep.faces:
+        assert not face.is_reversed
+        old = Plane.from_frame(face.nurbssurface.frame_at(0, 0)).normal
+        assert old.dot(face.normal_at()) == pytest.approx(1.0)
+
+
 def test_frame_at_does_not_alias_the_cached_surface(box_brep):
     face = box_brep.faces[0]
     before = Vector(*face.surface.normal)
@@ -113,6 +122,31 @@ def test_oriented_plane_via_frame_at(box_brep):
         along = [p.normal for p in planes if abs(p.normal.dot(axis)) > 0.9]
         assert len(along) == 2
         assert along[0].dot(along[1]) == pytest.approx(-1.0)
+
+
+# =============================================================================
+# nurbssurface
+# =============================================================================
+
+
+def test_nurbssurface_of_a_planar_face(box_brep):
+    face = box_brep.faces[0]
+    surface = face.nurbssurface
+    assert isinstance(surface, NurbsSurface)
+
+    u = 0.5 * (surface.domain_u[0] + surface.domain_u[1])
+    v = 0.5 * (surface.domain_v[0] + surface.domain_v[1])
+    assert abs(surface.normal_at(u, v).dot(face.surface.normal)) == pytest.approx(1.0)
+
+
+def test_nurbssurface_of_a_curved_face(holed_brep):
+    face = next(f for f in holed_brep.faces if not f.is_planar)
+    assert isinstance(face.nurbssurface, NurbsSurface)
+
+
+def test_old_lap_two_step_still_works(box_brep):
+    planes = [Plane.from_frame(f.nurbssurface.frame_at(0, 0)) for f in box_brep.faces]
+    assert len(planes) == 6
 
 
 # =============================================================================
