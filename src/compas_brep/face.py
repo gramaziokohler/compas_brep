@@ -7,6 +7,7 @@ from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polygon
 from compas.geometry import SphericalSurface
+from compas.geometry import SurfaceType
 from compas.geometry import ToroidalSurface
 from compas.geometry import Vector
 from compas.tolerance import TOL
@@ -117,6 +118,16 @@ class BrepFace:
     @property
     def is_cone(self) -> bool:
         return isinstance(self.surface, ConicalSurface)
+
+    @property
+    def is_bspline(self) -> bool:
+        """Alias of :attr:`is_nurbs`, for compatibility with ``compas.geometry.BrepFace``."""
+        return self.is_nurbs
+
+    @property
+    def type(self) -> int:
+        """One of the :class:`compas.geometry.SurfaceType` constants."""
+        return _SURFACE_TYPES.get(self.surface_type, SurfaceType.OTHER_SURFACE)
 
     @property
     def loops(self) -> list[BrepLoop]:
@@ -271,6 +282,16 @@ class BrepFace:
 
     def __repr__(self) -> str:
         return f"BrepFace({len(self.vertices)} vertices, {self.surface_type})"
+
+
+_SURFACE_TYPES = {
+    "plane": SurfaceType.PLANE,
+    "cylinder": SurfaceType.CYLINDER,
+    "cone": SurfaceType.CONE,
+    "sphere": SurfaceType.SPHERE,
+    "torus": SurfaceType.TORUS,
+    "nurbs": SurfaceType.BSPLINE_SURFACE,
+}
 
 
 def _default_parameter(value: float | None, domain: tuple[float, float] | None) -> float:

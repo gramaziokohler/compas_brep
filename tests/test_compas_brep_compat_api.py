@@ -2,14 +2,19 @@
 
 Covers the accessors that consumers written against ``compas.geometry.Brep``
 (via ``compas_rhino`` or ``compas_occ``) expect to find on the topology
-sub-objects.
+sub-objects: face frames/normals that account for face orientation,
+``nurbssurface``, ``boundary``/``holes``, ``start_vertex``/``end_vertex``,
+and ``is_outer``/``is_inner``.
 """
 
 import pytest
 from compas.geometry import Box
+from compas.geometry import CurveType
 from compas.geometry import Cylinder
 from compas.geometry import Frame
+from compas.geometry import Line
 from compas.geometry import Plane
+from compas.geometry import SurfaceType
 from compas.geometry import Vector
 
 from compas_brep import Brep
@@ -131,7 +136,7 @@ def test_oriented_plane_via_frame_at(box_brep):
 
 
 # =============================================================================
-# Face: nurbssurface
+# Face: nurbssurface and type
 # =============================================================================
 
 
@@ -157,6 +162,14 @@ def test_nurbssurface_returns_a_nurbs_surface_as_is():
     face = brep.faces[0]
     face.surface = face.nurbssurface
     assert face.nurbssurface is face.surface
+
+
+def test_face_type_and_is_bspline(box_brep, holed_brep):
+    assert box_brep.faces[0].type == SurfaceType.PLANE
+    assert not box_brep.faces[0].is_bspline
+
+    cylindrical = next(f for f in holed_brep.faces if f.is_cylinder)
+    assert cylindrical.type == SurfaceType.CYLINDER
 
 
 # =============================================================================
@@ -218,6 +231,46 @@ def test_loop_marking_survives_serialization(holed_brep):
         assert face.boundary.is_outer
         for loop in face.holes:
             assert loop.is_inner
+
+
+# =============================================================================
+# Edge
+# =============================================================================
+
+
+def test_edge_vertex_aliases(box_brep):
+    for edge in box_brep.edges:
+        assert edge.start_vertex is edge.first_vertex
+        assert edge.end_vertex is edge.last_vertex
+
+
+def test_edge_to_line(box_brep):
+    edge = box_brep.edges[0]
+    line = edge.to_line()
+    assert isinstance(line, Line)
+    assert line.start == edge.start_vertex.point
+    assert line.end == edge.end_vertex.point
+
+
+def test_edge_type(box_brep, holed_brep):
+    assert box_brep.edges[0].type == CurveType.LINE
+
+    curved = [e for e in holed_brep.edges if not e.is_line]
+    assert curved
+    assert curved[0].type == CurveType.BSPLINE
+
+
+def test_edge_centroid_of_a_line(box_brep):
+    edge = box_brep.edges[0]
+    expected = (edge.start_vertex.point + edge.end_vertex.point) * 0.5
+    assert edge.centroid.distance_to_point(expected) == pytest.approx(0.0)
+
+
+def test_edge_centroid_of_a_curve(holed_brep):
+    edge = next(e for e in holed_brep.edges if not e.is_line)
+    # the hole rim is a full circle centred on the world z-axis
+    assert edge.centroid.x == pytest.approx(0.0, abs=1e-6)
+    assert edge.centroid.y == pytest.approx(0.0, abs=1e-6)
 
 
 # =============================================================================
