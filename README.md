@@ -5,11 +5,21 @@
 [![PyPI Package latest release](https://img.shields.io/pypi/v/compas-brep)](https://pypi.python.org/pypi/compas-brep)
 [![Made with COMPAS](https://compas.dev/badge.svg)](https://compas.dev/#/)
 
-A unified Brep wrapper for the [COMPAS](https://github.com/compas-dev/compas) framework with pluggable OCC and Rhino backends.
+A unified Brep wrapper for the [COMPAS](https://github.com/compas-dev/compas) framework with pluggable OCC and Rhino backends. See [Motivation](https://gramaziokohler.github.io/compas_brep/motivation/) for why.
 
-Provides a single `Brep` class with a stable public interface. The backend (OCC or Rhino) is selected automatically at runtime based on what is importable. All inputs and outputs are COMPAS types — never backend types.
+Provides a single `Brep` class with a stable public interface. The backend (OCC or Rhino) is selected automatically at runtime based on what is importable — see [Architecture](https://gramaziokohler.github.io/compas_brep/architecture/). All inputs and outputs are COMPAS types — never backend types.
 
 Examples in `examples/` have mostly been copied from [COMPAS OCC](https://github.com/compas-dev/compas_occ) which is used as benchmark for this project.
+
+## Documentation
+
+Full documentation: <https://gramaziokohler.github.io/compas_brep/>
+
+- [What is a Brep?](https://gramaziokohler.github.io/compas_brep/brep-basics/) — the shape model, in one page
+- [Architecture](https://gramaziokohler.github.io/compas_brep/architecture/) — what happens where
+- [Examples](https://gramaziokohler.github.io/compas_brep/examples/) — runnable scripts by topic
+- [Adding a new operation](https://gramaziokohler.github.io/compas_brep/contributing/) — extending compas_brep across both backends
+- [API Reference](https://gramaziokohler.github.io/compas_brep/reference/compas_brep/)
 
 ## Installation
 
