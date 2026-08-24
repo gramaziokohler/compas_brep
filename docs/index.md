@@ -31,8 +31,13 @@ print(len(box.edges))    # 12
 print(len(box.vertices)) # 8
 
 # Serialise / deserialise
-data = box.to_data()
-restored = Brep.from_data(data)
+from compas.data import json_dump, json_load
+
+PATH = "box.json"
+json_dump(box, PATH)
+
+...
+restored_box: Brep = json_load(PATH)
 ```
 
 ## How it works
