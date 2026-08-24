@@ -70,3 +70,16 @@ jobs:
           github-token: ${{ github.token }}
           tag-name: ${{ needs.release-change.outputs.tag }}
           target: ${{ github.sha }}
+
+  docs:
+    needs: [release-change, release]
+    if: needs.release-change.outputs.is-release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: compas-dev/compas-actions/docs@v1
+        with:
+          deploy: true
+          version: ${{ needs.release-change.outputs.version }}
+          extras: docs,dev

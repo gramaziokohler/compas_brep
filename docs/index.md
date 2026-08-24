@@ -35,6 +35,26 @@ data = box.to_data()
 restored = Brep.from_data(data)
 ```
 
+## How it works
+
+`Brep` is a thin public interface. Every call is dispatched, at runtime, to
+whichever backend is actually available — no code branches on OCC vs. Rhino.
+
+```mermaid
+graph TD
+    U["your code"] --> B["Brep<br/>(public interface, brep.py)"]
+    B --> P["operations.py<br/>@pluggable functions"]
+    P -->|"OCP importable"| OP["backend/occ/plugins.py<br/>@plugin"]
+    P -->|"Rhino importable"| RP["backend/rhino/plugins.py<br/>@plugin"]
+    OP --> OI["backend/occ/*.py"]
+    RP --> RI["backend/rhino/*.py"]
+    OI --> ON["TopoDS_Shape"]
+    RI --> RN["Rhino.Geometry.Brep"]
+```
+
+See [Architecture](architecture.md) for the full picture, and
+[Motivation](motivation.md) for why it's built this way.
+
 ## Documentation
 
 For full instructions, a tutorial, examples, and an API reference,

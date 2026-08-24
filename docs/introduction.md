@@ -2,37 +2,15 @@
 
 `compas_brep` is a unified Brep wrapper for the [COMPAS](https://compas.dev) framework.
 It consolidates the Brep implementations previously spread across `compas_rhino` and
-`compas_occ` into a single coherent package with a stable public interface.
+`compas_occ` into a single coherent package with a stable public interface: the `Brep`
+class is the only class you need to import, and its argument and return types are
+always COMPAS types — never backend-specific ones.
 
-## Design principles
+The backend (OCC or Rhino) is selected automatically at runtime based on what's
+importable, so switching environments requires no code changes.
 
-**Single public interface**
-:   The `Brep` class is the only class users need to import. All argument and return
-    types are COMPAS types — never backend-specific types.
+Curious about the details? Start here:
 
-**Pluggable backends**
-:   The backend (OCC or Rhino) is selected automatically at runtime based on what
-    is importable. Switching environments requires no code changes.
-
-**Lazy topology**
-:   `BrepVertex`, `BrepEdge`, `BrepLoop`, `BrepFace`, and `BrepTrim` are
-    native-handle wrappers. Properties (`.point`, `.curve`, `.surface`, …) call
-    into the native kernel on demand and cache results per-property.
-
-**Pure-Python geometry values**
-:   `NurbsCurve` and `NurbsSurface` are plain value types storing control points,
-    knots, and weights. They carry no backend dependency.
-
-## Architecture overview
-
-```
-Brep  (public interface)
- └── _native_brep  →  TopoDS_Shape (OCC)  |  Rhino.Geometry.Brep (Rhino)
-
-Brep.faces  →  list[BrepFace]   (native-handle wrappers, lazily populated)
-BrepFace.surface  →  NurbsSurface  (COMPAS value type, lazily extracted)
-```
-
-Operations are dispatched through the COMPAS plugin system — `@pluggable`
-functions in `compas_brep.operations` that each backend implements with
-`@plugin` decorators gated by `requires=["OCP"]` or `requires=["Rhino"]`.
+- [What is a Brep?](brep-basics.md) — the shape model, in one page.
+- [Motivation](motivation.md) — why wrap two backends instead of picking one.
+- [Architecture](architecture.md) — what happens where, and how dispatch works.
