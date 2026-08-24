@@ -125,6 +125,10 @@ class BrepEdge:
         """One of the :class:`compas.geometry.CurveType` constants."""
         if self.is_line:
             return CurveType.LINE
+        if self.is_circle or self.is_arc:
+            return CurveType.CIRCLE
+        if self.is_ellipse:
+            return CurveType.ELLIPSE
         if self.is_bspline:
             return CurveType.BSPLINE
         return CurveType.OTHER
@@ -133,7 +137,7 @@ class BrepEdge:
     def centroid(self) -> Point:
         """The length-weighted centroid of the edge curve."""
         curve = self.curve
-        if not isinstance(curve, NurbsCurve):
+        if isinstance(curve, Line):
             return curve.midpoint
         points = self.sample_points(n=64)
         total = 0.0

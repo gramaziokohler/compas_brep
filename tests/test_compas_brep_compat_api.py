@@ -257,7 +257,7 @@ def test_edge_type(box_brep, holed_brep):
 
     curved = [e for e in holed_brep.edges if not e.is_line]
     assert curved
-    assert curved[0].type == CurveType.BSPLINE
+    assert curved[0].type == CurveType.CIRCLE
 
 
 def test_edge_centroid_of_a_line(box_brep):
