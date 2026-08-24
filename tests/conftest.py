@@ -8,6 +8,15 @@ Registers backend markers and applies skip conditions automatically:
 import pytest
 
 
+def pytest_addoption(parser):
+    parser.addoption(
+        "--refresh-fixtures",
+        action="store_true",
+        default=False,
+        help="Rewrite the committed exchange fixtures from live Rhino instead of asserting against them. Requires -m rhino.",
+    )
+
+
 def pytest_configure(config):
     config.addinivalue_line("markers", "occ: tests that require the OCC backend (OCP / cadquery-ocp-novtk)")
     config.addinivalue_line("markers", "rhino: tests that require the Rhino backend (rhinoinside)")

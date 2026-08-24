@@ -10,6 +10,7 @@ from compas.geometry import Box
 from compas.geometry import Frame
 from compas.geometry import Point
 from compas.geometry import Polyline
+from compas.tolerance import TOL
 from OCP.Bnd import Bnd_Box
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve
@@ -34,11 +35,21 @@ if TYPE_CHECKING:
     from compas_brep.brep import Brep
 
 
+# OCC integrates these properties numerically and, given no tolerance, stops at a
+# default that is far looser than it looks. On analytic geometry the answer is
+# already converged and this changes nothing; on a rational NURBS surface it is
+# not, and a lofted solid comes back about 0.9% heavy -- enough to look like a
+# lossy exchange when the geometry is in fact exact. Converging costs a few
+# milliseconds on a 26-face solid, which is worth paying for a property whose
+# whole purpose is to be a number someone trusts.
+_GPROP_TOL = TOL.absolute
+
+
 def occ_area(brep: Brep) -> float:
     """Compute the surface area of a Brep."""
     shape = brep_to_occ(brep)
     props = GProp_GProps()
-    BRepGProp.SurfaceProperties_s(shape, props)
+    BRepGProp.SurfaceProperties_s(shape, props, _GPROP_TOL)
     return props.Mass()
 
 
@@ -46,7 +57,7 @@ def occ_volume(brep: Brep) -> float:
     """Compute the volume of a Brep."""
     shape = brep_to_occ(brep)
     props = GProp_GProps()
-    BRepGProp.VolumeProperties_s(shape, props)
+    BRepGProp.VolumeProperties_s(shape, props, _GPROP_TOL)
     return props.Mass()
 
 
@@ -54,7 +65,7 @@ def occ_centroid(brep: Brep) -> Point:
     """Compute the centroid of a Brep."""
     shape = brep_to_occ(brep)
     props = GProp_GProps()
-    BRepGProp.VolumeProperties_s(shape, props)
+    BRepGProp.VolumeProperties_s(shape, props, _GPROP_TOL)
     c = props.CentreOfMass()
     return Point(c.X(), c.Y(), c.Z())
 

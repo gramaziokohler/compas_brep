@@ -9,12 +9,17 @@ To run: pytest -m rhino tests/test_rhino_serialization.py
 
 import json
 import math
+from pathlib import Path
 
 import pytest
+from compas.data import json_load
 from compas.geometry import Box
 from compas.geometry import Cylinder
+from compas.geometry import Sphere
+from compas.tolerance import TOL
 
 from compas_brep import Brep
+from compas_brep.errors import BrepError
 
 pytestmark = pytest.mark.rhino
 
@@ -43,7 +48,7 @@ def boolean_diff_brep():
 
 def test_serialization_format_box_data_version(unit_box_brep):
     data = unit_box_brep.__data__
-    assert data["version"] == 4
+    assert data["version"] == 6
 
 
 def test_serialization_format_box_data_keys(unit_box_brep):
@@ -121,7 +126,9 @@ def test_round_trip_boolean_diff_mixed_surface_types_in_data(boolean_diff_brep):
     data = boolean_diff_brep.__data__
     surface_types = [f["surface"]["type"] for f in data["faces"]]
     assert "plane" in surface_types
-    assert "nurbs" in surface_types
+    # The hole's wall was tagged "nurbs" until slice 04 taught the Rhino writer to
+    # emit the analytic tag. It is a cylinder, and it now says so.
+    assert "cylinder" in surface_types
 
 
 # =============================================================================
@@ -133,118 +140,21 @@ def test_round_trip_boolean_diff_mixed_surface_types_in_data(boolean_diff_brep):
 # These tests run in a Rhino environment where OCC is typically NOT installed,
 # so the OCC payload is supplied as a static dict rather than generated live.
 
-# Minimal STEP-inspired JSON for a unit cube (1×1×1, centred at origin).
-# Produced by the OCC backend; values are exact for a box.
-UNIT_BOX_OCC_DATA = {
-    "version": 4,
-    "vertices": [
-        [-0.5, -0.5, -0.5],
-        [0.5, -0.5, -0.5],
-        [0.5, 0.5, -0.5],
-        [-0.5, 0.5, -0.5],
-        [-0.5, -0.5, 0.5],
-        [0.5, -0.5, 0.5],
-        [0.5, 0.5, 0.5],
-        [-0.5, 0.5, 0.5],
-    ],
-    "edges": [
-        {"start": 0, "end": 1, "curve": {"type": "line", "data": [[-0.5, -0.5, -0.5], [0.5, -0.5, -0.5]]}},
-        {"start": 1, "end": 2, "curve": {"type": "line", "data": [[0.5, -0.5, -0.5], [0.5, 0.5, -0.5]]}},
-        {"start": 2, "end": 3, "curve": {"type": "line", "data": [[0.5, 0.5, -0.5], [-0.5, 0.5, -0.5]]}},
-        {"start": 3, "end": 0, "curve": {"type": "line", "data": [[-0.5, 0.5, -0.5], [-0.5, -0.5, -0.5]]}},
-        {"start": 4, "end": 5, "curve": {"type": "line", "data": [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5]]}},
-        {"start": 5, "end": 6, "curve": {"type": "line", "data": [[0.5, -0.5, 0.5], [0.5, 0.5, 0.5]]}},
-        {"start": 6, "end": 7, "curve": {"type": "line", "data": [[0.5, 0.5, 0.5], [-0.5, 0.5, 0.5]]}},
-        {"start": 7, "end": 4, "curve": {"type": "line", "data": [[-0.5, 0.5, 0.5], [-0.5, -0.5, 0.5]]}},
-        {"start": 0, "end": 4, "curve": {"type": "line", "data": [[-0.5, -0.5, -0.5], [-0.5, -0.5, 0.5]]}},
-        {"start": 1, "end": 5, "curve": {"type": "line", "data": [[0.5, -0.5, -0.5], [0.5, -0.5, 0.5]]}},
-        {"start": 2, "end": 6, "curve": {"type": "line", "data": [[0.5, 0.5, -0.5], [0.5, 0.5, 0.5]]}},
-        {"start": 3, "end": 7, "curve": {"type": "line", "data": [[-0.5, 0.5, -0.5], [-0.5, 0.5, 0.5]]}},
-    ],
-    "faces": [
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, 0.0, -0.5], "normal": [0.0, 0.0, -1.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 0, "is_reversed": False, "curve_2d": None},
-                    {"edge": 1, "is_reversed": False, "curve_2d": None},
-                    {"edge": 2, "is_reversed": False, "curve_2d": None},
-                    {"edge": 3, "is_reversed": False, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, 0.0, 0.5], "normal": [0.0, 0.0, 1.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 4, "is_reversed": False, "curve_2d": None},
-                    {"edge": 5, "is_reversed": False, "curve_2d": None},
-                    {"edge": 6, "is_reversed": False, "curve_2d": None},
-                    {"edge": 7, "is_reversed": False, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, -0.5, 0.0], "normal": [0.0, -1.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 0, "is_reversed": False, "curve_2d": None},
-                    {"edge": 9, "is_reversed": False, "curve_2d": None},
-                    {"edge": 4, "is_reversed": True, "curve_2d": None},
-                    {"edge": 8, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.5, 0.0, 0.0], "normal": [1.0, 0.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 1, "is_reversed": False, "curve_2d": None},
-                    {"edge": 10, "is_reversed": False, "curve_2d": None},
-                    {"edge": 5, "is_reversed": True, "curve_2d": None},
-                    {"edge": 9, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [0.0, 0.5, 0.0], "normal": [0.0, 1.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 2, "is_reversed": False, "curve_2d": None},
-                    {"edge": 11, "is_reversed": False, "curve_2d": None},
-                    {"edge": 6, "is_reversed": True, "curve_2d": None},
-                    {"edge": 10, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-        {
-            "surface": {"type": "plane", "data": {"point": [-0.5, 0.0, 0.0], "normal": [-1.0, 0.0, 0.0]}},
-            "is_reversed": False,
-            "loops": [
-                [
-                    {"edge": 3, "is_reversed": False, "curve_2d": None},
-                    {"edge": 8, "is_reversed": False, "curve_2d": None},
-                    {"edge": 7, "is_reversed": True, "curve_2d": None},
-                    {"edge": 11, "is_reversed": True, "curve_2d": None},
-                ]
-            ],
-        },
-    ],
-}
+# The v4 unit-box document lives in tests/fixtures/legacy_v4_box.json — one copy,
+# read by OCC on CI as well as by Rhino here. See tests/test_exchange_fixtures.py.
+
+
+def _unit_box_occ_data():
+    return json_load(Path(__file__).parent / "fixtures" / "legacy_v4_box.json")
 
 
 def test_cross_backend_deserialization_occ_payload_deserializes():
-    restored = Brep.__from_data__(UNIT_BOX_OCC_DATA)
+    restored = Brep.__from_data__(_unit_box_occ_data())
     assert len(restored.faces) == 6
 
 
 def test_cross_backend_deserialization_occ_payload_volume():
-    restored = Brep.__from_data__(UNIT_BOX_OCC_DATA)
+    restored = Brep.__from_data__(_unit_box_occ_data())
     assert abs(restored.volume - 1.0) < 0.05
 
 
@@ -254,3 +164,146 @@ def test_cross_backend_deserialization_cylinder_from_rhino_roundtrip():
     restored = Brep.__from_data__(data)
     expected = math.pi * 0.5**2 * 2.0
     assert abs(restored.volume - expected) < 0.1
+
+
+# =============================================================================
+# 6. Rebuild through the low-level Brep builder (ADR-0002)
+# =============================================================================
+
+
+def test_builder_filleted_box_face_count_preserved():
+    # The rectangular-crop path rebuilt each fillet as a rectangular sheet and
+    # lost 8 of the 26 faces. This is the case that motivated the builder.
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    filleted = box.filleted(0.3)
+    restored = Brep.__from_data__(filleted.__data__)
+    assert len(restored.faces) == len(filleted.faces)
+
+
+def test_builder_filleted_box_volume_preserved():
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    filleted = box.filleted(0.3)
+    restored = Brep.__from_data__(filleted.__data__)
+    assert TOL.is_close(restored.volume, filleted.volume)
+
+
+def test_builder_filleted_box_is_valid():
+    box = Brep.from_box(Box(2.0, 2.0, 2.0))
+    filleted = box.filleted(0.3)
+    restored = Brep.__from_data__(filleted.__data__)
+    assert restored.is_valid
+
+
+def test_builder_boolean_cut_cylinder_face_count_preserved(boolean_diff_brep):
+    restored = Brep.__from_data__(boolean_diff_brep.__data__)
+    assert len(restored.faces) == len(boolean_diff_brep.faces)
+
+
+def test_builder_boolean_cut_cylinder_volume_preserved(boolean_diff_brep):
+    restored = Brep.__from_data__(boolean_diff_brep.__data__)
+    assert TOL.is_close(restored.volume, boolean_diff_brep.volume)
+
+
+def test_builder_boolean_cut_cylinder_is_valid(boolean_diff_brep):
+    restored = Brep.__from_data__(boolean_diff_brep.__data__)
+    assert restored.is_valid
+
+
+def test_builder_sphere_serializes_pole_trims():
+    # A sphere's poles are singular trims — no edge, collapsed to a vertex.
+    # The pre-builder writer dropped them silently.
+    sphere = Brep.from_sphere(Sphere(1.0))
+    data = sphere.__data__
+    singular = [t for f in data["faces"] for loop in f["loops"] for t in loop["trims"] if t["edge"] == -1]
+    assert len(singular) == 2
+    assert all(t["curve_2d"] is not None for t in singular)
+
+
+def test_builder_sphere_is_valid():
+    sphere = Brep.from_sphere(Sphere(1.0))
+    restored = Brep.__from_data__(sphere.__data__)
+    assert restored.is_valid
+
+
+def test_builder_sphere_volume_preserved():
+    sphere = Brep.from_sphere(Sphere(1.0))
+    restored = Brep.__from_data__(sphere.__data__)
+    assert TOL.is_close(restored.volume, sphere.volume)
+
+
+def test_builder_rectangular_crop_helper_is_gone():
+    from compas_brep.backend.rhino import conversion
+
+    assert not hasattr(conversion, "_trim_nurbs_surface_from_2d")
+
+
+# =============================================================================
+# 6. v6 format: explicit loop roles, non-nullable pcurves
+# =============================================================================
+
+
+def test_v6_loops_are_tagged_with_a_role(boolean_diff_brep):
+    """Every loop the Rhino writer emits carries a role; every face has one outer loop."""
+    data = boolean_diff_brep.__data__
+
+    assert data["version"] == 6
+    for face in data["faces"]:
+        roles = [loop["type"] for loop in face["loops"]]
+        assert set(roles) <= {"outer", "inner"}
+        assert roles.count("outer") == 1
+
+    # The cut goes clean through, so at least one face is holed and the tag matters.
+    assert any("inner" in [loop["type"] for loop in face["loops"]] for face in data["faces"])
+
+
+def test_v6_pcurve_is_never_null(boolean_diff_brep):
+    """curve_2d is non-nullable in v6: the Rhino writer emits a pcurve for every trim."""
+    data = boolean_diff_brep.__data__
+
+    trims = [t for f in data["faces"] for loop in f["loops"] for t in loop["trims"]]
+    assert len(trims) > 0
+    assert all(t["curve_2d"] is not None for t in trims)
+
+
+def test_v6_loop_order_does_not_change_the_rebuilt_shape(boolean_diff_brep):
+    """Reordering the loops array is a no-op: role comes from the tag, not the position."""
+    data = boolean_diff_brep.__data__
+
+    shuffled = json.loads(json.dumps(data))
+    for face in shuffled["faces"]:
+        face["loops"].reverse()
+
+    # Guard the test itself: reversing must actually move an outer loop off index 0,
+    # otherwise this would pass against a positional reader too.
+    assert any(face["loops"][0]["type"] == "inner" for face in shuffled["faces"])
+
+    restored = Brep.__from_data__(shuffled)
+    assert len(restored.faces) == len(boolean_diff_brep.faces)
+    assert TOL.is_close(restored.volume, boolean_diff_brep.volume)
+
+
+def test_v6_face_with_no_outer_loop_raises(boolean_diff_brep):
+    """A face whose loops are all tagged inner is an error, not a silent guess."""
+    data = boolean_diff_brep.__data__
+    for loop in data["faces"][0]["loops"]:
+        loop["type"] = "inner"
+
+    with pytest.raises(BrepError):
+        Brep.__from_data__(data)
+
+
+def test_v6_null_pcurve_raises(boolean_diff_brep):
+    """A v6 document with a null pcurve is rejected rather than rebuilt approximately."""
+    data = boolean_diff_brep.__data__
+    data["faces"][0]["loops"][0]["trims"][0]["curve_2d"] = None
+
+    with pytest.raises(BrepError):
+        Brep.__from_data__(data)
+
+
+def test_roundtrip_box_with_hole(boolean_diff_brep):
+    """A box with a through-hole round-trips with the hole intact."""
+    restored = Brep.__from_data__(json.loads(json.dumps(boolean_diff_brep.__data__)))
+
+    assert len(restored.faces) == len(boolean_diff_brep.faces)
+    assert TOL.is_close(restored.volume, boolean_diff_brep.volume)

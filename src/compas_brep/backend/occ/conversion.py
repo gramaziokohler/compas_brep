@@ -9,12 +9,15 @@ All COMPAS↔OCC conversion logic lives here:
 from __future__ import annotations
 
 from math import atan
+from math import pi
 from math import tan
 from typing import TYPE_CHECKING
 from typing import Any
 
+from compas.geometry import Circle
 from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
+from compas.geometry import Ellipse
 from compas.geometry import Frame
 from compas.geometry import Line
 from compas.geometry import Plane
@@ -28,22 +31,27 @@ from OCP.BRepAdaptor import BRepAdaptor_Curve
 from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeEdge
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
+from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeWire
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
 from OCP.BRepTools import BRepTools
 from OCP.BRepTools import BRepTools_WireExplorer
 from OCP.Geom import Geom_BSplineCurve
 from OCP.Geom import Geom_BSplineSurface
+from OCP.Geom import Geom_Circle
 from OCP.Geom import Geom_ConicalSurface
 from OCP.Geom import Geom_CylindricalSurface
+from OCP.Geom import Geom_Ellipse
 from OCP.Geom import Geom_RectangularTrimmedSurface
 from OCP.Geom import Geom_SphericalSurface
 from OCP.Geom import Geom_ToroidalSurface
 from OCP.Geom2d import Geom2d_BSplineCurve
 from OCP.Geom2d import Geom2d_Line
 from OCP.Geom2dConvert import Geom2dConvert
+from OCP.GeomAbs import GeomAbs_Circle
 from OCP.GeomAbs import GeomAbs_Cone
 from OCP.GeomAbs import GeomAbs_Cylinder
+from OCP.GeomAbs import GeomAbs_Ellipse
 from OCP.GeomAbs import GeomAbs_Line
 from OCP.GeomAbs import GeomAbs_Plane
 from OCP.GeomAbs import GeomAbs_Sphere
@@ -51,12 +59,15 @@ from OCP.GeomAbs import GeomAbs_Torus
 from OCP.GeomConvert import GeomConvert
 from OCP.gp import gp_Ax2  # noqa: F401
 from OCP.gp import gp_Ax3
+from OCP.gp import gp_Circ
 from OCP.gp import gp_Dir  # noqa: F401
+from OCP.gp import gp_Elips
 from OCP.gp import gp_Pln  # noqa: F401
 from OCP.gp import gp_Pnt  # noqa: F401
 from OCP.gp import gp_Pnt2d  # noqa: F401
 from OCP.gp import gp_Vec  # noqa: F401
 from OCP.ShapeConstruct import ShapeConstruct_Curve
+from OCP.ShapeFix import ShapeFix_Face
 from OCP.TColgp import TColgp_Array1OfPnt
 from OCP.TColgp import TColgp_Array1OfPnt2d
 from OCP.TColgp import TColgp_Array2OfPnt
@@ -70,11 +81,17 @@ from OCP.TopAbs import TopAbs_WIRE
 from OCP.TopExp import TopExp
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
+from OCP.TopoDS import TopoDS_Edge as _TopoDS_Edge
 from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 
 from compas_brep.curves import NurbsCurve
+from compas_brep.curves import edge_curve_to_data
 from compas_brep.errors import BrepError
+from compas_brep.exchange import EXCHANGE_VERSION
+from compas_brep.exchange import LOOP_INNER
+from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import loop_to_data
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
 
@@ -128,8 +145,9 @@ def occ_extract_topology(brep: Brep) -> None:
             vertex_map[h] = OccBrepVertex(occ_vertex)
         return vertex_map[h]
 
-    # Edge deduplication: same OCC edge (by IsSame) → same OccBrepEdge instance
-    edge_registry = []  # list of (occ_edge, OccBrepEdge)
+    # Edge deduplication, keyed the same way as the vertices above: TopoDS hashing
+    # ignores orientation, so it partitions exactly as ``IsSame`` does.
+    edge_map = {}  # hash(TopoDS_Edge) -> OccBrepEdge
 
     all_faces = []
     all_edges = []
@@ -178,15 +196,10 @@ def occ_extract_topology(brep: Brep) -> None:
                     else:
                         start_v, end_v = edge_verts[0], edge_verts[1]
 
-                # Shared edge deduplication via IsSame
-                brep_edge = None
-                for reg_occ_edge, reg_brep_edge in edge_registry:
-                    if occ_edge.IsSame(reg_occ_edge):
-                        brep_edge = reg_brep_edge
-                        break
+                brep_edge = edge_map.get(occ_edge.__hash__())
                 if brep_edge is None:
                     brep_edge = OccBrepEdge(occ_edge, start_v, end_v)
-                    edge_registry.append((occ_edge, brep_edge))
+                    edge_map[occ_edge.__hash__()] = brep_edge
                     all_edges.append(brep_edge)
 
                 # Trim wraps oriented edge on this face; pcurve is deferred
@@ -320,15 +333,64 @@ def _extract_pcurve(occ_edge: Any, occ_face: Any) -> NurbsCurve | None:
 
 
 def _ax3_to_frame(ax3) -> Frame:
-    """Convert an OCC gp_Ax3 to a COMPAS Frame."""
+    """Convert an OCC gp_Ax3 to a COMPAS Frame.
+
+    A COMPAS Frame is always right-handed -- its z-axis *is* x cross y -- while a
+    ``gp_Ax3`` need not be: a left-handed ("indirect") one carries a ``Direction()``
+    equal to minus x cross y. OCC parameterizes its analytic surfaces along
+    ``Direction()``, so building the frame from x and y alone hands the document an
+    axis pointing the opposite way to the one the pcurves were measured against.
+    Nothing catches it on a shape whose placements happen to be right-handed --
+    a plain cylinder is one -- but a fillet produces both, and there the rebuilt
+    face lands a distance ``2v`` from its own edges.
+
+    Negating y instead keeps the frame's z on ``Direction()``, which is what the
+    document means by the axis. The cost is that u then runs the other way, and
+    that is paid in :func:`_flip_pcurve_u` where the pcurves are written.
+    """
     loc = ax3.Location()
     xdir = ax3.XDirection()
     ydir = ax3.YDirection()
+    yaxis = Vector(ydir.X(), ydir.Y(), ydir.Z())
+    if not ax3.Direct():
+        yaxis = yaxis * -1.0
     return Frame(
         Point(loc.X(), loc.Y(), loc.Z()),
         Vector(xdir.X(), xdir.Y(), xdir.Z()),
-        Vector(ydir.X(), ydir.Y(), ydir.Z()),
+        yaxis,
     )
+
+
+def _face_placement_is_indirect(occ_face: Any) -> bool:
+    """Whether a face's analytic placement is left-handed.
+
+    Only the four surfaces carried by a ``gp_Ax3`` can be: a plane is written as a
+    point and a normal taken straight from its axis, and pins no u at all.
+    """
+    adaptor = BRepAdaptor_Surface(occ_face)
+    stype = adaptor.GetType()
+    if stype == GeomAbs_Cylinder:
+        return not adaptor.Cylinder().Position().Direct()
+    if stype == GeomAbs_Sphere:
+        return not adaptor.Sphere().Position().Direct()
+    if stype == GeomAbs_Torus:
+        return not adaptor.Torus().Position().Direct()
+    if stype == GeomAbs_Cone:
+        return not adaptor.Cone().Position().Direct()
+    return False
+
+
+def _flip_pcurve_u(pcurve: NurbsCurve) -> NurbsCurve:
+    """Mirror a pcurve's u, undoing the y-axis negation in :func:`_ax3_to_frame`.
+
+    Negating the frame's y-axis reverses the sense in which u sweeps, so a pcurve
+    measured in OCC's parameter space needs ``u -> -u`` to describe the same curve
+    in the document's. Only the control points move; knots, weights, and degree
+    are unaffected, because mirroring u is affine in the parameter plane and does
+    not touch the curve's own parameterization.
+    """
+    pcurve._points = [Point(-point.x, point.y, point.z) for point in pcurve._points]
+    return pcurve
 
 
 def _frame_to_ax3(frame: Frame):
@@ -462,20 +524,69 @@ def _bspline_surface_to_nurbs(bspline: Any) -> NurbsSurface:
     )
 
 
-def _extract_edge_curve(occ_edge: Any) -> Line | NurbsCurve:
-    """Extract 3D curve from an OCC edge, returning Line or NurbsCurve."""
+def _occ_ax2_to_frame(position: Any) -> Frame:
+    """Convert a ``gp_Ax2`` to a COMPAS frame, preserving its x-axis.
+
+    The x-axis is not decoration: it is where parameter 0 sits, and the document's
+    analytic curves are parameterized from it.
+    """
+    origin = position.Location()
+    xdir = position.XDirection()
+    ydir = position.YDirection()
+    return Frame(
+        Point(origin.X(), origin.Y(), origin.Z()),
+        Vector(xdir.X(), xdir.Y(), xdir.Z()),
+        Vector(ydir.X(), ydir.Y(), ydir.Z()),
+    )
+
+
+def _extract_edge_curve_and_domain(
+    occ_edge: Any,
+) -> tuple[Line | Circle | Ellipse | NurbsCurve, tuple[float, float] | None]:
+    """Extract an OCC edge's 3D curve together with the interval it runs over.
+
+    A circular or elliptical edge comes back as the COMPAS conic plus its parameter
+    interval, rather than as a NURBS approximation of itself. That is what lets an
+    exact cylinder carry exact circular seams: OCC writes a circle as a degree-11
+    polynomial approximation whose parameter is not its angle, so a NURBS seam and
+    the wall's pcurve (linear in angle) trace the same circle at different rates.
+    """
     adaptor = BRepAdaptor_Curve(occ_edge)
     ctype = adaptor.GetType()
+    domain = (adaptor.FirstParameter(), adaptor.LastParameter())
 
     if ctype == GeomAbs_Line:
         first = adaptor.Value(adaptor.FirstParameter())
         last = adaptor.Value(adaptor.LastParameter())
-        return Line(
-            Point(first.X(), first.Y(), first.Z()),
-            Point(last.X(), last.Y(), last.Z()),
+        return (
+            Line(
+                Point(first.X(), first.Y(), first.Z()),
+                Point(last.X(), last.Y(), last.Z()),
+            ),
+            None,
         )
 
-    # For circles, BSplines, and other curve types, convert to BSpline
+    if ctype == GeomAbs_Circle:
+        circ = adaptor.Circle()
+        return Circle(circ.Radius(), frame=_occ_ax2_to_frame(circ.Position())), domain
+
+    if ctype == GeomAbs_Ellipse:
+        elips = adaptor.Ellipse()
+        return (
+            Ellipse(
+                elips.MajorRadius(),
+                elips.MinorRadius(),
+                frame=_occ_ax2_to_frame(elips.Position()),
+            ),
+            domain,
+        )
+
+    return _extract_edge_curve_as_nurbs(occ_edge, adaptor), None
+
+
+def _extract_edge_curve_as_nurbs(occ_edge: Any, adaptor: Any) -> Line | NurbsCurve:
+    """Convert any non-analytic OCC edge curve to a NurbsCurve."""
+    # For BSplines and other curve types, convert to BSpline
     first_param = adaptor.FirstParameter()
     last_param = adaptor.LastParameter()
 
@@ -577,12 +688,13 @@ def occ_brep_to_data(brep: Brep) -> dict:
 
     # --- Edges ---
     edge_list = []
-    edge_registry = []  # (occ_edge, index) for IsSame deduplication
+    edge_id_map = {}  # hash(TopoDS_Edge) -> list index; hashing ignores orientation,
+    # so it partitions exactly as IsSame does, and matches _vertex_id above.
 
     def _edge_id(occ_edge):
-        for reg_edge, idx in edge_registry:
-            if occ_edge.IsSame(reg_edge):
-                return idx
+        h = occ_edge.__hash__()
+        if h in edge_id_map:
+            return edge_id_map[h]
 
         try:
             occ_first = TopExp.FirstVertex_s(occ_edge, False)
@@ -603,21 +715,12 @@ def occ_brep_to_data(brep: Brep) -> dict:
                 start_id = _vertex_id(verts[0])
                 end_id = _vertex_id(verts[1])
 
-        curve = _extract_edge_curve(occ_edge)
-        if isinstance(curve, Line):
-            curve_data = {
-                "type": "line",
-                "data": [
-                    [curve.start.x, curve.start.y, curve.start.z],
-                    [curve.end.x, curve.end.y, curve.end.z],
-                ],
-            }
-        else:
-            curve_data = {"type": "nurbs", "data": curve.__data__}
+        curve, domain = _extract_edge_curve_and_domain(occ_edge)
+        curve_data = edge_curve_to_data(curve, domain)
 
         idx = len(edge_list)
         edge_list.append({"start": start_id, "end": end_id, "curve": curve_data})
-        edge_registry.append((occ_edge, idx))
+        edge_id_map[h] = idx
         return idx
 
     # --- Faces ---
@@ -626,12 +729,23 @@ def occ_brep_to_data(brep: Brep) -> dict:
     face_exp = TopExp_Explorer(shape, TopAbs_FACE)
     while face_exp.More():
         occ_face = TopoDS.Face_s(face_exp.Current())
-        is_reversed = occ_face.Orientation() == TopAbs_REVERSED
 
         surface = _extract_surface(occ_face)
         surface_data = surface_to_data(surface)
+        # A left-handed placement was straightened in _ax3_to_frame; the pcurves
+        # below are still in OCC's u and have to be mirrored to match.
+        u_is_flipped = _face_placement_is_indirect(occ_face)
+        # Mirroring u negates du, so the document's surface normal (du cross dv)
+        # points opposite OCC's. The face itself has not moved, so the orientation
+        # flag has to absorb that flip -- otherwise the face keeps OCC's flag
+        # against a surface that now faces the other way, and the rebuilt face is
+        # inside out.
+        is_reversed = (occ_face.Orientation() == TopAbs_REVERSED) != u_is_flipped
+
+        occ_outer_wire = BRepTools.OuterWire_s(occ_face)
 
         loops = []
+        has_outer = False
         wire_exp = TopExp_Explorer(occ_face, TopAbs_WIRE)
         while wire_exp.More():
             occ_wire = TopoDS.Wire_s(wire_exp.Current())
@@ -643,20 +757,28 @@ def occ_brep_to_data(brep: Brep) -> dict:
                 edge_idx = _edge_id(occ_edge)
 
                 pcurve = _extract_pcurve(occ_edge, occ_face)
+                if pcurve is None:
+                    raise BrepError(f"Cannot serialize a trim without a pcurve (edge {edge_idx})")
+                if u_is_flipped:
+                    pcurve = _flip_pcurve_u(pcurve)
                 trims.append(
                     {
                         "edge": edge_idx,
                         "is_reversed": edge_reversed,
-                        "curve_2d": pcurve.__data__ if pcurve is not None else None,
+                        "curve_2d": pcurve.__data__,
                     }
                 )
                 wire_explorer.Next()
 
             if trims:
-                loops.append(trims)
+                is_outer = occ_wire.IsSame(occ_outer_wire)
+                has_outer = has_outer or is_outer
+                loops.append(loop_to_data(LOOP_OUTER if is_outer else LOOP_INNER, trims))
             wire_exp.Next()
 
         if loops:
+            if not has_outer:
+                raise BrepError("Cannot serialize a face whose wires include no outer wire")
             face_list.append(
                 {
                     "surface": surface_data,
@@ -668,7 +790,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
         face_exp.Next()
 
     return {
-        "version": 5,
+        "version": EXCHANGE_VERSION,
         "vertices": vertex_list,
         "edges": edge_list,
         "faces": face_list,
@@ -686,11 +808,23 @@ def brep_to_occ(brep: Brep) -> Any:
     If the brep has a cached native shape that is not dirty, returns it directly.
     Reconstructs properly trimmed faces from edge curves for both planar and
     NURBS surfaces, and caches native faces on each BrepFace for tessellation.
+
+    Every document vertex/edge is built at most once, keyed by the identity of
+    its ``BrepVertex``/``BrepEdge`` Python object (shared by construction --
+    ``occ_rebuild`` decodes each document index into a single object referenced
+    by every trim that uses it). Two faces referencing the same document edge
+    therefore get the *same* native ``TopoDS_Edge``/``TopoDS_Vertex`` rather than
+    two independently built ones left for ``BRepBuilderAPI_Sewing`` to merge by
+    tolerance. Relying on sewing tolerance instead of identity is what made
+    ``Brep.__from_data__(doc).__data__`` non-idempotent: each round trip's
+    approximate merge became the input to the next, compounding toward collapse.
     """
     if brep._native_brep is not None:
         return brep._native_brep
 
     sewing = BRepBuilderAPI_Sewing(1e-6)
+    vertex_cache: dict[int, Any] = {}
+    edge_cache: dict[int, Any] = {}
 
     for face in brep._faces:
         surface = face.surface
@@ -702,7 +836,7 @@ def brep_to_occ(brep: Brep) -> Any:
             )
 
             # Build outer wire from edge curves (handles both polygon and curved boundaries)
-            outer_wire = _loop_to_occ_wire(face.outer_loop)
+            outer_wire = _loop_to_occ_wire(face.outer_loop, vertex_cache, edge_cache)
             if outer_wire is None:
                 # Fallback to vertex-based wire for simple polygons
                 points = [v.point for v in face.outer_loop.vertices]
@@ -710,18 +844,28 @@ def brep_to_occ(brep: Brep) -> Any:
             occ_face = BRepBuilderAPI_MakeFace(pln, outer_wire).Face()
 
             for inner_loop in face._inner_loops:
-                inner_wire = _loop_to_occ_wire(inner_loop)
+                inner_wire = _loop_to_occ_wire(inner_loop, vertex_cache, edge_cache)
                 if inner_wire is None:
                     inner_points = [v.point for v in inner_loop.vertices]
                     inner_wire = _points_to_occ_wire(inner_points)
                 occ_face = BRepBuilderAPI_MakeFace(occ_face, inner_wire).Face()
 
+            if face._inner_loops:
+                # A planar face is built from its 3D wires, whose winding carries no
+                # information about which wire is a hole -- OCC reads that from wire
+                # orientation, and ``MakeFace`` adds a wire without reorienting it. An
+                # inner wire that happens to wind with the outer one adds its area
+                # instead of subtracting it, so let OCC settle each wire's role.
+                fixer = ShapeFix_Face(occ_face)
+                fixer.FixOrientation()
+                occ_face = fixer.Face()
+
         elif isinstance(surface, NurbsSurface):
             occ_surface = _nurbs_surface_to_occ(surface)
-            occ_face = _build_trimmed_face(occ_surface, face)
+            occ_face = _build_trimmed_face(occ_surface, face, vertex_cache, edge_cache)
         elif isinstance(surface, (CylindricalSurface, SphericalSurface, ToroidalSurface, ConicalSurface)):
             occ_surface = _analytic_surface_to_occ(surface)
-            occ_face = _build_trimmed_face(occ_surface, face)
+            occ_face = _build_trimmed_face(occ_surface, face, vertex_cache, edge_cache)
         else:
             continue
 
@@ -776,76 +920,203 @@ def _pcurve_to_geom2d(pcurve: NurbsCurve) -> Any:
     return Geom2d_BSplineCurve(poles, weights, knots, mults, pcurve._degree)
 
 
-def _build_trimmed_face(occ_surface: Any, face: BrepFace) -> Any:
+def _analytic_curve_to_occ(curve: Circle | Ellipse) -> Any:
+    """Convert a COMPAS ``Circle`` / ``Ellipse`` to its native OCC conic.
+
+    The frame's x-axis carries over as the conic's ``XDirection``, which is what
+    makes OCC's parameterization agree with the document's -- see
+    :func:`compas_brep.exchange.analytic_curve_point`.
+    """
+    ax2 = _frame_to_ax2(curve.frame)
+    if isinstance(curve, Circle):
+        return Geom_Circle(gp_Circ(ax2, curve.radius))
+    return Geom_Ellipse(gp_Elips(ax2, curve.major, curve.minor))
+
+
+def _get_or_build_vertex(vertex: Any, vertex_cache: dict[int, Any]) -> Any:
+    """Build (or reuse) the native OCC vertex for a canonical ``BrepVertex``.
+
+    Cached per document vertex identity so that every edge meeting at the same
+    document vertex shares one native ``TopoDS_Vertex`` instead of each edge
+    minting its own coincident-but-distinct vertex for ``BRepBuilderAPI_Sewing``
+    to merge by tolerance.
+    """
+    key = id(vertex)
+    occ_vertex = vertex_cache.get(key)
+    if occ_vertex is None:
+        p = vertex.point
+        occ_vertex = BRepBuilderAPI_MakeVertex(gp_Pnt(p.x, p.y, p.z)).Vertex()
+        vertex_cache[key] = occ_vertex
+    return occ_vertex
+
+
+def _edge_to_occ_edge(edge: Any, vertex_cache: dict[int, Any], edge_cache: dict[int, Any]) -> Any:
+    """Build (or reuse) the native OCC edge for a canonical ``BrepEdge``, or None if degenerate.
+
+    Every rebuild path goes through here so that an edge curve type is handled in
+    one place rather than in each wire builder independently.
+
+    Cached per document edge identity (``occ_rebuild`` decodes each document edge
+    index into a single ``BrepEdge`` shared by every trim that uses it), and built
+    from cached, shared vertices, so that two faces referencing the same document
+    edge get the same native ``TopoDS_Edge``. The returned edge is always
+    FORWARD-oriented; callers needing the reversed sense must use
+    :func:`_reversed_edge` to get a flipped copy rather than mutate this one in
+    place, since mutation would corrupt every other face already holding a
+    reference to it.
+    """
+    key = id(edge)
+    if key in edge_cache:
+        return edge_cache[key]
+
+    curve = edge.curve
+
+    if isinstance(curve, (Circle, Ellipse)):
+        # Before the coincident-endpoint check below: a full circular seam starts
+        # and ends at the same point without being degenerate.
+        occ_curve = _analytic_curve_to_occ(curve)
+        domain = edge.domain if edge.domain is not None else (0.0, 2.0 * pi)
+        v_start = _get_or_build_vertex(edge.first_vertex, vertex_cache)
+        v_end = _get_or_build_vertex(edge.last_vertex, vertex_cache)
+        occ_edge = BRepBuilderAPI_MakeEdge(occ_curve, v_start, v_end, domain[0], domain[1]).Edge()
+        edge_cache[key] = occ_edge
+        return occ_edge
+
+    if isinstance(curve, NurbsCurve):
+        v_start = _get_or_build_vertex(edge.first_vertex, vertex_cache)
+        v_end = _get_or_build_vertex(edge.last_vertex, vertex_cache)
+        occ_edge = BRepBuilderAPI_MakeEdge(_nurbs_curve_to_occ(curve), v_start, v_end).Edge()
+        edge_cache[key] = occ_edge
+        return occ_edge
+
+    sp = edge.first_vertex.point
+    ep = edge.last_vertex.point
+    dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+    v_start = _get_or_build_vertex(edge.first_vertex, vertex_cache)
+    v_end = _get_or_build_vertex(edge.last_vertex, vertex_cache)
+
+    if dist < 1e-9:
+        occ_edge = _degenerate_occ_edge(v_start, v_end)
+        edge_cache[key] = occ_edge
+        return occ_edge
+
+    occ_edge = BRepBuilderAPI_MakeEdge(v_start, v_end).Edge()
+    edge_cache[key] = occ_edge
+    return occ_edge
+
+
+def _degenerate_occ_edge(v_start: Any, v_end: Any) -> Any:
+    """Assemble a degenerate OCC edge between two coincident native vertices.
+
+    Both of the document's spellings of a collapsed boundary land here -- OCC's
+    zero-length edge and Rhino's singular trim. The pcurve is attached by the caller.
+    """
+    # A bare MakeEdge(V, V) fails ("vertices are coincident"): no curve to infer a
+    # direction from. Assembled by hand the way OCC structures its own degenerate
+    # edges instead -- the same vertex twice, once forward once reversed.
+    builder = BRep_Builder()
+    occ_edge = _TopoDS_Edge()
+    builder.MakeEdge(occ_edge)
+    builder.Add(occ_edge, v_start)
+    builder.Add(occ_edge, TopoDS.Vertex_s(v_end.Reversed()))
+    builder.Degenerated(occ_edge, True)
+    return occ_edge
+
+
+def _singular_trim_to_occ_edge(trim: Any, vertex_cache: dict[int, Any], edge_cache: dict[int, Any]) -> Any:
+    """Build (or reuse) the degenerate OCC edge a singular trim collapses to.
+
+    Keyed by the trim rather than by an edge: a singular trim has no edge, and two
+    of them at the same pole bound different faces and need separate native edges.
+    """
+    key = id(trim)
+    occ_edge = edge_cache.get(key)
+    if occ_edge is None:
+        occ_vertex = _get_or_build_vertex(trim.vertex, vertex_cache)
+        occ_edge = _degenerate_occ_edge(occ_vertex, occ_vertex)
+        edge_cache[key] = occ_edge
+    return occ_edge
+
+
+def _reversed_edge(occ_edge: Any) -> Any:
+    """Return a reversed copy of a native OCC edge, sharing the underlying edge.
+
+    Uses ``Reversed()`` (a copy with a flipped orientation flag), never
+    ``Reverse()`` (an in-place mutation) -- the edge may be cached and shared by
+    another face, and mutating it in place would flip it there too.
+    """
+    return TopoDS.Edge_s(occ_edge.Reversed())
+
+
+def _build_trimmed_face(occ_surface: Any, face: BrepFace, vertex_cache: dict[int, Any], edge_cache: dict[int, Any]) -> Any:
     """Build an OCC face from any Geom_Surface with pcurve-based trimming.
 
     Constructs edges with pcurves attached so that OCC correctly handles
     periodic surfaces (e.g. cylinders) where 3D wire-only reconstruction
-    is ambiguous.
-
-    Falls back to domain-bounded or wire-based construction when pcurves
-    are not available.
+    is ambiguous. Every trim carries a pcurve -- the document makes it
+    non-nullable -- so there is no untrimmed-face path to fall back to.
     """
 
     builder = BRep_Builder()
 
-    # Check if all trims have pcurves
-    all_have_pcurves = all(t.curve_2d is not None for loop in face.loops for t in loop.trims) if face.outer_loop.trims else False
+    occ_face = _TopoDS_Face()
+    builder.MakeFace(occ_face, occ_surface, 1e-6)
 
-    if all_have_pcurves:
-        # Build face with explicit pcurve-based trimming
-        occ_face = _TopoDS_Face()
-        builder.MakeFace(occ_face, occ_surface, 1e-6)
+    # A periodic surface's seam edge is walked twice by this SAME face -- once
+    # in each direction, at u and u+period (e.g. a cone/cylinder wall's seam,
+    # or a cone apex's degenerate loop) -- as two trims sharing one document
+    # edge. Group by edge identity first so a seam gets BOTH its pcurves
+    # attached via BRep_Builder's two-pcurve UpdateEdge overload. Calling the
+    # single-pcurve overload once per trim would have the second call
+    # silently overwrite the first's (edge, face) representation, since both
+    # trims target the same edge on the same face -- collapsing the seam to
+    # one side and mistrimming the face.
+    # Singular trims are keyed by trim: they have no edge, so all of them would
+    # otherwise collide on id(None).
+    trims_by_edge: dict[int, list] = {}
+    for loop in face.loops:
+        for trim in loop.trims:
+            key = id(trim) if trim.is_singular else id(trim.edge)
+            trims_by_edge.setdefault(key, []).append(trim)
 
-        for loop_idx, loop in enumerate(face.loops):
-            wire = _TopoDS_Wire()
-            builder.MakeWire(wire)
+    occ_edges: dict[int, Any] = {}
+    for key, trims in trims_by_edge.items():
+        if trims[0].is_singular:
+            occ_edge = _singular_trim_to_occ_edge(trims[0], vertex_cache, edge_cache)
+        else:
+            occ_edge = _edge_to_occ_edge(trims[0].edge, vertex_cache, edge_cache)
+        if occ_edge is None:
+            continue
+        occ_edges[key] = occ_edge
 
-            for trim in loop.trims:
-                edge = trim.edge
-                curve = edge.curve
-                sp = edge.first_vertex.point
-                ep = edge.last_vertex.point
-                p0 = gp_Pnt(sp.x, sp.y, sp.z)
-                p1 = gp_Pnt(ep.x, ep.y, ep.z)
-                dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
+        if len(trims) == 1:
+            geom2d = _pcurve_to_geom2d(trims[0].curve_2d)
+            builder.UpdateEdge(occ_edge, geom2d, occ_face, 1e-6)
+        else:
+            forward = next((t for t in trims if not t.is_reversed), trims[0])
+            backward = next((t for t in trims if t.is_reversed), trims[-1])
+            c1 = _pcurve_to_geom2d(forward.curve_2d)
+            c2 = _pcurve_to_geom2d(backward.curve_2d)
+            builder.UpdateEdge(occ_edge, c1, c2, occ_face, 1e-6)
 
-                if isinstance(curve, NurbsCurve):
-                    occ_curve = _nurbs_curve_to_occ(curve)
-                    occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-                elif dist < 1e-9:
-                    continue
-                else:
-                    occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
+    for loop in face.loops:
+        wire = _TopoDS_Wire()
+        builder.MakeWire(wire)
 
-                # Attach pcurve to this face (all_have_pcurves guarantees not None)
-                if trim.curve_2d is not None:
-                    geom2d = _pcurve_to_geom2d(trim.curve_2d)
-                    builder.UpdateEdge(occ_edge, geom2d, occ_face, 1e-6)
+        for trim in loop.trims:
+            occ_edge = occ_edges.get(id(trim) if trim.is_singular else id(trim.edge))
+            if occ_edge is None:
+                continue
 
-                if trim.is_reversed:
-                    occ_edge.Reverse()
+            wire_edge = _reversed_edge(occ_edge) if trim.is_reversed else occ_edge
+            builder.Add(wire, wire_edge)
 
-                builder.Add(wire, occ_edge)
+        builder.Add(occ_face, wire)
 
-            builder.Add(occ_face, wire)
-
-        return occ_face
-
-    # Fallback: use domain bounds for untrimmed faces
-    _surf = face.surface
-    _surf_du = _surf.domain_u if isinstance(_surf, NurbsSurface) else None
-    _surf_dv = _surf.domain_v if isinstance(_surf, NurbsSurface) else None
-    du = face.domain_u or _surf_du
-    dv = face.domain_v or _surf_dv
-    if du is not None and dv is not None:
-        return BRepBuilderAPI_MakeFace(occ_surface, du[0], du[1], dv[0], dv[1], 1e-6).Face()
-
-    # Last resort: untrimmed face from surface
-    return BRepBuilderAPI_MakeFace(occ_surface, 1e-6).Face()
+    return occ_face
 
 
-def _loop_to_occ_wire(loop):
+def _loop_to_occ_wire(loop, vertex_cache: dict[int, Any], edge_cache: dict[int, Any]):
     """Create an OCC wire from a BrepLoop's trims or edge curves.
 
     When trims are present, respects edge orientation (is_reversed).
@@ -856,48 +1127,24 @@ def _loop_to_occ_wire(loop):
 
     if loop.trims:
         for trim in loop.trims:
-            edge = trim.edge
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            p0 = gp_Pnt(sp.x, sp.y, sp.z)
-            p1 = gp_Pnt(ep.x, ep.y, ep.z)
-            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-
-            if isinstance(curve, NurbsCurve):
-                occ_curve = _nurbs_curve_to_occ(curve)
-                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-            elif dist < 1e-9:
+            if trim.is_singular:
+                # A plane has no singularities, and this wire is assembled from 3D
+                # curves -- a singular trim has neither an edge nor any extent.
+                continue
+            occ_edge = _edge_to_occ_edge(trim.edge, vertex_cache, edge_cache)
+            if occ_edge is None:
                 continue  # Degenerate edge
-            elif isinstance(curve, Line):
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
-            else:
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
 
             # Apply orientation from trim
-            if trim.is_reversed:
-                occ_edge.Reverse()
+            wire_edge = _reversed_edge(occ_edge) if trim.is_reversed else occ_edge
 
-            wire_builder.Add(occ_edge)
+            wire_builder.Add(wire_edge)
     else:
         # Legacy path: direct edges
         for edge in loop.edges:
-            curve = edge.curve
-            sp = edge.first_vertex.point
-            ep = edge.last_vertex.point
-            p0 = gp_Pnt(sp.x, sp.y, sp.z)
-            p1 = gp_Pnt(ep.x, ep.y, ep.z)
-            dist = ((sp.x - ep.x) ** 2 + (sp.y - ep.y) ** 2 + (sp.z - ep.z) ** 2) ** 0.5
-
-            if isinstance(curve, NurbsCurve):
-                occ_curve = _nurbs_curve_to_occ(curve)
-                occ_edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
-            elif dist < 1e-9:
+            occ_edge = _edge_to_occ_edge(edge, vertex_cache, edge_cache)
+            if occ_edge is None:
                 continue
-            elif isinstance(curve, Line):
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
-            else:
-                occ_edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
 
             wire_builder.Add(occ_edge)
 

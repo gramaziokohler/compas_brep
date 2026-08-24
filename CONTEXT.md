@@ -28,6 +28,20 @@ Pure-Python value types storing control points, knots, and weights. Used as COMP
 **Pluggable**
 A `@pluggable`-decorated function in `compas_brep.operations`. Raises `NotImplementedError` by default. Each backend registers `@plugin` implementations gated by `requires=["OCP"]` or `requires=["Rhino"]`.
 
+**Exchange document**
+The COMPAS-native JSON produced by `Brep.__data__` and consumed by `Brep.__from_data__`. The medium for moving a Brep between backends. Always a **file/wire handoff** — one backend is live per process, and the document crosses a process boundary. Never requires both kernels in one process. STEP is a file format for third-party CAD interop, not the exchange document.
+_Avoid_: "serialization format" when the cross-backend contract is what's meant.
+
+**Representational fidelity**
+The bar an exchange must clear: a cylinder that leaves one backend arrives at the other as a `CylindricalSurface`, not as a NURBS approximation of one. Stronger than *geometric fidelity* (matching volume/area within tolerance), which a NURBS approximation would pass. See [ADR-0001](docs/adr/0001-native-json-brep-exchange.md).
+
+**Loop role**
+Whether a loop bounds a face from outside (`outer`) or cuts a hole in it (`inner`). Explicitly tagged in the exchange document as of v6. In v5 this was implied by position (`loops[0]` was outer), a convention no writer enforced.
+
+**Pcurve**
+The 2D curve of a trim in its face's parameter space (`BrepTrim.curve_2d`). Required — not optional — for an exact rebuild: it is what distinguishes a genuinely trimmed face from a rectangular patch.
+_Avoid_: "2D curve", "UV curve".
+
 ---
 
 ## Architecture
@@ -48,7 +62,7 @@ BrepFace.surface  →  Plane | CylindricalSurface | ConicalSurface | SphericalSu
 
 ## Surface Type Support
 
-OCC has eleven surface types (`GeomAbs`). The table below records what compas_brep can do with each:
+OCC has eleven surface types (`GeomAbs`). The table below records what compas_brep can do with each **via the OCC backend**. The Rhino backend must reach the same analytic coverage (`Surface.TryGetCylinder` / `TryGetSphere` / `TryGetTorus` / `TryGetCone` on extract; the ported builder on rebuild) — anything less fails the representational-fidelity bar, and anything unhandled raises rather than degrading.
 
 | OCC surface type | `face.surface` COMPAS type | Tessellation / viz | JSON serialize | JSON deserialize |
 |---|---|---|---|---|
@@ -76,17 +90,31 @@ OCC has eleven surface types (`GeomAbs`). The table below records what compas_br
 
 ## Serialization
 
-Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices, edges with curves, faces with surfaces, loops with trim curves) but as COMPAS/JSON, not STEP syntax.
+Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices, edges with curves, faces with surfaces, loops with trim curves) but as COMPAS/JSON, not STEP syntax. This is the **exchange document** — the supported way to move a Brep between the Rhino and OCC backends. See [ADR-0001](docs/adr/0001-native-json-brep-exchange.md).
 
 - `Brep.__data__` asks the backend to extract geometry/topology entities and encodes them as JSON.
-- `Brep.__from_data__` decodes the JSON and calls `brep_rebuild` (a pluggable) to reconstruct the native object. Requires a backend — no display-only fallback.
+- `Brep.__from_data__` decodes the JSON and calls `brep_rebuild` (a pluggable) to reconstruct the native object. **Requires a backend — no display-only fallback, no exceptions.** A consumer without a kernel gets a `Mesh`, not a `Brep`.
 - `brep_rebuild` is only called from `__from_data__`. After it runs, the native object is source of truth.
-- `Brep.to_step` / `Brep.from_step` are always available as the explicit file-level serialization path.
+- `Brep.to_step` / `Brep.from_step` remain available for third-party CAD interop. They are not the cross-backend exchange path.
+
+**Loss policy: never silently degrade.** A backend that encounters a surface or curve type it cannot represent raises `BrepError`. It does not fall back to an approximation, and it does not skip the entity. This generalizes the rule OCC's `_extract_surface` already followed. It exists because the opposite behaviour is what let `brep_to_rhino` silently drop every analytic face for an entire release.
 
 **Version history:**
 
 - **v4** (legacy): only `"plane"` and `"nurbs"` surface types. Cylinder/Cone/Sphere/Torus were serialized as `"nurbs"` (NURBS approximation).
-- **v5** (current): adds `"cylinder"`, `"cone"`, `"sphere"`, and `"torus"` surface type tags. Each uses the COMPAS analytic type's native `__data__`/`__from_data__` round-trip. The surface codec (`surfaces/_codec.py`) reads both v4 and v5 documents transparently — v4 files still deserialize correctly.
+- **v5**: adds `"cylinder"`, `"cone"`, `"sphere"`, and `"torus"` surface type tags. Each uses the COMPAS analytic type's native `__data__`/`__from_data__` round-trip. Written by both backends, but **only OCC ever produced the analytic tags** — Rhino's `_extract_surface` emitted `plane`/`nurbs` only, and Rhino's rebuild understood nothing else. v5 documents from OCC were therefore unreadable by Rhino (faces were dropped without error).
+- **v6** (current): closes the cross-backend gaps.
+  - Loops carry an explicit role: `{"type": "outer" | "inner", "trims": [...]}`. Position is no longer load-bearing.
+  - `curve_2d` is **non-nullable**. A writer that cannot produce a pcurve raises.
+  - Edge curves gain analytic tags: `line | circle | arc | ellipse | nurbs` (was `line | nurbs`). An exact cylinder now carries exact circular seams, removing the edge/surface tolerance mismatch that forced hand-tuned join tolerances.
+  - An analytic edge carries its conic **and the parameter interval the edge runs over** (`{"curve": ..., "domain": [t0, t1]}`). The interval is not redundant: a trim's pcurve is written over it, and the intervals real kernels produce do not fit COMPAS `Arc`'s `0 <= angle <= 2*pi` (OCC writes a sphere's meridian over `[3π/2, 5π/2]`). `circle` and `arc` therefore both carry a COMPAS `Circle`, differing only in whether the interval is a full turn; COMPAS `Arc` is deliberately unused. Codec in `curves/_codec.py`.
+  - Both backends read and write every tag. This is a contract, not a convention — see the schema test.
+
+**Collapsed boundaries have two spellings, and a reader must honor both.** A sphere's pole and a cone's apex are places where one side of a face's parameter rectangle is a single point in 3D. OCC writes a *degenerate edge* — an ordinary entry in `edges` whose two vertices coincide, referenced by an ordinary trim. Rhino cannot hold a degenerate edge at all (it rejects the whole Brep), so it writes a *singular trim*: `{"edge": -1, "vertex": <index>, ...}`, still carrying its pcurve, with the vertex saying which 3D point the whole pcurve maps to. Constants and helpers in `exchange.py` (`SINGULAR_TRIM_EDGE`, `singular_trim_to_data`, `singular_trim_vertex_id`). Dropping either spelling leaves the wire open at the pole, which is *nearly* invisible: area and volume integration over the open patch still converge to the right numbers, and only `BRepCheck_Analyzer` / `IsValidWithLog` reports it. That is exactly how it went unnoticed — `tests/test_exchange_fixtures.py` now asserts `is_valid` across every fixture for this reason.
+
+**Edge curve parameter space.** `t` is the angle about the frame's z-axis from the frame's x-axis: `centre + a·cos(t)·x + b·sin(t)·y`, with `a == b == radius` for a circle. This is OCC's native `Geom_Circle` / `Geom_Ellipse` parameterization, pinned against the real kernel on CI by `test_exchange_parameterization.py`. Note it is **not** the geometric angle of the point for an ellipse, and not arc length — Rhino measures these by arc length and must map onto this, exactly as it does for the analytic surfaces.
+
+The surface codec (`surfaces/_codec.py`) reads v4, v5, and v6 documents transparently.
 
 **Cone parameterization note:** OCC's `gp_Cone` is parameterized by `(Position, RefRadius, SemiAngle)`, where `RefRadius` is the base radius at the location origin and `SemiAngle` is the half-opening angle. COMPAS's `ConicalSurface` uses `(radius, height, frame)`. The conversion is `height = -RefRadius / tan(SemiAngle)` (negative SemiAngle for a tapering cone). The v5 JSON stores the COMPAS `radius` and `height` directly; the OCC SemiAngle is not preserved in the serialized form.
 
@@ -98,6 +126,20 @@ Format: STEP-inspired JSON. Encodes the same semantic entities as STEP (vertices
 - `@pytest.mark.occ` — requires OCC (`cadquery-ocp-novtk`). Runs on CI.
 - `@pytest.mark.rhino` — requires `rhinoinside`. Runs locally on a dev machine with a Rhino license. Skipped on CI (and by default locally — `addopts = "-m 'not rhino'"` in `pyproject.toml`).
 - No mock backend. Backend-dependent tests run against the real kernel.
+
+**Cross-backend exchange is verified by committed fixtures, not by live round-trips.** CI has no Rhino license, and `-m 'not rhino'` skips Rhino tests by default even locally — so any test that needs a live Rhino is a test that effectively never runs. (This is not hypothetical: `test_rhino_serialization.py` asserted `version == 4` for an entire release after the writer moved to 5, and nobody saw it fail.)
+
+The contract is pinned three ways:
+
+1. **Golden fixtures** — real Rhino-authored exchange documents committed under `tests/fixtures/` (`rhino_box`, `rhino_filleted_box`, `rhino_sphere`, `rhino_box_with_hole`). OCC-marked tests in `tests/test_exchange_fixtures.py` read them on CI and assert analytic types survive. This is the only mechanism that lets CI catch "Rhino writes a tag OCC can't read". `tests/fixtures/legacy_v4_box.json` keeps the v4 read path (positional loops, null pcurves) covered; it is hand-written because no backend writes v4 any more.
+2. **Fixture regeneration** — Rhino-marked tests regenerate the fixtures and assert they still match, so drift surfaces on a dev machine. To refresh them intentionally, on a licensed machine:
+
+   ```bash
+   pytest -m rhino tests/test_exchange_fixtures.py --refresh-fixtures
+   ```
+
+   Review the diff — a change there is a change to the cross-backend contract. `tests/exchange_fixtures.py` holds the source geometry.
+3. **Schema test** — both backends must round-trip every tag in the format's tag set (`tests/test_exchange_schema.py`). Cheap, runs on CI, and would have caught the dropped-cylinder bug on day one. A tag a backend cannot write yet is present as a `strict` xfail rather than omitted, so the gap is checked on every run instead of documented and forgotten.
 - No test classes. Tests are flat module-level `test_*` functions, not methods on `TestXxx` classes — grouping is expressed with `# =====` section-header comments and a `test_<group>_<name>` naming prefix (e.g. `test_constructors_from_box`), not nesting.
 
 **Before running tests, install the OCC backend:**

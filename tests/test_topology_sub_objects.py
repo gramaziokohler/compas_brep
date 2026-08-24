@@ -1,7 +1,9 @@
 """Tests for OCC native-handle topology sub-object wrappers (issue 02)."""
 
 import pytest
+from compas.geometry import Circle
 from compas.geometry import CylindricalSurface
+from compas.geometry import Ellipse
 from compas.geometry import Plane
 from compas.geometry import Point
 
@@ -122,7 +124,10 @@ def test_property_types_edge_curve_is_compas_type(box_brep):
     from compas.geometry import Line
 
     for e in box_brep.edges:
-        assert isinstance(e.curve, (Line, NurbsCurve))
+        # The format's full edge curve set. A box is all lines, so this pins the
+        # contract rather than exercising it -- the conics are covered in
+        # test_analytic_edge_curves.py.
+        assert isinstance(e.curve, (Line, Circle, Ellipse, NurbsCurve))
 
 
 def test_property_types_face_surface_planar_returns_plane(box_brep):

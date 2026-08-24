@@ -26,18 +26,35 @@ class BrepTrim:
 
     def __init__(
         self,
-        edge: BrepEdge,
+        edge: BrepEdge | None,
         is_reversed: bool = False,
         curve_2d: NurbsCurve | None = None,
+        vertex: BrepVertex | None = None,
     ) -> None:
         self._edge = edge
         self._is_reversed = is_reversed
         self._curve_2d: NurbsCurve | None = curve_2d
+        self._vertex = vertex
 
     @property
-    def edge(self) -> BrepEdge:
-        """The underlying shared BrepEdge."""
+    def edge(self) -> BrepEdge | None:
+        """The underlying shared BrepEdge, or None for a singular trim."""
         return self._edge
+
+    @property
+    def vertex(self) -> BrepVertex | None:
+        """The vertex a singular trim collapses to. None for an ordinary trim."""
+        return self._vertex
+
+    @property
+    def is_singular(self) -> bool:
+        """Whether this trim has no edge and collapses to a single vertex.
+
+        A sphere's poles are the canonical case: the trim spans the full u-range
+        of the surface at v = min or v = max, but every point on it is the same
+        point in 3D.
+        """
+        return self._edge is None
 
     @property
     def curve(self) -> NurbsCurve | None:
@@ -59,7 +76,9 @@ class BrepTrim:
 
     @property
     def curve_3d(self) -> Any:
-        """The 3D curve from the underlying edge."""
+        """The 3D curve from the underlying edge. None for a singular trim."""
+        if self._edge is None:
+            return None
         return self._edge.curve
 
     @property
@@ -74,6 +93,8 @@ class BrepTrim:
     @property
     def start_vertex(self) -> BrepVertex:
         """Start vertex in the trim's traversal direction."""
+        if self._edge is None:
+            return self._vertex
         if self._is_reversed:
             return self._edge.last_vertex
         return self._edge.first_vertex
@@ -81,6 +102,8 @@ class BrepTrim:
     @property
     def end_vertex(self) -> BrepVertex:
         """End vertex in the trim's traversal direction."""
+        if self._edge is None:
+            return self._vertex
         if self._is_reversed:
             return self._edge.first_vertex
         return self._edge.last_vertex
@@ -123,22 +146,12 @@ class BrepTrim:
                 points.append(pt)
             return points
 
+        if self._edge is None:
+            # A singular trim is a single point in 3D; without a pcurve to walk
+            # there is nothing to sample but the vertex it collapses to.
+            return [self._vertex.point] * (n + 1)
+
         return self._edge.sample_points(n=n)
-
-    # =========================================================================
-    # Serialization
-    # =========================================================================
-
-    @property
-    def __data__(self) -> dict:
-        data = {
-            "edge": self._edge.__data__,
-            "is_reversed": self._is_reversed,
-        }
-        curve_2d = self.curve_2d
-        if curve_2d is not None:
-            data["pcurve"] = curve_2d.__data__
-        return data
 
     def __repr__(self) -> str:
         rev = " reversed" if self._is_reversed else ""
