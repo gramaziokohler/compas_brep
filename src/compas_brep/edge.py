@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 
 from compas.geometry import Circle
+from compas.geometry import CurveType
 from compas.geometry import Ellipse
 from compas.geometry import Line
 from compas.geometry import Point
@@ -62,6 +63,16 @@ class BrepEdge:
         return self._end
 
     @property
+    def start_vertex(self) -> BrepVertex:
+        """Alias of :attr:`first_vertex`, for compatibility with ``compas_rhino``."""
+        return self._start
+
+    @property
+    def end_vertex(self) -> BrepVertex:
+        """Alias of :attr:`last_vertex`, for compatibility with ``compas_rhino``."""
+        return self._end
+
+    @property
     def vertices(self) -> list[BrepVertex]:
         return [self._start, self._end]
 
@@ -110,6 +121,40 @@ class BrepEdge:
         return True
 
     @property
+    def type(self) -> int:
+        """One of the :class:`compas.geometry.CurveType` constants."""
+        if self.is_line:
+            return CurveType.LINE
+        if self.is_circle or self.is_arc:
+            return CurveType.CIRCLE
+        if self.is_ellipse:
+            return CurveType.ELLIPSE
+        if self.is_bspline:
+            return CurveType.BSPLINE
+        return CurveType.OTHER
+
+    @property
+    def centroid(self) -> Point:
+        """The length-weighted centroid of the edge curve."""
+        curve = self.curve
+        if isinstance(curve, Line):
+            return curve.midpoint
+        points = self.sample_points(n=64)
+        total = 0.0
+        x = y = z = 0.0
+        for a, b in zip(points, points[1:]):
+            length = a.distance_to_point(b)
+            if length == 0.0:
+                continue
+            total += length
+            x += 0.5 * (a.x + b.x) * length
+            y += 0.5 * (a.y + b.y) * length
+            z += 0.5 * (a.z + b.z) * length
+        if total == 0.0:
+            return Point(*points[0])
+        return Point(x / total, y / total, z / total)
+
+    @property
     def length(self) -> float:
         curve = self.curve
         if isinstance(curve, NurbsCurve):
@@ -147,8 +192,11 @@ class BrepEdge:
         return self
 
     def to_line(self) -> Line:
-        if self.is_line:
-            return Line(Point(*self._start.point), Point(*self._end.point))
+        """The edge as a line between its two vertices.
+
+        For a non-linear edge this is the chord, not the curve. Matches the
+        behaviour of ``compas_occ``.
+        """
         return Line(Point(*self._start.point), Point(*self._end.point))
 
     # =========================================================================

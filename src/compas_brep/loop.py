@@ -5,6 +5,18 @@ from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
 
+class LoopType:
+    """Constants describing the role of a loop within its face.
+
+    Mirrors the loop types of ``Rhino.Geometry.BrepLoopType`` for the two cases
+    compas_brep distinguishes.
+    """
+
+    UNKNOWN = 0
+    OUTER = 1
+    INNER = 2
+
+
 class BrepLoop:
     """Pure Python implementation of a Brep loop.
 
@@ -12,10 +24,17 @@ class BrepLoop:
     When trims are present, edges are derived from them.
     """
 
-    def __init__(self, edges: list[BrepEdge] | None = None, trims: list[BrepTrim] | None = None) -> None:
+    def __init__(
+        self,
+        edges: list[BrepEdge] | None = None,
+        trims: list[BrepTrim] | None = None,
+        is_outer: bool = True,
+    ) -> None:
         self._trims: list[BrepTrim] = list(trims) if trims else []
         # Legacy: store edges directly when no trims are provided
         self._edges: list[BrepEdge] = list(edges) if edges and not trims else []
+        # Set by the owning BrepFace; a loop which isn't part of a face is its own boundary.
+        self._is_outer = is_outer
 
     @property
     def trims(self) -> list[BrepTrim]:
@@ -51,6 +70,25 @@ class BrepLoop:
         if verts and verts[0] is verts[-1]:
             verts.pop()
         return verts
+
+    @property
+    def is_outer(self) -> bool:
+        """True if this loop is the outer boundary of its face."""
+        return self._is_outer
+
+    @is_outer.setter
+    def is_outer(self, value: bool) -> None:
+        self._is_outer = bool(value)
+
+    @property
+    def is_inner(self) -> bool:
+        """True if this loop is an inner loop (a hole) of its face."""
+        return not self._is_outer
+
+    @property
+    def loop_type(self) -> int:
+        """One of the :class:`LoopType` constants."""
+        return LoopType.OUTER if self._is_outer else LoopType.INNER
 
     @property
     def is_valid(self) -> bool:

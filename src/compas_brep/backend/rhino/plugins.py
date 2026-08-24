@@ -301,6 +301,13 @@ def brep_is_valid(brep):
 
 
 @plugin(category="brep-queries", requires=["Rhino"])
+def face_to_nurbssurface(face):
+    from .conversion import rhino_face_to_nurbssurface
+
+    return rhino_face_to_nurbssurface(face.native_face)
+
+
+@plugin(category="brep-queries", requires=["Rhino"])
 def brep_extract_topology(brep):
     from .conversion import rhino_extract_topology
 
