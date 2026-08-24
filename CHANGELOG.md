@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Removed
+
+
+## [0.2.0] 2026-08-24
+
+### Added
+
+* Added cross-backend Brep exchange: a Brep serialized by one backend (Rhino or OCC) now deserializes on the other with representational fidelity — analytic surfaces (cylinder, cone, sphere, torus) and edge curves (circle, arc, ellipse) round-trip as their exact analytic type rather than a NURBS approximation. See [ADR-0001](.agents/adr/0001-native-json-brep-exchange.md).
+* Bumped the exchange document to v6: loop role (`outer`/`inner`) is now explicit rather than positional, and every trim carries a non-nullable pcurve — both close gaps that let one backend silently misread the other's document.
+* Added a low-level Rhino Brep builder (`backend/rhino/builder.py`) so a genuinely trimmed face rebuilds as trimmed rather than through Rhino's lossy high-level surface API. See [ADR-0002](.agents/adr/0002-rhino-rebuild-via-brepbuilder.md).
 * Added `BrepFace.boundary` and `BrepFace.holes`, and `BrepLoop.is_outer`, `BrepLoop.is_inner` and `BrepLoop.loop_type` along with the `LoopType` constants. Loops are tagged as outer/inner by the face that owns them.
 * Added `BrepFace.frame_at(u, v)` and `BrepFace.normal_at(u, v)`, which account for `BrepFace.is_reversed` so that opposite faces of a solid report opposite normals. `BrepFace.surface` is unchanged and still returns the raw, unflipped underlying surface.
 * Added `BrepFace.nurbssurface` and `BrepFace.native_face`, converting the underlying surface of a backend-backed face to a `NurbsSurface` via the new `face_to_nurbssurface` pluggable, for compatibility with `compas.geometry.BrepFace`.
