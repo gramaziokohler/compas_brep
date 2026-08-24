@@ -7,6 +7,10 @@ on:
   pull_request:
     branches:
       - main
+
+permissions:
+  contents: read
+
 jobs:
   build:
     if: "!contains(github.event.pull_request.labels.*.name, 'docs-only')"
@@ -16,9 +20,8 @@ jobs:
       - name: install viewer dependency (libegl1)
         run: sudo apt-get install -y libegl1
 
-      - uses: compas-dev/compas-actions.build@v5.1.0
+      - uses: compas-dev/compas-actions/ci@v1
         with:
-          python: "3.13"
-          invoke_lint: true
-          invoke_test: true
+          python-version: "3.13"
           extras: "occ,dev"
+          invoke-tasks: lint test
