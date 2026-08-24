@@ -28,6 +28,9 @@ jobs:
         os: [ubuntu-latest]
         python: ["3.13"]
     steps:
+      - name: install viewer dependency (libegl1)
+        run: sudo apt-get install -y libegl1
+
       - uses: compas-dev/compas-actions/ci@v1
         with:
           python-version: ${{ matrix.python }}
