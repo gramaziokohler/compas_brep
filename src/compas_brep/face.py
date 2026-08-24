@@ -13,7 +13,6 @@ from compas.tolerance import TOL
 from compas_brep.edge import BrepEdge
 from compas_brep.loop import BrepLoop
 from compas_brep.surfaces import NurbsSurface
-from compas_brep.surfaces import surface_to_data
 from compas_brep.vertex import BrepVertex
 
 
@@ -153,25 +152,6 @@ class BrepFace:
 
     def add_loop(self, loop: BrepLoop) -> None:
         self._inner_loops.append(loop)
-
-    # =========================================================================
-    # Serialization
-    # =========================================================================
-
-    @property
-    def __data__(self) -> dict:
-        surface_data = surface_to_data(self.surface)
-
-        face_data = {
-            "surface": surface_data,
-            "loops": [loop.__data__ for loop in self.loops],
-            "is_reversed": self._is_reversed,
-        }
-        if self._domain_u is not None:
-            face_data["domain_u"] = list(self._domain_u)
-        if self._domain_v is not None:
-            face_data["domain_v"] = list(self._domain_v)
-        return face_data
 
     def __repr__(self) -> str:
         return f"BrepFace({len(self.vertices)} vertices, {self.surface_type})"

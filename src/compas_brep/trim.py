@@ -153,21 +153,6 @@ class BrepTrim:
 
         return self._edge.sample_points(n=n)
 
-    # =========================================================================
-    # Serialization
-    # =========================================================================
-
-    @property
-    def __data__(self) -> dict:
-        data = {
-            "edge": self._edge.__data__ if self._edge is not None else None,
-            "is_reversed": self._is_reversed,
-        }
-        curve_2d = self.curve_2d
-        if curve_2d is not None:
-            data["pcurve"] = curve_2d.__data__
-        return data
-
     def __repr__(self) -> str:
         rev = " reversed" if self._is_reversed else ""
         pcurve = " +pcurve" if self._curve_2d else ""

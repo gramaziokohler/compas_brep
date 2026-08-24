@@ -29,6 +29,7 @@ from compas.geometry import Vector
 from compas.tolerance import TOL
 
 from compas_brep.exchange import analytic_curve_is_full_turn
+from compas_brep.exchange import analytic_curve_param
 from compas_brep.exchange import analytic_curve_point
 from compas_brep.exchange import analytic_surface_params
 from compas_brep.exchange import analytic_surface_point
@@ -139,6 +140,17 @@ def test_document_curve_evaluator_matches_the_occ_curve(tag):
         occ_point = occ_curve.Value(t)
         expected = analytic_curve_point(curve, t)
         assert TOL.is_allclose([occ_point.X(), occ_point.Y(), occ_point.Z()], expected), f"the document's {tag!r} parameter space disagrees with OCC's at t={t}"
+
+
+@pytest.mark.parametrize("tag", sorted(CURVES))
+def test_curve_param_inverts_the_evaluator(tag):
+    # The Rhino backend recovers an analytic edge's interval by unwrapping this
+    # along the edge, so a drift between the two shifts every pcurve on it.
+    curve = CURVES[tag]
+
+    for i in range(13):
+        t = -math.pi + 2 * math.pi * i / 13.0
+        assert TOL.is_close(analytic_curve_param(curve, analytic_curve_point(curve, t)), t)
 
 
 def test_a_full_turn_is_what_separates_circle_from_arc():

@@ -22,11 +22,13 @@ from exchange_fixtures import SOURCES
 from exchange_fixtures import documents_differ
 from exchange_fixtures import load_fixture
 from exchange_fixtures import load_occ_fixture
+from exchange_fixtures import read_fixture_document
 from exchange_fixtures import write_fixture
 from exchange_fixtures import write_occ_fixture
 
 from compas_brep import Brep
 from compas_brep.exchange import EXCHANGE_VERSION
+from compas_brep.exchange import SINGULAR_TRIM_EDGE
 
 # What each Rhino-authored fixture is expected to say.
 #
@@ -54,8 +56,8 @@ from compas_brep.exchange import EXCHANGE_VERSION
 # precision Rhino volume is on the order of 1e-7, from that rounding rather than
 # from any imprecision in the rebuild.
 #
-# ``rebuild_broken`` marks a fixture whose OCC rebuild is wrong today -- see the
-# xfails below. It is not a property of the fixture: the same shape authored by OCC
+# ``rebuild_invalid`` marks a fixture whose OCC rebuild still reports invalid -- see
+# the xfail below. Not a property of the fixture: the same shape authored by OCC
 # itself fails the same way.
 EXPECTED = {
     "box": {
@@ -64,7 +66,7 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 1.0,
         "volume_atol": 1e-6,
-        "rebuild_broken": False,
+        "rebuild_invalid": False,
     },
     "filleted_box": {
         "faces": 26,
@@ -72,7 +74,7 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 7.563414,
         "volume_atol": 1e-3,
-        "rebuild_broken": True,
+        "rebuild_invalid": True,
     },
     "sphere": {
         "faces": 1,
@@ -80,7 +82,7 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 4.18879,
         "volume_atol": 1e-6,
-        "rebuild_broken": False,
+        "rebuild_invalid": False,
     },
     "box_with_hole": {
         "faces": 7,
@@ -88,7 +90,7 @@ EXPECTED = {
         "loop_roles": {"outer", "inner"},
         "volume": 7.434513,
         "volume_atol": 1e-6,
-        "rebuild_broken": False,
+        "rebuild_invalid": False,
     },
     # The wall's surface is analytic and exact. Its seam / cap edges are now exact
     # circles too, refreshed from live Rhino via the LAMCP bridge (the reason this
@@ -102,7 +104,7 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 1.570796,
         "volume_atol": 1e-6,
-        "rebuild_broken": False,
+        "rebuild_invalid": False,
     },
     # The cone and torus join the cylinder with exact analytic seams, refreshed the
     # same way. A cone's caps make it a solid with a planar base (like the
@@ -113,7 +115,7 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 0.261799,
         "volume_atol": 1e-6,
-        "rebuild_broken": False,
+        "rebuild_invalid": False,
     },
     "torus": {
         "faces": 1,
@@ -121,7 +123,7 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 1.776529,
         "volume_atol": 1e-6,
-        "rebuild_broken": False,
+        "rebuild_invalid": False,
     },
 }
 
@@ -152,37 +154,51 @@ def _rebuilt_once(brep: Brep) -> dict:
 
 
 # =============================================================================
-# 1. The fixtures are well-formed v6 documents
+# 1. The committed files are well-formed v6 documents
 # =============================================================================
 
+# These read the file and never rebuild it. Written against
+# `load_fixture(name).__data__` instead, they tested the reader's re-serialization:
+# measured, a fixture regressed to v5 positional loops passed every one of them.
+# Section 2 exercises the rebuild; this section exercises the wire format.
+#
+# Unmarked, because reading JSON needs no kernel.
 
-@pytest.mark.occ
+
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_fixture_is_current_version(name):
-    assert load_fixture(name).__data__["version"] == EXCHANGE_VERSION
+def test_fixture_file_is_current_version(name):
+    assert read_fixture_document(name)["version"] == EXCHANGE_VERSION
 
 
-@pytest.mark.occ
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_fixture_every_face_has_exactly_one_outer_loop(name):
-    for face in load_fixture(name).__data__["faces"]:
+def test_fixture_file_every_face_has_exactly_one_outer_loop(name):
+    for face in read_fixture_document(name)["faces"]:
         roles = [loop["type"] for loop in face["loops"]]
         assert set(roles) <= {"outer", "inner"}
         assert roles.count("outer") == 1
 
 
-@pytest.mark.occ
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_fixture_no_trim_has_a_null_pcurve(name):
-    trims = _trims(load_fixture(name).__data__)
+def test_fixture_file_has_no_trim_with_a_null_pcurve(name):
+    trims = _trims(read_fixture_document(name))
     assert len(trims) > 0
     assert all(trim["curve_2d"] is not None for trim in trims)
 
 
-@pytest.mark.occ
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_fixture_says_what_it_is_expected_to_say(name):
-    data = load_fixture(name).__data__
+def test_fixture_file_every_singular_trim_carries_its_vertex(name):
+    # With no edge, the vertex index is the only thing placing the trim in 3D.
+    data = read_fixture_document(name)
+    singular = [trim for trim in _trims(data) if trim["edge"] == SINGULAR_TRIM_EDGE]
+
+    for trim in singular:
+        assert "vertex" in trim
+        assert 0 <= trim["vertex"] < len(data["vertices"])
+
+
+@pytest.mark.parametrize("name", FIXTURE_NAMES)
+def test_fixture_file_says_what_it_is_expected_to_say(name):
+    data = read_fixture_document(name)
     expected = EXPECTED[name]
 
     assert len(data["faces"]) == expected["faces"]
@@ -190,25 +206,19 @@ def test_fixture_says_what_it_is_expected_to_say(name):
     assert _loop_roles(data) == expected["loop_roles"]
 
 
-@pytest.mark.occ
-def test_fixture_box_with_hole_actually_has_an_inner_loop():
+def test_fixture_file_box_with_hole_actually_has_an_inner_loop():
     # Guards the harness: without this, "inner loops survive" could pass on a
     # document that has none.
-    data = load_fixture("box_with_hole").__data__
+    data = read_fixture_document("box_with_hole")
     holed = [f for f in data["faces"] if any(loop["type"] == "inner" for loop in f["loops"])]
     assert len(holed) == 2
 
 
-@pytest.mark.occ
-def test_fixture_sphere_poles_survive_occ_rebuild():
-    # Rhino's -1 singular-trim sentinel for a pole doesn't survive an OCC rebuild --
-    # OCC never writes it either, even for a sphere it authored itself fresh, so this
-    # can no longer be checked as a wire-format property once load_fixture always
-    # rebuilds. What must still survive is the poles themselves: two vertices, not
-    # collapsed into one or dropped.
-    restored = load_fixture("sphere")
-    assert len(_trims(restored.__data__)) > 0
-    assert len(restored.vertices) == 2
+def test_fixture_file_sphere_spells_its_poles_as_singular_trims():
+    # Guards the harness: the singular-trim read path below tests nothing if the
+    # committed document stops using Rhino's spelling.
+    trims = _trims(read_fixture_document("sphere"))
+    assert len([t for t in trims if t["edge"] == SINGULAR_TRIM_EDGE]) == 2
 
 
 # =============================================================================
@@ -223,24 +233,46 @@ def test_occ_rebuilds_fixture_with_face_count_intact(name):
     assert len(restored.faces) == EXPECTED[name]["faces"]
 
 
-# Why the volume of a curved fixture is wrong today: OCC's rebuild flips the
-# orientation of some curved faces, so they contribute negative area and the volume
-# comes out low. It is pre-existing and it is not a cross-backend problem -- an
-# OCC-authored filleted box round-trips through OCC the same way.
-_REBUILD_XFAIL = "OCC's rebuild flips the orientation of curved faces; see the note above."
+@pytest.mark.occ
+@pytest.mark.parametrize("name", FIXTURE_NAMES)
+def test_occ_rebuilds_fixture_with_volume_intact(name):
+    # Was a strict xfail for the filleted box, blamed on face orientation. The cause
+    # was the reader dropping Rhino's singular trims, leaving eight corner patches
+    # unclosed and the volume 0.5 low.
+    restored = load_fixture(name)
+    assert TOL.is_close(restored.volume, EXPECTED[name]["volume"], atol=EXPECTED[name]["volume_atol"])
+
+
+# The filleted box's eight corner patches come back BRepCheck_UnorientableShape: the
+# volume integrates correctly over them, but OCC cannot settle which side each bounds.
+# Not a cross-backend problem -- an OCC-authored filleted box round-trips the same way.
+_REBUILD_INVALID_XFAIL = "OCC cannot orient the rebuilt corner patches; see the note above."
 
 
 @pytest.mark.occ
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_occ_rebuilds_fixture_with_volume_intact(name, request):
-    # xfail, not deleted: this assertion is what found the rebuild defect recorded
-    # in .agents/issues/brep-exchange/progress.txt. strict=True, so whoever fixes
-    # the rebuild is told to un-xfail it rather than left to discover it.
-    if EXPECTED[name]["rebuild_broken"]:
-        request.node.add_marker(pytest.mark.xfail(strict=True, reason=_REBUILD_XFAIL))
+def test_occ_rebuilds_fixture_as_a_valid_shape(name, request):
+    # A sphere with its poles dropped still reported the right volume and area --
+    # integration over the open patch converges -- and passed every other test here.
+    # strict=True, so whoever fixes the corner patches is told to un-xfail it.
+    if EXPECTED[name]["rebuild_invalid"]:
+        request.node.add_marker(pytest.mark.xfail(strict=True, reason=_REBUILD_INVALID_XFAIL))
+
+    assert load_fixture(name).is_valid
+
+
+@pytest.mark.occ
+@pytest.mark.parametrize("name", ["sphere", "cone"])
+def test_occ_reads_rhinos_singular_trims_as_degenerate_edges(name):
+    # Asserts the translation happened, not just that the result is valid: skipping
+    # a singular trim leaves the wire open, which only `is_valid` above notices.
+    committed = read_fixture_document(name)
+    singular = [t for t in _trims(committed) if t["edge"] == SINGULAR_TRIM_EDGE]
+    assert len(singular) > 0
 
     restored = load_fixture(name)
-    assert TOL.is_close(restored.volume, EXPECTED[name]["volume"], atol=EXPECTED[name]["volume_atol"])
+    collapsed = [e for e in restored.edges if e.length < 1e-9]
+    assert len(collapsed) == len(singular)
 
 
 @pytest.mark.occ

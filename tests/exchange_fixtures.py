@@ -20,6 +20,7 @@ the diff: a change here is a change to the cross-backend contract.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from compas.data import json_dump
@@ -103,6 +104,18 @@ def occ_fixture_path(name: str) -> Path:
 
 def load_fixture(name: str) -> Brep:
     return json_load(fixture_path(name))
+
+
+def read_fixture_document(name: str) -> dict:
+    """The committed exchange document itself, with no rebuild in between.
+
+    ``load_fixture`` is ``json_load``, which is a full backend rebuild -- so
+    asserting against ``load_fixture(name).__data__`` tests the reader's
+    re-serialization, not what Rhino wrote. Needs no backend.
+    """
+    with open(fixture_path(name)) as f:
+        # json_dump wraps a Brep in COMPAS's {"dtype", "data", "guid"} envelope.
+        return json.load(f)["data"]
 
 
 def load_occ_fixture(name: str) -> Brep:

@@ -23,15 +23,17 @@ from compas.geometry import Sphere
 from compas.geometry import Torus
 
 from compas_brep import Brep
+from compas_brep.curves import EDGE_CURVE_TAGS
+from compas_brep.surfaces import SURFACE_TAGS
 from compas_brep.surfaces import NurbsSurface
 
 # =============================================================================
 # The format's tag set
 # =============================================================================
 
-SURFACE_TAGS = ["plane", "nurbs", "cylinder", "cone", "sphere", "torus"]
-
-EDGE_CURVE_TAGS = ["line", "nurbs", "circle", "arc", "ellipse"]
+# The tag sets come from the codecs rather than being restated here, so that a tag
+# added to one is a test that fails for want of a source rather than a tag nobody
+# checks. `test_every_tag_has_a_source` below is what enforces that.
 
 # Surface tags the Rhino writer cannot produce yet — it emits `nurbs` instead.
 # Empty: `cylinder` came out in slice 04, and `cone`/`sphere`/`torus` in slice 05,
@@ -129,7 +131,7 @@ def _expect_xfail(request, unwritable: set, tag: str, reason: str) -> None:
 
 
 @pytest.mark.occ
-@pytest.mark.parametrize("tag", SURFACE_TAGS)
+@pytest.mark.parametrize("tag", sorted(SURFACE_TAGS))
 def test_occ_roundtrips_surface_tag(tag):
     written, rewritten = _roundtrip(SURFACE_TAG_SOURCES[tag]())
 
@@ -138,7 +140,7 @@ def test_occ_roundtrips_surface_tag(tag):
 
 
 @pytest.mark.occ
-@pytest.mark.parametrize("tag", EDGE_CURVE_TAGS)
+@pytest.mark.parametrize("tag", sorted(EDGE_CURVE_TAGS))
 def test_occ_roundtrips_edge_curve_tag(tag, request):
     _expect_xfail(request, OCC_UNWRITABLE_EDGE_CURVE_TAGS, tag, f"the OCC writer emits 'nurbs' for a {tag!r} edge")
 
@@ -154,7 +156,7 @@ def test_occ_roundtrips_edge_curve_tag(tag, request):
 
 
 @pytest.mark.rhino
-@pytest.mark.parametrize("tag", SURFACE_TAGS)
+@pytest.mark.parametrize("tag", sorted(SURFACE_TAGS))
 def test_rhino_roundtrips_surface_tag(tag, request):
     _expect_xfail(request, RHINO_UNWRITABLE_SURFACE_TAGS, tag, f"the Rhino writer emits 'nurbs' for a {tag!r} face; slices 04 and 05 close this")
 
@@ -165,7 +167,7 @@ def test_rhino_roundtrips_surface_tag(tag, request):
 
 
 @pytest.mark.rhino
-@pytest.mark.parametrize("tag", EDGE_CURVE_TAGS)
+@pytest.mark.parametrize("tag", sorted(EDGE_CURVE_TAGS))
 def test_rhino_roundtrips_edge_curve_tag(tag, request):
     _expect_xfail(request, RHINO_UNWRITABLE_EDGE_CURVE_TAGS, tag, f"the Rhino writer emits 'nurbs' for a {tag!r} edge")
 
@@ -176,7 +178,19 @@ def test_rhino_roundtrips_edge_curve_tag(tag, request):
 
 
 # =============================================================================
-# 3. The readers reject a tag that is not in the set
+# 3. Every tag the codecs define is exercised above
+# =============================================================================
+
+
+def test_every_tag_has_a_source():
+    # The parametrized tests iterate the codecs' own tag sets, so a tag with no
+    # geometry to produce it would be a KeyError at collection. This says so plainly.
+    assert set(SURFACE_TAG_SOURCES) == set(SURFACE_TAGS)
+    assert set(EDGE_CURVE_TAG_SOURCES) == set(EDGE_CURVE_TAGS)
+
+
+# =============================================================================
+# 4. The readers reject a tag that is not in the set
 # =============================================================================
 
 

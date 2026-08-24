@@ -61,14 +61,6 @@ class BrepLoop:
     def native_loop(self) -> BrepLoop:
         return self
 
-    # =========================================================================
-    # Serialization
-    # =========================================================================
-
-    @property
-    def __data__(self) -> list[dict]:
-        return [trim.__data__ for trim in self._trims]
-
     def __repr__(self) -> str:
         if self._trims:
             return f"BrepLoop({len(self._trims)} trims)"

@@ -8,8 +8,6 @@ from compas.geometry import Line
 from compas.geometry import Point
 
 from compas_brep.curves import NurbsCurve
-from compas_brep.curves import edge_curve_from_data
-from compas_brep.curves import edge_curve_to_data
 from compas_brep.vertex import BrepVertex
 
 
@@ -152,39 +150,6 @@ class BrepEdge:
         if self.is_line:
             return Line(Point(*self._start.point), Point(*self._end.point))
         return Line(Point(*self._start.point), Point(*self._end.point))
-
-    # =========================================================================
-    # Serialization
-    # =========================================================================
-
-    @property
-    def __data__(self) -> dict:
-        """Serialize this edge to a dict."""
-        sp = self._start.point
-        ep = self._end.point
-        start_xyz = [sp.x, sp.y, sp.z]
-        end_xyz = [ep.x, ep.y, ep.z]
-        return {
-            "start": start_xyz,
-            "end": end_xyz,
-            "curve": edge_curve_to_data(self.curve, self._domain),
-        }
-
-    @classmethod
-    def __from_data__(cls, data: dict, start: BrepVertex, end: BrepVertex) -> BrepEdge:
-        """Deserialize an edge from a dict.
-
-        Parameters
-        ----------
-        data
-            Serialized edge data.
-        start
-            The start vertex (from shared vertex pool).
-        end
-            The end vertex (from shared vertex pool).
-        """
-        curve, domain = edge_curve_from_data(data["curve"])
-        return cls(start, end, curve=curve, domain=domain)
 
     # =========================================================================
     # Sampling

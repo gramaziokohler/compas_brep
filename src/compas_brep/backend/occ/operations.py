@@ -39,8 +39,10 @@ from compas_brep.curves import edge_curve_from_data
 from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepError
 from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import SINGULAR_TRIM_EDGE
 from compas_brep.exchange import document_version
 from compas_brep.exchange import face_loops_from_data
+from compas_brep.exchange import singular_trim_vertex_id
 from compas_brep.exchange import trim_pcurve_from_data
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
@@ -402,17 +404,13 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
             trims = []
             for td in loop_data:
                 edge_id = td["edge"]
-                if edge_id == -1:
-                    # Singular trim (a Rhino writer emits these at e.g. a sphere's
-                    # pole). It contributes no edge to the wire, and OCC derives its
-                    # own degenerate edges when building the face — so drop it here
-                    # rather than let ``edges[-1]`` silently bind the last edge.
-                    continue
+                is_singular = edge_id == SINGULAR_TRIM_EDGE
                 trims.append(
                     BrepTrim(
-                        edge=edges[edge_id],
+                        edge=None if is_singular else edges[edge_id],
                         is_reversed=td.get("is_reversed", False),
                         curve_2d=trim_pcurve_from_data(td, version),
+                        vertex=vertices[singular_trim_vertex_id(td)] if is_singular else None,
                     )
                 )
             loop = BrepLoop(trims=trims)

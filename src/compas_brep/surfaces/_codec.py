@@ -21,6 +21,9 @@ from compas.geometry import Vector
 
 from .nurbs import NurbsSurface
 
+#: Every face surface tag the exchange format defines.
+SURFACE_TAGS = ("plane", "nurbs", "cylinder", "sphere", "torus", "cone")
+
 
 def surface_to_data(surface) -> dict:
     """Encode a Brep face surface to a ``{"type", "data"}`` dict."""

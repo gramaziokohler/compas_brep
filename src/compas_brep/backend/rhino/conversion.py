@@ -31,6 +31,7 @@ from compas_brep.exchange import EXCHANGE_VERSION
 from compas_brep.exchange import LOOP_INNER
 from compas_brep.exchange import LOOP_OUTER
 from compas_brep.exchange import analytic_curve_is_full_turn
+from compas_brep.exchange import analytic_curve_param
 from compas_brep.exchange import analytic_curve_point
 from compas_brep.exchange import analytic_surface_params
 from compas_brep.exchange import analytic_surface_point
@@ -241,6 +242,10 @@ def _analytic_surface_and_param_map(rhino_surface):
     which is not a degradation: the face is natively a NURBS surface, so the
     ``nurbs`` tag reproduces it exactly.
 
+    Recovering the map costs four ``TryGet*`` probes and a 25-sample validation, so
+    callers that need it for a whole face resolve it once and pass it down rather
+    than calling this per trim.
+
     Returns
     -------
     tuple
@@ -331,7 +336,7 @@ def _param_map_holds(rhino_surface, surface, param_map):
     return True
 
 
-def _canonical_pcurve(pcurve, rhino_face):
+def _canonical_pcurve(pcurve, param_map):
     """Re-express a native pcurve in the parameter space the document defines.
 
     Every analytic tag needs this — Rhino measures all of them by arc length —
@@ -339,8 +344,10 @@ def _canonical_pcurve(pcurve, rhino_face):
     carries its own parameterization with it. The map is affine, and a NURBS curve
     — rational or not — is affine-invariant, so mapping the control points and
     leaving the knots, weights and degree alone is exact rather than a refit.
+
+    Takes the map rather than the face: it is a property of the face's surface, so
+    resolving it here would repeat the recovery for every trim on that face.
     """
-    _, param_map = _analytic_surface_and_param_map(rhino_face.UnderlyingSurface())
     if param_map is None:
         return pcurve
 
@@ -359,13 +366,22 @@ def _canonical_pcurve(pcurve, rhino_face):
 
 
 def _extract_surface(rhino_face):
-    """Extract a Rhino face's surface as the COMPAS type the document tags it with.
+    """Extract a Rhino face's surface as the COMPAS type the document tags it with."""
+    return _extract_surface_and_param_map(rhino_face)[0]
+
+
+def _extract_surface_and_param_map(rhino_face):
+    """A face's document surface, and the map its pcurves must be written through.
 
     Analytic faces come back as their analytic type — the bar ADR-0001 sets is
     representational fidelity, so a cylinder must leave here as a
     ``CylindricalSurface`` and not as a NURBS approximation of one. Anything the
     document has no analytic tag for is a NURBS surface natively, so ``nurbs``
     reproduces it exactly.
+
+    The map is ``None`` for the tags whose pcurves need no conversion (``plane``,
+    ``nurbs``). Returned alongside the surface so a caller serializing a whole face
+    resolves it once instead of once per trim.
 
     Parameters
     ----------
@@ -383,14 +399,17 @@ def _extract_surface(rhino_face):
         if success:
             normal = plane.Normal
             origin = plane.Origin
-            return Plane(
-                Point(origin.X, origin.Y, origin.Z),
-                Vector(normal.X, normal.Y, normal.Z),
+            return (
+                Plane(
+                    Point(origin.X, origin.Y, origin.Z),
+                    Vector(normal.X, normal.Y, normal.Z),
+                ),
+                None,
             )
 
-    surface, _ = _analytic_surface_and_param_map(underlying)
+    surface, param_map = _analytic_surface_and_param_map(underlying)
     if surface is not None:
-        return surface
+        return surface, param_map
 
     nurbs = underlying.ToNurbsSurface()
     if nurbs is None:
@@ -399,7 +418,7 @@ def _extract_surface(rhino_face):
         # or approximate it, which is what dropped every analytic face for a
         # release.
         raise BrepError(f"Rhino backend cannot represent a face on surface type {type(underlying).__name__}")
-    return _rhino_nurbs_surface_to_compas(nurbs)
+    return _rhino_nurbs_surface_to_compas(nurbs), None
 
 
 def _frame_from_rhino_plane(rhino_plane):
@@ -443,11 +462,11 @@ def _rhino_nurbs_surface_to_compas(rhino_nurbs):
 
     knots_u = []
     mults_u = []
-    _extract_knots_mults(rhino_nurbs.KnotsU, rhino_nurbs.OrderU, knots_u, mults_u)
+    _extract_knots_mults(rhino_nurbs.KnotsU, knots_u, mults_u)
 
     knots_v = []
     mults_v = []
-    _extract_knots_mults(rhino_nurbs.KnotsV, rhino_nurbs.OrderV, knots_v, mults_v)
+    _extract_knots_mults(rhino_nurbs.KnotsV, knots_v, mults_v)
 
     return NurbsSurface.from_parameters(
         points=points,
@@ -459,20 +478,6 @@ def _rhino_nurbs_surface_to_compas(rhino_nurbs):
         degree_u=rhino_nurbs.Degree(0),
         degree_v=rhino_nurbs.Degree(1),
     )
-
-
-def _extract_edge_curve(rhino_edge):
-    """Extract the 3D curve of a Rhino BrepEdge, discarding its parameter interval.
-
-    Prefer :func:`_extract_edge_curve_and_domain` -- an analytic curve without its
-    interval is a closed conic, which is not what the edge runs along.
-
-    Parameters
-    ----------
-    rhino_edge : Rhino.Geometry.BrepEdge
-
-    """
-    return _extract_edge_curve_and_domain(rhino_edge)[0]
 
 
 def _extract_edge_curve_and_domain(rhino_edge):
@@ -566,7 +571,7 @@ def _analytic_edge_curve_if_affine(edge_curve, curve):
     angles = []
     for i in range(_PARAM_CHECK_SAMPLES):
         point = edge_curve.PointAt(domain.ParameterAt(i / (_PARAM_CHECK_SAMPLES - 1)))
-        angle = _analytic_curve_param(curve, Point(point.X, point.Y, point.Z))
+        angle = analytic_curve_param(curve, Point(point.X, point.Y, point.Z))
         if angles:
             # Unwrap: a step between adjacent samples is far below pi, so a jump is
             # the branch cut rather than real motion.
@@ -585,19 +590,6 @@ def _analytic_edge_curve_if_affine(edge_curve, curve):
             return None
 
     return curve, document_domain
-
-
-def _analytic_curve_param(curve, point):
-    """The document parameter of a point on a conic, folded into ``(-pi, pi]``."""
-    frame = curve.frame
-    offset = Point(*point) - frame.point
-    x = offset.dot(frame.xaxis)
-    y = offset.dot(frame.yaxis)
-    if isinstance(curve, Ellipse):
-        # Scale to the unit circle first: the document parameter of an ellipse is
-        # not the geometric angle of the point.
-        x, y = x / curve.major, y / curve.minor
-    return math.atan2(y, x)
 
 
 def _rhino_nurbs_curve_to_compas(rhino_nurbs):
@@ -622,7 +614,7 @@ def _rhino_nurbs_curve_to_compas(rhino_nurbs):
 
     knots = []
     mults = []
-    _extract_knots_mults(rhino_nurbs.Knots, rhino_nurbs.Order, knots, mults)
+    _extract_knots_mults(rhino_nurbs.Knots, knots, mults)
 
     return NurbsCurve.from_parameters(
         points=points,
@@ -633,7 +625,7 @@ def _rhino_nurbs_curve_to_compas(rhino_nurbs):
     )
 
 
-def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):  # noqa: ARG001 (order unused — kept for API compat)
+def _extract_knots_mults(rhino_knots, knots_out, mults_out):
     """Extract unique knots and multiplicities from Rhino's knot list.
 
     Rhino stores knots WITHOUT the first and last element of the full clamped
@@ -645,8 +637,6 @@ def _extract_knots_mults(rhino_knots, order, knots_out, mults_out):  # noqa: ARG
     ----------
     rhino_knots : Rhino.Geometry.NurbsCurveKnotList or NurbsSurfaceKnotList
         The Rhino knot collection (length = n_points + degree - 1).
-    order : int
-        Unused.  Kept for API compatibility with callers.
     knots_out : list
         Output list for unique knot values.
     mults_out : list
@@ -1028,7 +1018,7 @@ def _analytic_profile(surface, u, v_min, v_max):
     return Rhino.Geometry.ArcCurve(arc, v_min, v_max)
 
 
-def _analytic_surface_for_face(surface, face):
+def _analytic_surface_for_face(surface, face, shift):
     """Build a Rhino surface for an analytic face, parameterized as the document is.
 
     This is the one place the rebuilt parameterization is pinned, and it is why
@@ -1040,7 +1030,7 @@ def _analytic_surface_for_face(surface, face):
     those puts every trim in the wrong place. Revolving the document's own
     generating curve agrees with the document by construction, for all four.
     """
-    u_shift, v_shift = _parameter_shift(surface, face)
+    u_shift, v_shift = shift
     v_min, v_max = _document_v_range(surface, face, v_shift)
 
     frame = surface.frame
@@ -1053,12 +1043,17 @@ def _analytic_surface_for_face(surface, face):
     return revolved
 
 
-def _surface_to_rhino(surface, face):
-    """Build the Rhino surface a face sits on."""
+def _surface_to_rhino(surface, face, shift):
+    """Build the Rhino surface a face sits on.
+
+    ``shift`` places an analytic surface's parameter origin and is ignored for the
+    other tags. It is the caller's because the pcurves have to follow it, so both
+    sides read the one pair rather than each deriving it.
+    """
     if isinstance(surface, Plane):
         return _plane_surface_for_face(surface, face)
     if _is_analytic(surface):
-        return _analytic_surface_for_face(surface, face)
+        return _analytic_surface_for_face(surface, face, shift)
     if isinstance(surface, NurbsSurface):
         return nurbs_surface_to_rhino(surface)
     raise BrepError(f"Rhino backend cannot rebuild a face on surface type {type(surface).__name__}")
@@ -1167,13 +1162,13 @@ def brep_to_rhino(brep):
 
     for face in brep._faces:
         surface = face.surface
-        rhino_surface = _surface_to_rhino(surface, face)
+        # A moved seam moves the rebuilt surface's parameter origin; the pcurves follow it.
+        shift = _parameter_shift(surface, face)
+        rhino_surface = _surface_to_rhino(surface, face, shift)
         face_builder = builder.add_face(rhino_surface, face.is_reversed)
 
         is_planar = isinstance(surface, Plane)
         rhino_plane = _rhino_plane_from_compas(surface) if is_planar else None
-        # A moved seam moves the rebuilt surface's parameter origin; the pcurves follow it.
-        shift = _parameter_shift(surface, face)
 
         loops = [(face.outer_loop, Rhino.Geometry.BrepLoopType.Outer)]
         loops += [(loop, Rhino.Geometry.BrepLoopType.Inner) for loop in face._inner_loops]
@@ -1342,14 +1337,19 @@ def _expand_knots(knots, mults):
 # =============================================================================
 
 
-def _extract_trim_pcurve(rhino_trim):
+_UNRESOLVED = object()
+
+
+def _extract_trim_pcurve(rhino_trim, param_map=_UNRESOLVED):
     """Extract the 2D parametric curve from a Rhino BrepTrim, returning NurbsCurve or None.
 
     Two things about the native curve are Rhino's convention rather than the
     document's, and both are undone here.
 
     It comes out in Rhino's parameter space, which is not the document's for every
-    surface — see :func:`_canonical_pcurve`.
+    surface — see :func:`_canonical_pcurve`. ``param_map`` is the face's, resolved
+    here when a caller has not already done so for the whole face; ``None`` is a
+    meaningful value (a plane or a NURBS face needs no map), hence the sentinel.
 
     It also runs in the *trim's* direction, while the document's ``curve_2d`` runs in
     its **edge's**, with ``is_reversed`` saying how the trim uses it. That is what OCC
@@ -1366,15 +1366,18 @@ def _extract_trim_pcurve(rhino_trim):
     if nurbs is None:
         return None
 
+    if param_map is _UNRESOLVED:
+        param_map = _extract_surface_and_param_map(rhino_trim.Face)[1]
+
     # A singular trim has no edge, so there is neither a direction nor a domain to
     # align to; its pcurve stands alone.
     edge = rhino_trim.Edge
     if edge is None:
-        return _canonical_pcurve(_rhino_nurbs_curve_to_compas(nurbs), rhino_trim.Face)
+        return _canonical_pcurve(_rhino_nurbs_curve_to_compas(nurbs), param_map)
 
     if rhino_trim.IsReversed():
         nurbs.Reverse()
-    pcurve = _canonical_pcurve(_rhino_nurbs_curve_to_compas(nurbs), rhino_trim.Face)
+    pcurve = _canonical_pcurve(_rhino_nurbs_curve_to_compas(nurbs), param_map)
     return _align_pcurve_to_edge(pcurve, *_extract_edge_curve_and_domain(edge))
 
 
@@ -1474,7 +1477,7 @@ def rhino_brep_to_data(brep) -> dict:
     # --- Faces ---
     face_list = []
     for rf in rhino_brep.Faces:
-        surface = _extract_surface(rf)
+        surface, param_map = _extract_surface_and_param_map(rf)
         surface_data = surface_to_data(surface)
 
         loops = []
@@ -1483,7 +1486,7 @@ def rhino_brep_to_data(brep) -> dict:
             role = _loop_role(rl)
             trims = []
             for rt in rl.Trims:
-                pcurve = _extract_trim_pcurve(rt)
+                pcurve = _extract_trim_pcurve(rt, param_map)
                 if pcurve is None:
                     raise BrepError("Cannot serialize a trim without a pcurve")
                 re_obj = rt.Edge

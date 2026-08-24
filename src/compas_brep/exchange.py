@@ -30,6 +30,10 @@ LOOP_INNER = "inner"
 
 _LOOP_ROLES = (LOOP_OUTER, LOOP_INNER)
 
+#: The ``edge`` index of a trim that runs along no edge at all -- see
+#: :func:`singular_trim_vertex_id`.
+SINGULAR_TRIM_EDGE = -1
+
 
 # =============================================================================
 # The parameter space of an analytic surface tag
@@ -187,6 +191,25 @@ def analytic_curve_point(curve, t: float) -> Point:
     return Point(*(frame.point + frame.xaxis * (a * math.cos(t)) + frame.yaxis * (b * math.sin(t))))
 
 
+def analytic_curve_param(curve, point) -> float:
+    """Invert :func:`analytic_curve_point`, folded into ``(-pi, pi]``.
+
+    The counterpart of :func:`analytic_surface_params`, one dimension down. A point
+    off the curve is projected rather than rejected.
+    """
+    frame = curve.frame
+    offset = Point(*point) - frame.point
+    x = offset.dot(frame.xaxis)
+    y = offset.dot(frame.yaxis)
+    if isinstance(curve, Ellipse):
+        # Scale to the unit circle first: an ellipse's document parameter is not the
+        # geometric angle of the point.
+        x, y = x / curve.major, y / curve.minor
+    elif not isinstance(curve, Circle):
+        raise BrepError(f"Not an analytic edge curve of the exchange format: {type(curve).__name__}")
+    return math.atan2(y, x)
+
+
 def analytic_curve_is_full_turn(domain: tuple[float, float]) -> bool:
     """Whether an edge's parameter interval covers the conic's whole ``2 * pi``.
 
@@ -231,6 +254,44 @@ def face_loops_from_data(face_data: dict, version: int) -> Iterator[tuple[str, l
         if role not in _LOOP_ROLES:
             raise BrepError(f"Not a loop role: {role!r}. Expected one of {_LOOP_ROLES}.")
         yield role, loop_data["trims"]
+
+
+# =============================================================================
+# Collapsed boundaries: a sphere's pole, a cone's apex
+# =============================================================================
+#
+# The document carries two spellings, because neither kernel can write the other's.
+# OCC uses a *degenerate edge* -- an ordinary edge whose vertices coincide. Rhino
+# cannot hold one (it rejects the whole Brep) and uses a *singular trim* instead:
+# no edge, a pcurve along the collapsed side of the parameter rectangle, and the
+# vertex that pcurve maps to.
+#
+# A reader must honor both. Dropping either leaves the wire open at the pole,
+# which area and volume integration do not notice -- only a validity check does.
+
+
+def singular_trim_to_data(vertex_id: int, pcurve_data: dict) -> dict:
+    """Encode a trim that collapses to a single vertex rather than running along an edge."""
+    return {
+        "edge": SINGULAR_TRIM_EDGE,
+        "vertex": vertex_id,
+        "is_reversed": False,
+        "curve_2d": pcurve_data,
+    }
+
+
+def trim_is_singular(trim_data: dict) -> bool:
+    """Whether a trim document collapses to a vertex instead of running along an edge."""
+    return trim_data["edge"] == SINGULAR_TRIM_EDGE
+
+
+def singular_trim_vertex_id(trim_data: dict) -> int:
+    """The index of the vertex a singular trim collapses to."""
+    try:
+        return trim_data["vertex"]
+    except KeyError:
+        # No edge and no vertex is no 3D position at all -- there is nothing to default to.
+        raise BrepError("A trim with no edge must carry the index of the vertex it collapses to.") from None
 
 
 def trim_pcurve_from_data(trim_data: dict, version: int) -> NurbsCurve | None:

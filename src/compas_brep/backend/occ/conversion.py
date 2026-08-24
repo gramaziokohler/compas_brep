@@ -145,8 +145,9 @@ def occ_extract_topology(brep: Brep) -> None:
             vertex_map[h] = OccBrepVertex(occ_vertex)
         return vertex_map[h]
 
-    # Edge deduplication: same OCC edge (by IsSame) → same OccBrepEdge instance
-    edge_registry = []  # list of (occ_edge, OccBrepEdge)
+    # Edge deduplication, keyed the same way as the vertices above: TopoDS hashing
+    # ignores orientation, so it partitions exactly as ``IsSame`` does.
+    edge_map = {}  # hash(TopoDS_Edge) -> OccBrepEdge
 
     all_faces = []
     all_edges = []
@@ -195,15 +196,10 @@ def occ_extract_topology(brep: Brep) -> None:
                     else:
                         start_v, end_v = edge_verts[0], edge_verts[1]
 
-                # Shared edge deduplication via IsSame
-                brep_edge = None
-                for reg_occ_edge, reg_brep_edge in edge_registry:
-                    if occ_edge.IsSame(reg_occ_edge):
-                        brep_edge = reg_brep_edge
-                        break
+                brep_edge = edge_map.get(occ_edge.__hash__())
                 if brep_edge is None:
                     brep_edge = OccBrepEdge(occ_edge, start_v, end_v)
-                    edge_registry.append((occ_edge, brep_edge))
+                    edge_map[occ_edge.__hash__()] = brep_edge
                     all_edges.append(brep_edge)
 
                 # Trim wraps oriented edge on this face; pcurve is deferred
@@ -544,15 +540,6 @@ def _occ_ax2_to_frame(position: Any) -> Frame:
     )
 
 
-def _extract_edge_curve(occ_edge: Any) -> Line | Circle | Ellipse | NurbsCurve:
-    """Extract the 3D curve of an OCC edge, discarding its parameter interval.
-
-    Prefer :func:`_extract_edge_curve_and_domain` -- an analytic curve without its
-    interval is a closed conic, which is not what the edge runs along.
-    """
-    return _extract_edge_curve_and_domain(occ_edge)[0]
-
-
 def _extract_edge_curve_and_domain(
     occ_edge: Any,
 ) -> tuple[Line | Circle | Ellipse | NurbsCurve, tuple[float, float] | None]:
@@ -701,12 +688,13 @@ def occ_brep_to_data(brep: Brep) -> dict:
 
     # --- Edges ---
     edge_list = []
-    edge_registry = []  # (occ_edge, index) for IsSame deduplication
+    edge_id_map = {}  # hash(TopoDS_Edge) -> list index; hashing ignores orientation,
+    # so it partitions exactly as IsSame does, and matches _vertex_id above.
 
     def _edge_id(occ_edge):
-        for reg_edge, idx in edge_registry:
-            if occ_edge.IsSame(reg_edge):
-                return idx
+        h = occ_edge.__hash__()
+        if h in edge_id_map:
+            return edge_id_map[h]
 
         try:
             occ_first = TopExp.FirstVertex_s(occ_edge, False)
@@ -732,7 +720,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
 
         idx = len(edge_list)
         edge_list.append({"start": start_id, "end": end_id, "curve": curve_data})
-        edge_registry.append((occ_edge, idx))
+        edge_id_map[h] = idx
         return idx
 
     # --- Faces ---
@@ -1008,29 +996,45 @@ def _edge_to_occ_edge(edge: Any, vertex_cache: dict[int, Any], edge_cache: dict[
     v_end = _get_or_build_vertex(edge.last_vertex, vertex_cache)
 
     if dist < 1e-9:
-        # A degenerate edge -- a sphere's pole, a cone's apex -- carries no 3D
-        # curve, only a pcurve tracing the collapsed side of the surface's
-        # parameter domain (attached later, in _build_trimmed_face). A bare
-        # ``MakeEdge(V, V)`` fails ("vertices are coincident") because it has
-        # no curve to infer a direction from, so it is assembled directly with
-        # BRep_Builder instead, exactly as OCC's own degenerate edges are
-        # structured: the same vertex added twice, once forward once reversed.
-        #
-        # Dropping the trim instead of building this (the previous behaviour)
-        # leaves the wire open at the pole -- valid enough for area/volume
-        # integration to still land close, which is how it went unnoticed, but
-        # BRepCheck_Analyzer correctly reports the shape invalid.
-        builder = BRep_Builder()
-        occ_edge = _TopoDS_Edge()
-        builder.MakeEdge(occ_edge)
-        builder.Add(occ_edge, v_start)
-        builder.Add(occ_edge, TopoDS.Vertex_s(v_end.Reversed()))
-        builder.Degenerated(occ_edge, True)
+        occ_edge = _degenerate_occ_edge(v_start, v_end)
         edge_cache[key] = occ_edge
         return occ_edge
 
     occ_edge = BRepBuilderAPI_MakeEdge(v_start, v_end).Edge()
     edge_cache[key] = occ_edge
+    return occ_edge
+
+
+def _degenerate_occ_edge(v_start: Any, v_end: Any) -> Any:
+    """Assemble a degenerate OCC edge between two coincident native vertices.
+
+    Both of the document's spellings of a collapsed boundary land here -- OCC's
+    zero-length edge and Rhino's singular trim. The pcurve is attached by the caller.
+    """
+    # A bare MakeEdge(V, V) fails ("vertices are coincident"): no curve to infer a
+    # direction from. Assembled by hand the way OCC structures its own degenerate
+    # edges instead -- the same vertex twice, once forward once reversed.
+    builder = BRep_Builder()
+    occ_edge = _TopoDS_Edge()
+    builder.MakeEdge(occ_edge)
+    builder.Add(occ_edge, v_start)
+    builder.Add(occ_edge, TopoDS.Vertex_s(v_end.Reversed()))
+    builder.Degenerated(occ_edge, True)
+    return occ_edge
+
+
+def _singular_trim_to_occ_edge(trim: Any, vertex_cache: dict[int, Any], edge_cache: dict[int, Any]) -> Any:
+    """Build (or reuse) the degenerate OCC edge a singular trim collapses to.
+
+    Keyed by the trim rather than by an edge: a singular trim has no edge, and two
+    of them at the same pole bound different faces and need separate native edges.
+    """
+    key = id(trim)
+    occ_edge = edge_cache.get(key)
+    if occ_edge is None:
+        occ_vertex = _get_or_build_vertex(trim.vertex, vertex_cache)
+        occ_edge = _degenerate_occ_edge(occ_vertex, occ_vertex)
+        edge_cache[key] = occ_edge
     return occ_edge
 
 
@@ -1067,14 +1071,20 @@ def _build_trimmed_face(occ_surface: Any, face: BrepFace, vertex_cache: dict[int
     # silently overwrite the first's (edge, face) representation, since both
     # trims target the same edge on the same face -- collapsing the seam to
     # one side and mistrimming the face.
+    # Singular trims are keyed by trim: they have no edge, so all of them would
+    # otherwise collide on id(None).
     trims_by_edge: dict[int, list] = {}
     for loop in face.loops:
         for trim in loop.trims:
-            trims_by_edge.setdefault(id(trim.edge), []).append(trim)
+            key = id(trim) if trim.is_singular else id(trim.edge)
+            trims_by_edge.setdefault(key, []).append(trim)
 
     occ_edges: dict[int, Any] = {}
     for key, trims in trims_by_edge.items():
-        occ_edge = _edge_to_occ_edge(trims[0].edge, vertex_cache, edge_cache)
+        if trims[0].is_singular:
+            occ_edge = _singular_trim_to_occ_edge(trims[0], vertex_cache, edge_cache)
+        else:
+            occ_edge = _edge_to_occ_edge(trims[0].edge, vertex_cache, edge_cache)
         if occ_edge is None:
             continue
         occ_edges[key] = occ_edge
@@ -1094,7 +1104,7 @@ def _build_trimmed_face(occ_surface: Any, face: BrepFace, vertex_cache: dict[int
         builder.MakeWire(wire)
 
         for trim in loop.trims:
-            occ_edge = occ_edges.get(id(trim.edge))
+            occ_edge = occ_edges.get(id(trim) if trim.is_singular else id(trim.edge))
             if occ_edge is None:
                 continue
 
@@ -1117,6 +1127,10 @@ def _loop_to_occ_wire(loop, vertex_cache: dict[int, Any], edge_cache: dict[int, 
 
     if loop.trims:
         for trim in loop.trims:
+            if trim.is_singular:
+                # A plane has no singularities, and this wire is assembled from 3D
+                # curves -- a singular trim has neither an edge nor any extent.
+                continue
             occ_edge = _edge_to_occ_edge(trim.edge, vertex_cache, edge_cache)
             if occ_edge is None:
                 continue  # Degenerate edge
