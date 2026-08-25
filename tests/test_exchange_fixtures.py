@@ -56,9 +56,6 @@ from compas_brep.exchange import SINGULAR_TRIM_EDGE
 # precision Rhino volume is on the order of 1e-7, from that rounding rather than
 # from any imprecision in the rebuild.
 #
-# ``rebuild_invalid`` marks a fixture whose OCC rebuild still reports invalid -- see
-# the xfail below. Not a property of the fixture: the same shape authored by OCC
-# itself fails the same way.
 EXPECTED = {
     "box": {
         "faces": 6,
@@ -66,7 +63,6 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 1.0,
         "volume_atol": 1e-6,
-        "rebuild_invalid": False,
     },
     "filleted_box": {
         "faces": 26,
@@ -74,7 +70,6 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 7.563414,
         "volume_atol": 1e-3,
-        "rebuild_invalid": True,
     },
     "sphere": {
         "faces": 1,
@@ -82,7 +77,6 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 4.18879,
         "volume_atol": 1e-6,
-        "rebuild_invalid": False,
     },
     "box_with_hole": {
         "faces": 7,
@@ -90,7 +84,6 @@ EXPECTED = {
         "loop_roles": {"outer", "inner"},
         "volume": 7.434513,
         "volume_atol": 1e-6,
-        "rebuild_invalid": False,
     },
     # The wall's surface is analytic and exact. Its seam / cap edges are now exact
     # circles too, refreshed from live Rhino via the LAMCP bridge (the reason this
@@ -104,7 +97,6 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 1.570796,
         "volume_atol": 1e-6,
-        "rebuild_invalid": False,
     },
     # The cone and torus join the cylinder with exact analytic seams, refreshed the
     # same way. A cone's caps make it a solid with a planar base (like the
@@ -115,7 +107,6 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 0.261799,
         "volume_atol": 1e-6,
-        "rebuild_invalid": False,
     },
     "torus": {
         "faces": 1,
@@ -123,7 +114,6 @@ EXPECTED = {
         "loop_roles": {"outer"},
         "volume": 1.776529,
         "volume_atol": 1e-6,
-        "rebuild_invalid": False,
     },
 }
 
@@ -243,21 +233,18 @@ def test_occ_rebuilds_fixture_with_volume_intact(name):
     assert TOL.is_close(restored.volume, EXPECTED[name]["volume"], atol=EXPECTED[name]["volume_atol"])
 
 
-# The filleted box's eight corner patches come back BRepCheck_UnorientableShape: the
-# volume integrates correctly over them, but OCC cannot settle which side each bounds.
-# Not a cross-backend problem -- an OCC-authored filleted box round-trips the same way.
-_REBUILD_INVALID_XFAIL = "OCC cannot orient the rebuilt corner patches; see the note above."
-
-
 @pytest.mark.occ
 @pytest.mark.parametrize("name", FIXTURE_NAMES)
-def test_occ_rebuilds_fixture_as_a_valid_shape(name, request):
+def test_occ_rebuilds_fixture_as_a_valid_shape(name):
     # A sphere with its poles dropped still reported the right volume and area --
     # integration over the open patch converges -- and passed every other test here.
-    # strict=True, so whoever fixes the corner patches is told to un-xfail it.
-    if EXPECTED[name]["rebuild_invalid"]:
-        request.node.add_marker(pytest.mark.xfail(strict=True, reason=_REBUILD_INVALID_XFAIL))
-
+    #
+    # The filleted box was a strict xfail: its eight corner patches came back
+    # `BRepCheck_UnorientableShape`, integrating to the right volume while OCC could
+    # not settle which side each bounded. OCC gives those patches left-handed
+    # placements, and the writer mirrored their pcurves' u without walking the wire
+    # back the other way -- mirroring reverses winding, so every one of them was
+    # rebuilt inside out. Fixed in `_extract_topology`; see the note there.
     assert load_fixture(name).is_valid
 
 

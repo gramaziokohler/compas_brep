@@ -36,6 +36,7 @@ from compas_brep.exchange import analytic_curve_point
 from compas_brep.exchange import analytic_surface_params
 from compas_brep.exchange import analytic_surface_point
 from compas_brep.exchange import analytic_surface_v_is_periodic
+from compas_brep.exchange import canonical_conic_interval
 from compas_brep.exchange import loop_to_data
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
@@ -525,7 +526,10 @@ def _extract_edge_curve_and_domain(rhino_edge):
 
     analytic = _analytic_edge_curve(edge_curve)
     if analytic is not None:
-        return analytic
+        # Rhino will happily report a conic edge running clockwise about its own
+        # frame -- a scaled cylinder's elliptical rim comes back on `pi/2 .. -3*pi/2`.
+        # The document's interval runs forwards; see `canonical_conic_interval`.
+        return canonical_conic_interval(*analytic)
 
     # NURBS for everything else -- and for an analytic curve whose parameterization
     # does not carry across, which ``_analytic_edge_curve`` reports by returning None.
@@ -1193,21 +1197,24 @@ def brep_to_rhino(brep):
 
         for loop, loop_type in loops:
             loop_builder = face_builder.add_loop(loop_type)
-            # The two kernels wind a loop against different normals: the document's
-            # pcurves run counter-clockwise about the *face's* normal, Rhino's about
-            # the *surface's*, with the reversal flag carrying the difference between
-            # them. On a reversed face those disagree, so the document's loop arrives
-            # clockwise in Rhino's parameter space -- and a clockwise outer loop
-            # bounds the unbounded side, which is why such a face measures a negative
-            # area (a box: six faces cancelling to zero area and a Brep that is
-            # valid, manifold, and not solid) or fails to measure at all.
+            # A loop is walked exactly as the document gives it. The format stores a
+            # trim's orientation in its face's OWN parameter space -- both writers
+            # record it that way (Rhino from `BrepTrim.IsReversed()`, OCC from a
+            # FORWARD-oriented copy of the face) -- and `face.is_reversed` is applied
+            # once, by `add_face` setting `OrientationIsReversed`. Rhino keeps those
+            # two independent, exactly as the document does, so there is nothing here
+            # to compensate for.
             #
-            # Walking the loop backwards restores Rhino's winding. It does not move
-            # the face: reversing a closed loop's traversal keeps its point set and
-            # only swaps which side is bounded, so the patch is the same one the
-            # document describes, and the face's normal stays the document's because
-            # the reversal flag above is untouched.
-            trims = list(reversed(loop.trims)) if face.is_reversed else list(loop.trims)
+            # This used to reverse the loop and XOR every trim against
+            # `face.is_reversed`, applying the flip a second time. It looked right
+            # while the OCC writer was emitting trims already composed with the face
+            # flag, but Rhino's own writer never did -- so a Rhino document read back
+            # by Rhino came home with half its edges wound the same way on both
+            # sides. The shell was valid and manifold but never *oriented*, hence
+            # never solid, hence every volume 0.0 -- and an open shell fed into the
+            # next boolean is what made the cross-backend loop degrade until it
+            # produced a document Rhino could not rebuild.
+            trims = list(loop.trims)
             for trim in trims:
                 singular_vertex = _singular_trim_vertex(trim, vertex_index, collapsed_edges)
 
@@ -1226,12 +1233,7 @@ def brep_to_rhino(brep):
                 # defines; Rhino wants the trim's. This applies to a singular trim
                 # too — OCC reverses the one along a pole, and a loop whose trims do
                 # not run head to tail in parameter space is not a loop.
-                #
-                # On a reversed face the loop is being walked backwards, so each trim
-                # also runs backwards along its edge relative to the document: the
-                # two reversals compose, and it is the composed direction that both
-                # orients the pcurve and tells Rhino how the trim uses its edge.
-                is_reversed = trim.is_reversed != face.is_reversed
+                is_reversed = trim.is_reversed
                 if is_reversed:
                     pcurve.Reverse()
 
