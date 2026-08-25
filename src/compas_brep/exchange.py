@@ -216,24 +216,13 @@ def analytic_curve_param(curve, point) -> float:
 def canonical_conic_interval(curve, domain: tuple[float, float]):
     """Re-express a conic edge so its parameter interval increases.
 
-    An edge's interval runs *forwards*. Both kernels hold it that way -- a
-    ``TopoDS_Edge`` and an ``ON_BrepEdge`` alike keep first < last and leave the
-    direction of travel to the trims that use the edge -- and the document has no
-    room to disagree, because a trim's pcurve is written over this interval and a
-    NURBS knot vector cannot decrease. A backwards interval does not produce a
-    backwards pcurve; it produces an unbuildable one (OCC: ``BSpline curve: Knots
-    interval values too close``).
-
-    A conic traversed clockwise about its own frame is what raises the question --
-    Rhino reports such an edge as running from ``pi/2`` to ``-3*pi/2``. The answer is
-    not to reverse the edge, which would strand every trim's ``is_reversed`` flag,
-    but to describe the same travel in a frame it runs forwards in: negating the
-    frame's y-axis mirrors the parameter, since
+    A pcurve is written over its edge's interval and a NURBS knot vector cannot
+    decrease, so a backwards interval is unbuildable rather than merely reversed.
+    Reversing the edge would strand every trim's ``is_reversed``; negating the
+    frame's y-axis mirrors the parameter instead, leaving the curve, its direction
+    and its end vertices untouched:
 
         centre + a*cos(-t)*x + b*sin(-t)*(-y) == centre + a*cos(t)*x + b*sin(t)*y
-
-    so the curve, its direction, and its end vertices are all untouched while the
-    interval turns around.
 
     Returns ``(curve, domain)`` unchanged when the interval already increases.
     """
@@ -252,31 +241,19 @@ def canonical_conic_interval(curve, domain: tuple[float, float]):
 
 
 def conic_parameter_shift(domain: tuple[float, float]) -> float:
-    """The shift that brings a periodic conic's interval into the document's canonical turn.
+    """The shift bringing a periodic conic's interval onto the document's canonical turn.
 
-    A circle or ellipse is periodic, so ``[-0.55, 0]`` and ``[5.73, 6.28]`` name the
-    same arc and a writer may legitimately emit either. A *reader* may not treat them
-    as interchangeable: a trim's pcurve is written over its edge curve's interval, so
-    the two only stay together while both sit on the same turn. OCC's
-    ``BRepBuilderAPI_MakeEdge`` normalizes a periodic curve into ``[0, 2*pi)`` without
-    telling anyone, which puts a whole turn between an arc handed over on ``[-0.55, 0]``
-    and every pcurve that runs along it.
+    ``[-0.55, 0]`` and ``[5.73, 6.28]`` name the same arc, but a pcurve written over
+    one sits a full turn from an edge rebuilt on the other, and
+    ``BRepBuilderAPI_MakeEdge`` normalizes into ``[0, 2*pi)`` on its own. Both sides
+    normalize through here so a domain and its pcurves move together.
 
-    So the document has one canonical turn -- the interval starts within ``[0, 2*pi)`` --
-    and this is the one place that says what it is. A writer normalizes on the way out
-    and a reader on the way in, edge domain and pcurves moving together, so that a
-    document from either backend rebuilds the same way.
-
-    Returns 0.0 for an interval that already starts on the canonical turn.
+    Returns 0.0 for an interval already on the canonical turn.
     """
     start = domain[0]
     shift = -2.0 * pi * floor(start / (2.0 * pi))
 
-    # A start a hair *below* a turn boundary floors to the turn before it, which would
-    # move a plainly canonical interval by a whole 2*pi. This is not hypothetical:
-    # OCC hands over full circles starting at -8e-32, and a full turn is the
-    # difference between an arc and a degenerate one (``Geom2d_TrimmedCurve::U1 == U2``).
-    # Snap it back to the boundary it is really on.
+    # OCC hands over full circles starting at -8e-32, which floors a whole turn early.
     if abs(start + shift - 2.0 * pi) < 1e-9:
         shift -= 2.0 * pi
 
@@ -286,8 +263,7 @@ def conic_parameter_shift(domain: tuple[float, float]) -> float:
 def shift_pcurve_parameters(pcurve: NurbsCurve, shift: float) -> NurbsCurve:
     """Move a pcurve's parameterization by ``shift``, returning a curve of the same shape.
 
-    Only the knots move. Shifting a parameter is affine, so degree, control points and
-    weights all go on describing the same curve in the same parameter plane.
+    Only the knots move; shifting a parameter is affine.
     """
     if not shift:
         return pcurve

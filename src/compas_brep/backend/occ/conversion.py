@@ -388,26 +388,10 @@ def _face_placement_is_indirect(occ_face: Any) -> bool:
 def _edge_parameter_shift(occ_edge: Any) -> float:
     """How far a rebuild moves this edge's parameter origin.
 
-    The format writes a trim's pcurve over its **edge curve's** parameter interval.
-    So any reparameterization a rebuild applies to the edge curve has to be applied
-    to that edge's pcurves as well -- otherwise each one is evaluated at parameters
-    its curve no longer answers to, and lands somewhere the curve is not.
-
-    Two rebuilds move it, and both are the reader doing the only thing it can:
-
-    * A ``line`` carries nothing but its two endpoints, so it comes back on
-      ``[0, length]`` regardless of the interval OCC happened to hold it on -- and
-      a boolean routinely leaves a cylinder's seam sitting on ``[5, 15]``.
-    * A **periodic** conic is normalized into ``[0, 2*pi)`` by
-      ``BRepBuilderAPI_MakeEdge``, which silently discards whole turns. An ellipse
-      handed over on ``[6.96, 11.00]`` comes back on ``[0.67, 4.71]``.
-
-    Both are pure shifts -- ``Geom_Line`` is unit-speed and a period is a constant --
-    so one number describes each, and :func:`_shift_pcurve` applies it.
-
-    Left uncorrected the second case is not a near miss: the pcurve is evaluated by
-    extrapolation a full period away from its own curve, which for a unit-ish
-    ellipse is more than a radius of error.
+    A pcurve is written over its edge curve's interval, so a rebuild that
+    reparameterizes the curve has to shift the pcurves with it. A ``line`` carries
+    only its endpoints and comes back on ``[0, length]``; a periodic conic is
+    normalized into ``[0, 2*pi)``. Both are pure shifts.
     """
     adaptor = BRepAdaptor_Curve(occ_edge)
     ctype = adaptor.GetType()
@@ -421,11 +405,7 @@ def _edge_parameter_shift(occ_edge: Any) -> float:
 
 
 def _shift_pcurve(pcurve: NurbsCurve, shift: float) -> NurbsCurve:
-    """Move a pcurve's parameterization by ``shift``, leaving its shape alone.
-
-    Only the knots move: shifting the parameter is affine, so control points,
-    weights and degree all describe the same curve afterwards.
-    """
+    """Move a pcurve's parameterization by ``shift``. Only the knots change."""
     if shift:
         pcurve._knots = [knot + shift for knot in pcurve._knots]
     return pcurve
@@ -848,19 +828,9 @@ def occ_brep_to_data(brep: Brep) -> dict:
                 wire_explorer.Next()
 
             if trims and u_is_flipped:
-                # Mirroring u is orientation-REVERSING in the parameter plane: the
-                # same wire, re-expressed, now winds the other way, and a wire that
-                # winds the wrong way bounds the wrong side (OCC reports the face's
-                # area as negative and the shape as
-                # `BRepCheck_BadOrientationOfSubshape`). So the wire has to be walked
-                # the other way round to stay counter-clockwise -- reversed in order,
-                # with each trim now running against its edge instead of with it.
-                #
-                # This is the partner of the `is_reversed` flip above, not a second
-                # correction for the same thing: that one absorbs the surface normal
-                # turning over, this one the winding. Doing either alone leaves the
-                # face inside out, which is why a fillet's patches -- OCC gives them
-                # left-handed placements -- never rebuilt as a valid solid.
+                # Mirroring u reverses the winding too, not just the normal. The
+                # flag above absorbs the normal; the wire has to be walked the other
+                # way for the rest, or a fillet's patches rebuild inside out.
                 trims.reverse()
                 for trim_data in trims:
                     trim_data["is_reversed"] = not trim_data["is_reversed"]
@@ -977,29 +947,13 @@ def brep_to_occ(brep: Brep) -> Any:
     sewing.Perform()
     shape = sewing.SewedShape()
 
-    # The two kernels hold a pcurve to different standards. Rhino treats a trim
-    # curve as an approximation, accurate to the trim's own tolerance, and leans on
-    # the 3D edge as the truth -- so it will happily call a Brep valid whose pcurve
-    # wanders from its edge. OCC will not: it requires the two to agree within the
-    # edge's tolerance, and every edge built above asserts that agreement
-    # (`SameParameter`) whether or not it actually holds.
-    #
-    # A rotated cylinder is the ordinary way to meet this. Rhino demotes the wall
-    # from an analytic cylinder to a rational NURBS, whose `u` is no longer linear
-    # in angle -- and the straight pcurve that was exact against arc length now
-    # misses its own circular edge by ~2e-2 against a 1e-6 tolerance, agreeing only
-    # at the span ends and midpoints.
-    #
-    # Reconciling them is the kernel's own job, not ours, and this is the call every
-    # OCC importer makes on geometry from another system.
+    # Rhino treats a pcurve as an approximation; OCC requires it to agree with the 3D
+    # curve within tolerance, and every edge above asserts that agreement whether or
+    # not it holds. Let the kernel reconcile them, as its own importers do.
     BRepLib.SameParameter_s(shape, 1e-6, True)
 
-    # Fail here, where the bad shape is made, rather than downstream. A Brep that
-    # cannot be rebuilt is not a Brep, and letting one through means the error
-    # surfaces at whatever later operation trips over it -- for a document arriving
-    # from the other backend, that is a boolean quietly consuming a broken operand
-    # and handing back a result whose own damage only shows up a process away. This
-    # mirrors what the Rhino builder already does with `IsValidWithLog`.
+    # Fail where the shape is built, not at whatever later operation trips over it.
+    # Mirrors the Rhino builder's IsValidWithLog.
     if not BRepCheck_Analyzer(shape).IsValid():
         raise BrepInvalidError("Brep reconstruction failed! The rebuilt OCC shape is not valid.")
 

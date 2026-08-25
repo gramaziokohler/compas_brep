@@ -1,26 +1,10 @@
-"""Faces a boolean leaves REVERSED, and the seams that run through them.
+"""Regressions in the exchange document that only ``is_valid`` catches.
 
-Both bugs here were invisible to volume and area, and to every fixture in the
-suite, because the suite's shapes are built by primitives and unions -- neither
-of which leaves a *pcurve-built* face carrying ``is_reversed``. It takes a
-subtraction: the tool's wall survives into the result inside-out, and it is
-rebuilt from its pcurves rather than from 3D wires the way a plane is.
+Every bug guarded here left volume and area correct, so nothing else in the suite
+noticed. They need a *subtraction*: primitives and unions never leave a
+pcurve-built face carrying ``is_reversed``.
 
-1. **Orientation applied twice.** The OCC writer explored each face's wires
-   through the face itself, so a REVERSED face composed its flag into every trim
-   it recorded -- and the reader applied ``is_reversed`` again when it reversed
-   the rebuilt face. The wire came back running backwards: a blind hole
-   round-tripped into a *bump* (1000 - 18.1 became 1000 + 18.1), which volume
-   alone reports as a perfectly plausible number.
-
-2. **A line's pcurve left behind.** A ``line`` edge carries only its endpoints,
-   so the reader rebuilds it over ``[0, length]`` -- while OCC hands a boolean's
-   cylinder seam back on, say, ``[5, 15]``, and the writer wrote the pcurve over
-   that. The seam's pcurve then sat ``t0`` away from its own edge, breaking the
-   wire of every full-turn cylindrical face that survived a boolean.
-
-Both are caught only by ``is_valid``, which is why it is asserted here alongside
-the volume -- see the same warning in CONTEXT.md about collapsed boundaries.
+See ``docs/cross-backend-gaps.md`` for what each one was.
 """
 
 from __future__ import annotations
@@ -90,12 +74,7 @@ def test_subtracted_shape_survives_the_round_trip(name):
 
 @pytest.mark.occ
 def test_blind_hole_does_not_round_trip_into_a_bump():
-    """The orientation bug's signature, pinned as its own case.
-
-    A hole removes material, so the result must stay under the solid block's
-    1000. Reversing the hole's wall added the same volume instead of subtracting
-    it -- a result that passes any tolerance check against 'about 1000'.
-    """
+    """A hole removes material, so a reversed wall reads as 1000 + V rather than 1000 - V."""
     brep = _block() - _cylinder(0.0, height=4.0)
     assert brep.volume < 1000.0
 
@@ -104,13 +83,7 @@ def test_blind_hole_does_not_round_trip_into_a_bump():
 
 @pytest.mark.occ
 def test_accumulated_subtractions_match_the_in_process_reference():
-    """Round-tripping between booleans must not change the answer.
-
-    The cross-backend demo carves a block one cut at a time, sending it out and
-    reading it back between cuts. That is the loop the bugs above corrupted:
-    each round trip fed a slightly-wrong solid into the next boolean, so the
-    error compounded rather than staying put.
-    """
+    """A round trip between booleans must not change the answer, or the error compounds."""
     positions = [-5.2, -4.2, -3.2, -2.2, -1.2, -0.2, 0.8, 1.8, 2.8]
 
     reference = _block()
@@ -127,17 +100,8 @@ def test_accumulated_subtractions_match_the_in_process_reference():
 # The pcurve and its edge must stay on one parameterization
 # =============================================================================
 #
-# The format writes a trim's pcurve over its edge curve's parameter interval. That
-# only holds if the interval survives the rebuild -- and two rebuilds quietly move
-# it, each in its own way:
-#
-#   * a `line` carries only its endpoints, so it returns on [0, length];
-#   * a *periodic* conic is normalized into [0, 2*pi) by `BRepBuilderAPI_MakeEdge`,
-#     which discards whole turns.
-#
-# The second is not a near miss. An ellipse handed over on [6.96, 11.00] comes back
-# on [0.67, 4.71], and its pcurve -- left on the old interval -- is then evaluated
-# by extrapolation, more than a radius from the curve it is meant to trace.
+# A pcurve is written over its edge curve's interval, so a rebuild that moves that
+# interval has to move the pcurves with it.
 
 
 @pytest.mark.occ
@@ -157,11 +121,7 @@ def test_a_conic_edge_beyond_one_turn_survives_the_round_trip():
 
 @pytest.mark.occ
 def test_every_analytic_edge_domain_is_written_within_one_turn():
-    """The document records the interval the reader will rebuild, not OCC's raw one.
-
-    Checked on the document rather than through a round trip, so the contract is
-    pinned where it is stated instead of only where it happens to bite.
-    """
+    """Checked on the document, so the contract is pinned where it is stated."""
     cutter = Brep.from_box(Box(3.0, 3.0, 3.0))
     cutter.transform(Rotation.from_axis_and_angle([1, 0, 0], 0.6))
     cutter.translate([0, 0, -2.0])
@@ -181,15 +141,10 @@ def test_every_analytic_edge_domain_is_written_within_one_turn():
 
 @pytest.mark.occ
 def test_a_fillet_rebuilds_as_a_valid_solid():
-    """OCC gives a fillet's patches left-handed placements.
+    """Fillet patches get left-handed placements; mirroring u reverses winding too.
 
-    Straightening one mirrors the face's u, and mirroring is orientation-reversing:
-    the same wire, re-expressed, winds the other way. The writer flips the face's
-    `is_reversed` to absorb the surface normal turning over, but the wire has to be
-    walked back the other way too. Without that, every corner patch of a filleted
-    box rebuilt inside out -- reported as a negative face area and
-    `BRepCheck_BadOrientationOfSubshape`, while the volume still integrated
-    correctly, which is how it survived as a known xfail instead of a bug.
+    Volume stays correct when they rebuild inside out, which is how this survived
+    as a known xfail rather than a bug.
     """
     brep = Brep.from_box(Box(2.0)).filleted(0.3)
     assert brep.is_valid
@@ -208,14 +163,7 @@ def test_a_fillet_rebuilds_as_a_valid_solid():
 
 @pytest.mark.occ
 def test_an_unbuildable_document_fails_at_the_rebuild():
-    """A Brep that cannot be rebuilt must say so where it is built.
-
-    compas_brep performs no geometry of its own -- it asks a kernel. So the moment a
-    kernel hands back something it will not itself call valid is the moment to stop.
-    Letting it through means the error surfaces at whatever later operation trips
-    over it, and across a process boundary that is a boolean quietly consuming a
-    broken operand and returning damage that only shows up in the *other* backend.
-    """
+    """A rebuild the kernel calls invalid must raise there, not downstream."""
     data = Brep.from_cylinder(Cylinder(1.0, 4.0)).__data__
 
     # Displace the wall's axis so the surface no longer passes through the circular
@@ -238,10 +186,8 @@ def test_an_unbuildable_document_fails_at_the_rebuild():
         ((-0.5478, -1e-12), 1),  # Rhino writes arcs on intervals that start negative
         ((6.956, 10.996), -1),  # OCC writes ellipses past a full turn
         ((-2.0 * math.pi - 1.0, -2.0 * math.pi + 1.0), 2),
-        # OCC hands over full circles starting at a negative denormal. `floor` sends
-        # anything below zero a whole turn back, so this plainly-canonical interval
-        # was moved 2*pi -- far enough that the arc rebuilt as a degenerate curve
-        # (`Geom2d_TrimmedCurve::U1 == U2`) and the whole document was refused.
+        # OCC hands over full circles starting at a negative denormal, which floors
+        # a whole turn early and rebuilds the arc degenerate.
         ((-8.21730109605221e-32, 2.0 * math.pi), 0),
     ],
 )
@@ -260,16 +206,10 @@ def test_conic_parameter_shift_lands_on_the_canonical_turn(domain, expected_turn
 
 @pytest.mark.parametrize("conic", [Circle(2.0), Ellipse(3.0, 1.5)])
 def test_a_backwards_conic_interval_is_turned_around_without_moving_the_curve(conic):
-    """A conic traversed clockwise about its own frame still gets a forwards interval.
+    """A clockwise conic still gets a forwards interval, without moving the edge.
 
-    Rhino reports such an edge running from ``pi/2`` to ``-3*pi/2`` -- a scaled
-    cylinder's elliptical rim is the ordinary way to get one. Written straight out,
-    the pcurve that runs over that interval gets a *decreasing* knot vector, which is
-    not a backwards curve but an unbuildable one: OCC rejects the whole document with
-    ``BSpline curve: Knots interval values too close``.
-
-    Turning it around must not move the edge: same points, same direction of travel,
-    same end vertices -- only the frame and the interval are re-expressed.
+    A decreasing interval yields a decreasing knot vector, which is unbuildable
+    rather than merely backwards.
     """
     domain = (math.pi / 2, -3 * math.pi / 2)
 

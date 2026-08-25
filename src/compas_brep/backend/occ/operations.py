@@ -388,11 +388,8 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
 
     vertices = [BrepVertex(Point(*xyz)) for xyz in data["vertices"]]
 
-    # A periodic conic may arrive on any turn -- Rhino writes arcs on intervals that
-    # start negative -- but OCC's `MakeEdge` will normalize it into [0, 2*pi) when the
-    # edge is built. Bring the document to that turn here instead, so the edge and the
-    # pcurves written over its interval move together; see
-    # :func:`compas_brep.exchange.conic_parameter_shift`.
+    # A conic may arrive on any turn, but `MakeEdge` normalizes into [0, 2*pi) when
+    # the edge is built. Normalize here so a domain and its pcurves move together.
     edges = []
     edge_shifts = []
     for ed in data["edges"]:

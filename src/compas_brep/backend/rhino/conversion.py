@@ -526,9 +526,8 @@ def _extract_edge_curve_and_domain(rhino_edge):
 
     analytic = _analytic_edge_curve(edge_curve)
     if analytic is not None:
-        # Rhino will happily report a conic edge running clockwise about its own
-        # frame -- a scaled cylinder's elliptical rim comes back on `pi/2 .. -3*pi/2`.
-        # The document's interval runs forwards; see `canonical_conic_interval`.
+        # Rhino can report a conic edge running clockwise (a scaled cylinder's
+        # elliptical rim comes back on `pi/2 .. -3*pi/2`); the document's runs forwards.
         return canonical_conic_interval(*analytic)
 
     # NURBS for everything else -- and for an analytic curve whose parameterization
@@ -1197,23 +1196,10 @@ def brep_to_rhino(brep):
 
         for loop, loop_type in loops:
             loop_builder = face_builder.add_loop(loop_type)
-            # A loop is walked exactly as the document gives it. The format stores a
-            # trim's orientation in its face's OWN parameter space -- both writers
-            # record it that way (Rhino from `BrepTrim.IsReversed()`, OCC from a
-            # FORWARD-oriented copy of the face) -- and `face.is_reversed` is applied
-            # once, by `add_face` setting `OrientationIsReversed`. Rhino keeps those
-            # two independent, exactly as the document does, so there is nothing here
-            # to compensate for.
-            #
-            # This used to reverse the loop and XOR every trim against
-            # `face.is_reversed`, applying the flip a second time. It looked right
-            # while the OCC writer was emitting trims already composed with the face
-            # flag, but Rhino's own writer never did -- so a Rhino document read back
-            # by Rhino came home with half its edges wound the same way on both
-            # sides. The shell was valid and manifold but never *oriented*, hence
-            # never solid, hence every volume 0.0 -- and an open shell fed into the
-            # next boolean is what made the cross-backend loop degrade until it
-            # produced a document Rhino could not rebuild.
+            # Trim orientation is stored in the face's own parameter space, and
+            # `face.is_reversed` is applied once by `add_face`. Composing them here
+            # applies the flip twice: the shell stays manifold but is never oriented,
+            # so it is never solid and every volume reads 0.0.
             trims = list(loop.trims)
             for trim in trims:
                 singular_vertex = _singular_trim_vertex(trim, vertex_index, collapsed_edges)
