@@ -207,3 +207,71 @@ This is a genuine disagreement between what each kernel is willing to call
 `Brep reconstruction failed!` naming the bad loop — visible, not silent, but not
 fixed either. Closing the gap ourselves would mean compas_brep doing geometry
 work neither kernel considers necessary.
+
+## Why not just use STEP?
+
+STEP round-trips Breps between both kernels already (`Brep.to_step` /
+`Brep.from_step`), so it's fair to ask whether it sidesteps all of the above.
+Mostly it does — and it still isn't the right exchange path here.
+
+Measured against the entities OCC actually writes for a box with a cylindrical
+channel:
+
+| Gap above | In STEP? | Why |
+|---|---|---|
+| Orientation applied twice | possible | Same layered flags — [`advanced_face`](http://www.steptools.com/stds/step/IR_final/part42/)`.same_sense`, `oriented_edge.orientation`, `edge_curve.same_sense`. Same ambiguity, but ISO 10303 pins how they compose, and you inherit a mature translator's reading instead of writing one. |
+| Mirrored `u` | **impossible** | `axis2_placement_3d` stores only `axis` and `ref_direction`; y is derived as their cross product, so a placement is right-handed by construction. The kernel does the mirror when writing. |
+| Pcurve interval reparameterized | **impossible** | STEP writes **no parameter intervals on edges**. See below. |
+| Pcurve drift (`SameParameter`) | same problem, but named | STEP carries pcurves *and* declares which representation wins: `surface_curve('',#27,(#31,#43),.PCURVE_S1.)`. A reader knows what to trust and what to recompute. |
+| 3D vs 2D loop closure | not addressed | A kernel-validity question, not a format one. STEP declares a global tolerance (`uncertainty_measure_with_unit(1.E-07)`) but doesn't mandate 2D closure. |
+
+The third row is the interesting one. STEP delimits an edge by its **vertices**,
+never by a parameter range — a real STEP file for the shape above contains zero
+`trimmed_curve` entities:
+
+```mermaid
+flowchart TD
+    subgraph step["STEP: edge = two vertices"]
+        S1["edge_curve('', v_start, v_end, geometry, same_sense)"] --> S2["reader recomputes<br/>parameters by projecting<br/>the vertices onto the curve"]
+    end
+    subgraph json["exchange document: edge = curve + interval"]
+        J1["curve + domain [t0, t1]"] --> J2["reader must rebuild the curve<br/>on that same interval<br/>-- or every pcurve on it moves"]
+    end
+```
+
+So the whole family of "the interval moved and the pcurve didn't" simply cannot
+be expressed in STEP. Two more measurements, both of which favour STEP:
+
+- **Analytic surfaces survive.** The channel came back as
+  `{Plane: 6, CylindricalSurface: 1}` — not a NURBS approximation.
+- **Tolerances survive better than ours.** Source `1e-7 .. 1e-7` → after STEP
+  `1e-7 .. 1e-7`, but after a compas_brep JSON round-trip `1e-7 .. 1e-6`. Our
+  rebuild loosens one edge tenfold; STEP's did not.
+
+### So why is the JSON document still the exchange path?
+
+1. **Rhino's STEP import needs the UI thread and opens a modal dialog.** It goes
+   through `RhinoDoc.ActiveDoc.ReadFile`
+   ([`backend/rhino/io.py`](https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/rhino/io.py)).
+   Anything headless — a worker, a solver loop, a Grasshopper component ticking
+   on a timer — blocks on a dialog nobody is there to dismiss.
+2. **Translators heal on import, which hides problems.** STEP readers run repair
+   pipelines ([OCC's STEP translator](https://dev.opencascade.org/doc/overview/html/occt_user_guides__step.html)
+   is explicit about this). That turns errors into silent geometry changes — the
+   opposite of failing where the problem was caused. The `BrepInvalidError` this
+   package raises on an invalid rebuild would simply never fire.
+3. **You control neither the fidelity nor the failure modes** — you would be
+   debugging two translators you do not own instead of one format you do. This is
+   [ADR-0001](https://github.com/gramaziokohler/compas_brep/blob/main/.agents/adr/0001-native-json-brep-exchange.md)'s
+   original argument, and it still holds.
+
+!!! note "Scope of these measurements"
+
+    The OCC→STEP→OCC figures above are measured. The claims about Rhino's STEP
+    *import* come from reading that code path (and from the dialog it opens), not
+    from measured geometry — the dialog is exactly what makes the round trip
+    hard to automate.
+
+`to_step` / `from_step` remain the right tool for what they are for: exchanging
+geometry with third-party CAD, interactively, where a dialog is fine and a
+translator's healing is welcome.
