@@ -9,7 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added a [cross-backend exchange gaps](docs/cross-backend-gaps.md) page, including why STEP is not used as the exchange path and one gap still open.
+
 ### Changed
+
+* Fixed cross-backend exchange producing kernel-invalid Breps: a reversed face's orientation was composed into its trims by the writer and applied again by the reader, and a u-mirrored face's wire winding was left uncorrected.
+* Fixed pcurves being written over a parameter interval their edge no longer had, after the receiving kernel silently reparameterized it. An edge's forward-increasing interval is now a rule of the exchange format.
+* Changed `brep_to_occ` to raise `BrepInvalidError` when the kernel calls a rebuilt shape invalid, instead of letting it surface at a later operation.
 
 ### Removed
 
