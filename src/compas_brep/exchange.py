@@ -11,11 +11,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Iterator
+from math import floor
+from math import pi
 
 from compas.geometry import Circle
 from compas.geometry import ConicalSurface
 from compas.geometry import CylindricalSurface
 from compas.geometry import Ellipse
+from compas.geometry import Frame
 from compas.geometry import Point
 from compas.geometry import SphericalSurface
 from compas.geometry import ToroidalSurface
@@ -208,6 +211,66 @@ def analytic_curve_param(curve, point) -> float:
     elif not isinstance(curve, Circle):
         raise BrepError(f"Not an analytic edge curve of the exchange format: {type(curve).__name__}")
     return math.atan2(y, x)
+
+
+def canonical_conic_interval(curve, domain: tuple[float, float]):
+    """Re-express a conic edge so its parameter interval increases.
+
+    A pcurve is written over its edge's interval and a NURBS knot vector cannot
+    decrease, so a backwards interval is unbuildable rather than merely reversed.
+    Reversing the edge would strand every trim's ``is_reversed``; negating the
+    frame's y-axis mirrors the parameter instead, leaving the curve, its direction
+    and its end vertices untouched:
+
+        centre + a*cos(-t)*x + b*sin(-t)*(-y) == centre + a*cos(t)*x + b*sin(t)*y
+
+    Returns ``(curve, domain)`` unchanged when the interval already increases.
+    """
+    start, end = domain
+    if start <= end:
+        return curve, domain
+
+    frame = curve.frame
+    mirrored = Frame(frame.point, frame.xaxis, -frame.yaxis)
+    if isinstance(curve, Circle):
+        return Circle(curve.radius, frame=mirrored), (-start, -end)
+    if isinstance(curve, Ellipse):
+        return Ellipse(curve.major, curve.minor, frame=mirrored), (-start, -end)
+
+    raise BrepError(f"Not an analytic edge curve of the exchange format: {type(curve).__name__}")
+
+
+def conic_parameter_shift(domain: tuple[float, float]) -> float:
+    """The shift bringing a periodic conic's interval onto the document's canonical turn.
+
+    ``[-0.55, 0]`` and ``[5.73, 6.28]`` name the same arc, but a pcurve written over
+    one sits a full turn from an edge rebuilt on the other, and
+    ``BRepBuilderAPI_MakeEdge`` normalizes into ``[0, 2*pi)`` on its own. Both sides
+    normalize through here so a domain and its pcurves move together.
+
+    Returns 0.0 for an interval already on the canonical turn.
+    """
+    start = domain[0]
+    shift = -2.0 * pi * floor(start / (2.0 * pi))
+
+    # OCC hands over full circles starting at -8e-32, which floors a whole turn early.
+    if abs(start + shift - 2.0 * pi) < 1e-9:
+        shift -= 2.0 * pi
+
+    return shift
+
+
+def shift_pcurve_parameters(pcurve: NurbsCurve, shift: float) -> NurbsCurve:
+    """Move a pcurve's parameterization by ``shift``, returning a curve of the same shape.
+
+    Only the knots move; shifting a parameter is affine.
+    """
+    if not shift:
+        return pcurve
+
+    moved = NurbsCurve.__from_data__(pcurve.__data__)
+    moved._knots = [knot + shift for knot in moved._knots]
+    return moved
 
 
 def analytic_curve_is_full_turn(domain: tuple[float, float]) -> bool:

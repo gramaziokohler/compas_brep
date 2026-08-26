@@ -138,6 +138,7 @@ nav:
       - What is a Brep?: brep-basics.md
       - Motivation: motivation.md
       - Architecture: architecture.md
+      - Cross-backend exchange gaps: cross-backend-gaps.md
   - Contributing:
       - Adding a new operation: contributing.md
   - API Reference:

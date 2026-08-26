@@ -34,6 +34,8 @@ from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeFace
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeVertex
 from OCP.BRepBuilderAPI import BRepBuilderAPI_MakeWire
 from OCP.BRepBuilderAPI import BRepBuilderAPI_Sewing
+from OCP.BRepCheck import BRepCheck_Analyzer
+from OCP.BRepLib import BRepLib
 from OCP.BRepTools import BRepTools
 from OCP.BRepTools import BRepTools_WireExplorer
 from OCP.Geom import Geom_BSplineCurve
@@ -75,6 +77,7 @@ from OCP.TColStd import TColStd_Array1OfInteger
 from OCP.TColStd import TColStd_Array1OfReal
 from OCP.TColStd import TColStd_Array2OfReal
 from OCP.TopAbs import TopAbs_FACE
+from OCP.TopAbs import TopAbs_FORWARD
 from OCP.TopAbs import TopAbs_REVERSED
 from OCP.TopAbs import TopAbs_VERTEX
 from OCP.TopAbs import TopAbs_WIRE
@@ -88,9 +91,11 @@ from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
 from compas_brep.curves import NurbsCurve
 from compas_brep.curves import edge_curve_to_data
 from compas_brep.errors import BrepError
+from compas_brep.errors import BrepInvalidError
 from compas_brep.exchange import EXCHANGE_VERSION
 from compas_brep.exchange import LOOP_INNER
 from compas_brep.exchange import LOOP_OUTER
+from compas_brep.exchange import conic_parameter_shift
 from compas_brep.exchange import loop_to_data
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
@@ -380,6 +385,32 @@ def _face_placement_is_indirect(occ_face: Any) -> bool:
     return False
 
 
+def _edge_parameter_shift(occ_edge: Any) -> float:
+    """How far a rebuild moves this edge's parameter origin.
+
+    A pcurve is written over its edge curve's interval, so a rebuild that
+    reparameterizes the curve has to shift the pcurves with it. A ``line`` carries
+    only its endpoints and comes back on ``[0, length]``; a periodic conic is
+    normalized into ``[0, 2*pi)``. Both are pure shifts.
+    """
+    adaptor = BRepAdaptor_Curve(occ_edge)
+    ctype = adaptor.GetType()
+    first = adaptor.FirstParameter()
+
+    if ctype == GeomAbs_Line:
+        return -first
+    if ctype in (GeomAbs_Circle, GeomAbs_Ellipse):
+        return conic_parameter_shift((first, adaptor.LastParameter()))
+    return 0.0
+
+
+def _shift_pcurve(pcurve: NurbsCurve, shift: float) -> NurbsCurve:
+    """Move a pcurve's parameterization by ``shift``. Only the knots change."""
+    if shift:
+        pcurve._knots = [knot + shift for knot in pcurve._knots]
+    return pcurve
+
+
 def _flip_pcurve_u(pcurve: NurbsCurve) -> NurbsCurve:
     """Mirror a pcurve's u, undoing the y-axis negation in :func:`_ax3_to_frame`.
 
@@ -564,7 +595,12 @@ def _extract_edge_curve_and_domain(
     """
     adaptor = BRepAdaptor_Curve(occ_edge)
     ctype = adaptor.GetType()
-    domain = (adaptor.FirstParameter(), adaptor.LastParameter())
+    # Recorded in the interval the rebuild will actually put the curve on, not the
+    # one OCC happens to hold it on -- the same shift the edge's pcurves get, so
+    # that curve and pcurves stay on one parameterization. See
+    # :func:`_edge_parameter_shift`.
+    shift = _edge_parameter_shift(occ_edge)
+    domain = (adaptor.FirstParameter() + shift, adaptor.LastParameter() + shift)
 
     if ctype == GeomAbs_Line:
         first = adaptor.Value(adaptor.FirstParameter())
@@ -753,23 +789,33 @@ def occ_brep_to_data(brep: Brep) -> dict:
         # inside out.
         is_reversed = (occ_face.Orientation() == TopAbs_REVERSED) != u_is_flipped
 
-        occ_outer_wire = BRepTools.OuterWire_s(occ_face)
+        # Every trim below is recorded against the face's OWN parameter space, which
+        # means exploring a FORWARD-oriented copy. Exploring ``occ_face`` itself
+        # composes its REVERSED flag into each edge's orientation, and the reader
+        # applies ``is_reversed`` again when it reverses the rebuilt face -- so the
+        # reversal would land twice and the wire would come back running backwards.
+        # (Invisible on planar faces, which the reader rebuilds from 3D wires and
+        # re-winds itself; on a pcurve-built cylinder it inverts the face.)
+        forward_face = TopoDS.Face_s(occ_face.Oriented(TopAbs_FORWARD))
+
+        occ_outer_wire = BRepTools.OuterWire_s(forward_face)
 
         loops = []
         has_outer = False
-        wire_exp = TopExp_Explorer(occ_face, TopAbs_WIRE)
+        wire_exp = TopExp_Explorer(forward_face, TopAbs_WIRE)
         while wire_exp.More():
             occ_wire = TopoDS.Wire_s(wire_exp.Current())
             trims = []
-            wire_explorer = BRepTools_WireExplorer(occ_wire, occ_face)
+            wire_explorer = BRepTools_WireExplorer(occ_wire, forward_face)
             while wire_explorer.More():
                 occ_edge = wire_explorer.Current()
                 edge_reversed = occ_edge.Orientation() == TopAbs_REVERSED
                 edge_idx = _edge_id(occ_edge)
 
-                pcurve = _extract_pcurve(occ_edge, occ_face)
+                pcurve = _extract_pcurve(occ_edge, forward_face)
                 if pcurve is None:
                     raise BrepError(f"Cannot serialize a trim without a pcurve (edge {edge_idx})")
+                pcurve = _shift_pcurve(pcurve, _edge_parameter_shift(occ_edge))
                 if u_is_flipped:
                     pcurve = _flip_pcurve_u(pcurve)
                 trims.append(
@@ -780,6 +826,14 @@ def occ_brep_to_data(brep: Brep) -> dict:
                     }
                 )
                 wire_explorer.Next()
+
+            if trims and u_is_flipped:
+                # Mirroring u reverses the winding too, not just the normal. The
+                # flag above absorbs the normal; the wire has to be walked the other
+                # way for the rest, or a fillet's patches rebuild inside out.
+                trims.reverse()
+                for trim_data in trims:
+                    trim_data["is_reversed"] = not trim_data["is_reversed"]
 
             if trims:
                 is_outer = occ_wire.IsSame(occ_outer_wire)
@@ -892,6 +946,16 @@ def brep_to_occ(brep: Brep) -> Any:
 
     sewing.Perform()
     shape = sewing.SewedShape()
+
+    # Rhino treats a pcurve as an approximation; OCC requires it to agree with the 3D
+    # curve within tolerance, and every edge above asserts that agreement whether or
+    # not it holds. Let the kernel reconcile them, as its own importers do.
+    BRepLib.SameParameter_s(shape, 1e-6, True)
+
+    # Fail where the shape is built, not at whatever later operation trips over it.
+    # Mirrors the Rhino builder's IsValidWithLog.
+    if not BRepCheck_Analyzer(shape).IsValid():
+        raise BrepInvalidError("Brep reconstruction failed! The rebuilt OCC shape is not valid.")
 
     brep._native_brep = shape
     return shape

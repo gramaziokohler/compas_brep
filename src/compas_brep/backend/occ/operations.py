@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from compas.geometry import Circle
+from compas.geometry import Ellipse
 from compas.geometry import Plane
 from compas.geometry import Point
 from compas.geometry import Polyline
@@ -40,8 +42,10 @@ from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepError
 from compas_brep.exchange import LOOP_OUTER
 from compas_brep.exchange import SINGULAR_TRIM_EDGE
+from compas_brep.exchange import conic_parameter_shift
 from compas_brep.exchange import document_version
 from compas_brep.exchange import face_loops_from_data
+from compas_brep.exchange import shift_pcurve_parameters
 from compas_brep.exchange import singular_trim_vertex_id
 from compas_brep.exchange import trim_pcurve_from_data
 from compas_brep.face import BrepFace
@@ -384,12 +388,19 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
 
     vertices = [BrepVertex(Point(*xyz)) for xyz in data["vertices"]]
 
+    # A conic may arrive on any turn, but `MakeEdge` normalizes into [0, 2*pi) when
+    # the edge is built. Normalize here so a domain and its pcurves move together.
     edges = []
+    edge_shifts = []
     for ed in data["edges"]:
         start = vertices[ed["start"]]
         end = vertices[ed["end"]]
         curve, domain = edge_curve_from_data(ed["curve"])
+        shift = conic_parameter_shift(domain) if isinstance(curve, (Circle, Ellipse)) and domain else 0.0
+        if shift:
+            domain = (domain[0] + shift, domain[1] + shift)
         edges.append(BrepEdge(start, end, curve=curve, domain=domain))
+        edge_shifts.append(shift)
 
     version = document_version(data)
 
@@ -405,11 +416,14 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
             for td in loop_data:
                 edge_id = td["edge"]
                 is_singular = edge_id == SINGULAR_TRIM_EDGE
+                pcurve = trim_pcurve_from_data(td, version)
+                if not is_singular and edge_shifts[edge_id] and pcurve is not None:
+                    pcurve = shift_pcurve_parameters(pcurve, edge_shifts[edge_id])
                 trims.append(
                     BrepTrim(
                         edge=None if is_singular else edges[edge_id],
                         is_reversed=td.get("is_reversed", False),
-                        curve_2d=trim_pcurve_from_data(td, version),
+                        curve_2d=pcurve,
                         vertex=vertices[singular_trim_vertex_id(td)] if is_singular else None,
                     )
                 )
