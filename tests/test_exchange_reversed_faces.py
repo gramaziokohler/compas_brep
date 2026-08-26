@@ -49,11 +49,11 @@ def _round_trip(brep: Brep) -> Brep:
 # behind: a bite leaves a partial wall, a channel leaves a full-turn wall with a
 # seam, and a blind hole leaves a full-turn wall plus two caps.
 SUBTRACTIONS = {
-    "bite": lambda: _block() - _cylinder(-5.2),
-    "channel": lambda: _block() - _cylinder(0.0),
-    "blind_hole": lambda: _block() - _cylinder(0.0, height=4.0),
-    "sphere": lambda: _block() - Brep.from_sphere(Sphere(2.0)),
-    "cone": lambda: _block() - Brep.from_cone(Cone(2.0, 6.0)),
+    "bite": lambda: (_block() - _cylinder(-5.2))[0],
+    "channel": lambda: (_block() - _cylinder(0.0))[0],
+    "blind_hole": lambda: (_block() - _cylinder(0.0, height=4.0))[0],
+    "sphere": lambda: (_block() - Brep.from_sphere(Sphere(2.0)))[0],
+    "cone": lambda: (_block() - Brep.from_cone(Cone(2.0, 6.0)))[0],
 }
 
 
@@ -75,7 +75,7 @@ def test_subtracted_shape_survives_the_round_trip(name):
 @pytest.mark.occ
 def test_blind_hole_does_not_round_trip_into_a_bump():
     """A hole removes material, so a reversed wall reads as 1000 + V rather than 1000 - V."""
-    brep = _block() - _cylinder(0.0, height=4.0)
+    brep = (_block() - _cylinder(0.0, height=4.0))[0]
     assert brep.volume < 1000.0
 
     assert _round_trip(brep).volume < 1000.0
@@ -89,8 +89,8 @@ def test_accumulated_subtractions_match_the_in_process_reference():
     reference = _block()
     exchanged = _block()
     for x in positions:
-        reference = reference - _cylinder(x)
-        exchanged = _round_trip(_round_trip(exchanged) - _round_trip(_cylinder(x)))
+        reference = (reference - _cylinder(x))[0]
+        exchanged = _round_trip((_round_trip(exchanged) - _round_trip(_cylinder(x)))[0])
 
         assert exchanged.is_valid
         assert exchanged.volume == pytest.approx(reference.volume, rel=1e-9)
@@ -110,7 +110,7 @@ def test_a_conic_edge_beyond_one_turn_survives_the_round_trip():
     cutter = Brep.from_box(Box(3.0, 3.0, 3.0))
     cutter.transform(Rotation.from_axis_and_angle([1, 0, 0], 0.6))
     cutter.translate([0, 0, -2.0])
-    brep = Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter
+    brep = (Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter)[0]
     assert brep.is_valid
 
     result = _round_trip(brep)
@@ -125,7 +125,7 @@ def test_every_analytic_edge_domain_is_written_within_one_turn():
     cutter = Brep.from_box(Box(3.0, 3.0, 3.0))
     cutter.transform(Rotation.from_axis_and_angle([1, 0, 0], 0.6))
     cutter.translate([0, 0, -2.0])
-    data = (Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter).__data__
+    data = (Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter)[0].__data__
 
     for edge in data["edges"]:
         if edge["curve"]["type"] in ("circle", "arc", "ellipse"):

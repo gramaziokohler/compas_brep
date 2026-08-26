@@ -98,17 +98,17 @@ def make_from_surface(
 
 
 @pluggable(category="brep-operations")
-def boolean_difference(brep_a: Brep, brep_b: Brep) -> Brep:
+def boolean_difference(brep_a: Brep, brep_b: Brep) -> list[Brep]:
     raise NotImplementedError
 
 
 @pluggable(category="brep-operations")
-def boolean_union(brep_a: Brep, brep_b: Brep) -> Brep:
+def boolean_union(brep_a: Brep, brep_b: Brep) -> list[Brep]:
     raise NotImplementedError
 
 
 @pluggable(category="brep-operations")
-def boolean_intersection(brep_a: Brep, brep_b: Brep) -> Brep:
+def boolean_intersection(brep_a: Brep, brep_b: Brep) -> list[Brep]:
     raise NotImplementedError
 
 

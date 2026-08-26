@@ -30,12 +30,14 @@ from OCP.gp import gp_Pln
 from OCP.gp import gp_Pnt
 from OCP.gp import gp_Trsf
 from OCP.ShapeFix import ShapeFix_Shape
+from OCP.TopAbs import TopAbs_COMPOUND
 from OCP.TopAbs import TopAbs_EDGE
 from OCP.TopAbs import TopAbs_IN
 from OCP.TopAbs import TopAbs_ON
 from OCP.TopAbs import TopAbs_SHELL
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopoDS import TopoDS
+from OCP.TopoDS import TopoDS_Iterator
 
 from compas_brep.curves import edge_curve_from_data
 from compas_brep.edge import BrepEdge
@@ -67,28 +69,48 @@ if TYPE_CHECKING:
 # =============================================================================
 
 
-def boolean_difference(brep_a: Brep, brep_b: Brep) -> Brep:
-    """Boolean subtraction: A - B."""
+def _pieces(shape) -> list[Brep]:
+    """Unpack a boolean result into one Brep per piece.
+
+    BRepAlgoAPI always wraps its result in a TopAbs_COMPOUND, whatever the piece
+    count — the compound is how a C++ single-shape return expresses "N results",
+    not a modelling concept, so it does not survive into the public API.
+
+    Children are taken as they come rather than filtered to TopAbs_SOLID: a
+    boolean on a surface or a shell yields faces, and filtering would drop them.
+    """
+    if shape.ShapeType() != TopAbs_COMPOUND:
+        return [occ_to_brep(shape)]
+    pieces = []
+    iterator = TopoDS_Iterator(shape)
+    while iterator.More():
+        pieces.extend(_pieces(iterator.Value()))
+        iterator.Next()
+    return pieces
+
+
+def boolean_difference(brep_a: Brep, brep_b: Brep) -> list[Brep]:
+    """Boolean subtraction: A - B. One Brep per resulting piece."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
     op = BRepAlgoAPI_Cut(shape_a, shape_b)
-    return occ_to_brep(op.Shape())
+    return _pieces(op.Shape())
 
 
-def boolean_union(brep_a: Brep, brep_b: Brep) -> Brep:
-    """Boolean union: A + B."""
+def boolean_union(brep_a: Brep, brep_b: Brep) -> list[Brep]:
+    """Boolean union: A + B. One Brep per resulting piece."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
     op = BRepAlgoAPI_Fuse(shape_a, shape_b)
-    return occ_to_brep(op.Shape())
+    return _pieces(op.Shape())
 
 
-def boolean_intersection(brep_a: Brep, brep_b: Brep) -> Brep:
-    """Boolean intersection: A & B."""
+def boolean_intersection(brep_a: Brep, brep_b: Brep) -> list[Brep]:
+    """Boolean intersection: A & B. One Brep per resulting piece."""
     shape_a = brep_to_occ(brep_a)
     shape_b = brep_to_occ(brep_b)
     op = BRepAlgoAPI_Common(shape_a, shape_b)
-    return occ_to_brep(op.Shape())
+    return _pieces(op.Shape())
 
 
 # =============================================================================

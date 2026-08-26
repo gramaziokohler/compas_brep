@@ -233,7 +233,7 @@ def test_occ_writes_a_tilted_cut_as_an_ellipse():
     cutter.transform(Rotation.from_axis_and_angle([1, 0, 0], 0.6))
     cutter.translate([0, 0, -2.0])
 
-    data = (Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter).__data__
+    data = (Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter)[0].__data__
 
     assert "ellipse" in _edge_tags(data)
 
@@ -308,7 +308,7 @@ def test_an_ellipse_survives_the_rebuild_as_a_native_ellipse():
     cutter.transform(Rotation.from_axis_and_angle([1, 0, 0], 0.6))
     cutter.translate([0, 0, -2.0])
 
-    restored = _roundtrip(Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter)
+    restored = _roundtrip((Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter)[0])
 
     assert "ellipse" in _native_curve_types(restored)
 

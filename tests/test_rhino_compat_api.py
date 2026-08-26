@@ -37,7 +37,7 @@ def holed_brep():
     """
     box = Brep.from_box(Box(10.0, 10.0, 2.0))
     cylinder = Brep.from_cylinder(Cylinder(2.0, 6.0, frame=Frame.worldXY()))
-    return Brep.from_boolean_difference(box, cylinder)
+    return (box - cylinder)[0]
 
 
 # =============================================================================

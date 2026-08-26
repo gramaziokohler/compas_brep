@@ -38,7 +38,7 @@ def unit_box_brep():
 def boolean_diff_brep():
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
     cyl = Brep.from_cylinder(Cylinder(0.3, 4.0))
-    return box - cyl
+    return (box - cyl)[0]
 
 
 # =============================================================================

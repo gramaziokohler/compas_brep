@@ -27,6 +27,7 @@ from compas.geometry import Vector
 
 from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
+from compas_brep.errors import BrepError
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
 from compas_brep.operations import boolean_difference
@@ -154,13 +155,16 @@ class Brep(Geometry):
             f"Volume: {self.volume}"
         )
 
-    def __sub__(self, other: Brep) -> Brep:
+    def __sub__(self, other: Brep) -> list[Brep]:
+        """A - B. Same as :meth:`from_boolean_difference`, so it returns a list."""
         return Brep.from_boolean_difference(self, other)
 
-    def __add__(self, other: Brep) -> Brep:
+    def __add__(self, other: Brep) -> list[Brep]:
+        """A + B. Same as :meth:`from_boolean_union`, so it returns a list."""
         return Brep.from_boolean_union(self, other)
 
-    def __and__(self, other: Brep) -> Brep:
+    def __and__(self, other: Brep) -> list[Brep]:
+        """A & B. Same as :meth:`from_boolean_intersection`, so it returns a list."""
         return Brep.from_boolean_intersection(self, other)
 
     # =========================================================================
@@ -717,23 +721,37 @@ class Brep(Geometry):
     # =========================================================================
 
     @classmethod
-    def from_boolean_difference(cls, brep_a: Brep, brep_b: Brep) -> Brep:
-        """Boolean subtraction: A - B."""
+    def from_boolean_difference(cls, brep_a: Brep, brep_b: Brep) -> list[Brep]:
+        """Boolean subtraction: A - B.
+
+        Returns one Brep per resulting piece — a subtraction can cut a shape into
+        several disconnected ones. Empty when nothing is left.
+        """
         return boolean_difference(brep_a, brep_b)
 
     @classmethod
-    def from_boolean_union(cls, brep_a: Brep, brep_b: Brep) -> Brep:
-        """Boolean union: A + B."""
+    def from_boolean_union(cls, brep_a: Brep, brep_b: Brep) -> list[Brep]:
+        """Boolean union: A + B.
+
+        Returns one Brep per resulting piece — disjoint inputs stay disjoint.
+        """
         return boolean_union(brep_a, brep_b)
 
     @classmethod
-    def from_boolean_intersection(cls, brep_a: Brep, brep_b: Brep) -> Brep:
-        """Boolean intersection: A & B."""
+    def from_boolean_intersection(cls, brep_a: Brep, brep_b: Brep) -> list[Brep]:
+        """Boolean intersection: A & B.
+
+        Returns one Brep per resulting piece. Empty when the two do not overlap.
+        """
         return boolean_intersection(brep_a, brep_b)
 
     @classmethod
-    def from_boolean_union_multi(cls, *breps: Brep) -> Brep:
+    def from_boolean_union_multi(cls, *breps: Brep) -> list[Brep]:
         """Boolean union of multiple Breps, chained pairwise.
+
+        Only the first piece of each intermediate union is carried into the next
+        step, so disjoint inputs are not all preserved. Union them pairwise if
+        that matters.
 
         Parameters
         ----------
@@ -743,9 +761,12 @@ class Brep(Geometry):
         if len(breps) < 2:
             raise ValueError("Need at least 2 breps")
         result = breps[0]
-        for b in breps[1:]:
-            result = cls.from_boolean_union(result, b)
-        return result
+        for b in breps[1:-1]:
+            results = cls.from_boolean_union(result, b)
+            if not results:
+                raise BrepError("Boolean union left no result")
+            result = results[0]
+        return cls.from_boolean_union(result, breps[-1])
 
     # =========================================================================
     # Conversion
