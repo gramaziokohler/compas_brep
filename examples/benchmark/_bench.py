@@ -31,6 +31,15 @@ def load_backend(name: str):
     raise ValueError(f"Unknown backend: {name!r}")
 
 
+def one(result):
+    """First piece of a boolean result.
+
+    compas_brep booleans return a list of pieces; compas_occ returns a single
+    Brep. The benchmarks compare the two, so they normalise here.
+    """
+    return result[0] if isinstance(result, list) else result
+
+
 def _skip_exc_types():
     types = [NotImplementedError, AttributeError]
     try:

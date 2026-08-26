@@ -19,15 +19,18 @@ print(f"Brep B: {brep_b}")
 print(f"Brep A volume: {brep_a.volume:.4f}")
 print(f"Brep B volume: {brep_b.volume:.4f}")
 
-# Boolean subtraction: A - B
-result = brep_a - brep_b
+# Boolean subtraction: A - B. A subtraction can cut a shape into several
+# disconnected solids, so this returns one Brep per resulting piece.
+results = Brep.from_boolean_difference(brep_a, brep_b)
 
-print(f"Result: {result}")
-print(f"Result volume: {result.volume:.4f}")
-print(f"Result faces: {len(result.faces)}")
-print(f"Result vertices: {len(result.vertices)}")
+print(f"Result pieces: {len(results)}")
+for i, result in enumerate(results):
+    print(f"  [{i}] volume: {result.volume:.4f}")
+    print(f"  [{i}] faces: {len(result.faces)}")
+    print(f"  [{i}] vertices: {len(result.vertices)}")
 
-# Visualize with compas_viewer - pass Brep directly
+# Visualize with compas_viewer - pass each Brep directly
 viewer = Viewer()
-viewer.scene.add(result, surfacecolor=Color(0.2, 0.6, 0.9))
+for result in results:
+    viewer.scene.add(result, surfacecolor=Color(0.2, 0.6, 0.9))
 viewer.show()

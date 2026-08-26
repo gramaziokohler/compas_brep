@@ -78,7 +78,7 @@ def _cylinder_cut_by_a_tilted_box() -> Brep:
     cutter = Brep.from_box(Box(3.0, 3.0, 3.0))
     cutter.transform(Rotation.from_axis_and_angle([1, 0, 0], 0.6))
     cutter.translate([0, 0, -2.0])
-    return Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter
+    return (Brep.from_cylinder(Cylinder(0.5, 3.0)) - cutter)[0]
 
 
 SURFACE_TAG_SOURCES = {

@@ -485,7 +485,7 @@ def test_operations_to_tesselation():
 def test_boolean_operators_sub_returns_valid_brep():
     a = _unit_box_brep()
     b = _offset_box_brep(dx=0.5, size=0.5)
-    result = a - b
+    result = (a - b)[0]
     assert isinstance(result, Brep)
     assert result.is_valid
     assert result.volume > 0
@@ -494,7 +494,7 @@ def test_boolean_operators_sub_returns_valid_brep():
 def test_boolean_operators_add_returns_valid_brep():
     a = _unit_box_brep()
     b = _offset_box_brep(dx=0.5, size=1.0)
-    result = a + b
+    result = (a + b)[0]
     assert isinstance(result, Brep)
     assert result.is_valid
     assert result.volume > 0
@@ -503,7 +503,7 @@ def test_boolean_operators_add_returns_valid_brep():
 def test_boolean_operators_and_returns_valid_brep():
     a = _unit_box_brep()
     b = _offset_box_brep(dx=0.25, size=1.0)
-    result = a & b
+    result = (a & b)[0]
     assert isinstance(result, Brep)
     assert result.is_valid
     assert result.volume > 0
@@ -512,14 +512,14 @@ def test_boolean_operators_and_returns_valid_brep():
 def test_boolean_operators_sub_volume_decreases():
     a = Brep.from_box(Box(2.0, 2.0, 2.0))
     b = _unit_box_brep()
-    result = a - b
+    result = (a - b)[0]
     assert result.volume < a.volume
 
 
 def test_boolean_operators_add_volume_between_parts_and_sum():
     a = _unit_box_brep()
     b = _offset_box_brep(dx=0.5, size=1.0)
-    result = a + b
+    result = (a + b)[0]
     # Union volume should be less than sum (overlap) but more than either
     assert result.volume < a.volume + b.volume
     assert result.volume > a.volume
@@ -528,7 +528,7 @@ def test_boolean_operators_add_volume_between_parts_and_sum():
 def test_boolean_operators_and_volume_less_than_both():
     a = _unit_box_brep()
     b = _offset_box_brep(dx=0.25, size=1.0)
-    result = a & b
+    result = (a & b)[0]
     assert result.volume < a.volume
     assert result.volume < b.volume
 
@@ -537,8 +537,9 @@ def test_boolean_operators_from_boolean_union_multi():
     a = _unit_box_brep()
     b = _offset_box_brep(dx=0.8, size=1.0)
     c = _offset_box_brep(dx=1.6, size=1.0)
-    result = Brep.from_boolean_union_multi(a, b, c)
-    assert isinstance(result, Brep)
+    results = Brep.from_boolean_union_multi(a, b, c)
+    assert len(results) == 1  # the three overlap, so they fuse into one solid
+    result = results[0]
     assert result.is_valid
     assert result.volume > a.volume
 

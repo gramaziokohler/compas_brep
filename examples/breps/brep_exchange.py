@@ -22,7 +22,7 @@ cx = Brep.from_cylinder(Cylinder(0.7 * R, 4 * R, frame=YZ))
 cy = Brep.from_cylinder(Cylinder(0.7 * R, 4 * R, frame=ZX))
 cz = Brep.from_cylinder(Cylinder(0.7 * R, 4 * R, frame=XY))
 
-brep = box + cx + cy + cz
+brep = Brep.from_boolean_union_multi(box, cx, cy, cz)[0]
 
 # =============================================================================
 # Write/Read to IGES

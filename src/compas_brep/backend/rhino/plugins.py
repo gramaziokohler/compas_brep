@@ -215,9 +215,14 @@ def brep_offset(brep, distance):
 
 @plugin(category="brep-operations", requires=["Rhino"])
 def brep_overlap(brep_a, brep_b, deflection=None, tolerance=0.0):
+    from compas_brep.errors import BrepError
+
     from .operations import boolean_intersection
 
-    return boolean_intersection(brep_a, brep_b)
+    results = boolean_intersection(brep_a, brep_b)
+    if not results:
+        raise BrepError("Breps do not overlap")
+    return results[0]
 
 
 @plugin(category="brep-operations", requires=["Rhino"])

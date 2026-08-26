@@ -54,7 +54,7 @@ def build_sphere() -> Brep:
 
 def build_box_with_hole() -> Brep:
     """A box with a through-hole: the inner loop, on two faces."""
-    return Brep.from_box(Box(2.0, 2.0, 2.0)) - Brep.from_cylinder(Cylinder(0.3, 4.0))
+    return (Brep.from_box(Box(2.0, 2.0, 2.0)) - Brep.from_cylinder(Cylinder(0.3, 4.0)))[0]
 
 
 def build_cylinder() -> Brep:

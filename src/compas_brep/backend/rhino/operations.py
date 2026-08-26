@@ -46,8 +46,19 @@ if TYPE_CHECKING:
 _RHINO_TOL = 1e-6  # Rhino boolean ops require at least 1e-6; TOL.absolute (1e-9) is too tight
 
 
-def boolean_difference(brep_a: Brep, brep_b: Brep) -> Brep:
-    """Boolean subtraction: A - B."""
+def _results(results, operation: str) -> list[Brep]:
+    """Wrap every Brep a Rhino boolean returned, not just the first.
+
+    Rhino hands back one Brep per resulting piece. ``None`` means the operation
+    failed; an empty array means it succeeded and nothing was left.
+    """
+    if results is None:
+        raise BrepError(f"Boolean {operation} failed")
+    return [rhino_to_brep(result) for result in results]
+
+
+def boolean_difference(brep_a: Brep, brep_b: Brep) -> list[Brep]:
+    """Boolean subtraction: A - B. One Brep per resulting piece."""
     shape_a = brep_to_rhino(brep_a)
     shape_b = brep_to_rhino(brep_b)
     results = Rhino.Geometry.Brep.CreateBooleanDifference(
@@ -55,26 +66,22 @@ def boolean_difference(brep_a: Brep, brep_b: Brep) -> Brep:
         [shape_b],
         max(TOL.absolute, _RHINO_TOL),
     )
-    if not results:
-        raise RuntimeError("Boolean difference ended with no result")
-    return rhino_to_brep(results[0])
+    return _results(results, "difference")
 
 
-def boolean_union(brep_a: Brep, brep_b: Brep) -> Brep:
-    """Boolean union: A + B."""
+def boolean_union(brep_a: Brep, brep_b: Brep) -> list[Brep]:
+    """Boolean union: A + B. One Brep per resulting piece."""
     shape_a = brep_to_rhino(brep_a)
     shape_b = brep_to_rhino(brep_b)
     results = Rhino.Geometry.Brep.CreateBooleanUnion(
         [shape_a, shape_b],
         max(TOL.absolute, _RHINO_TOL),
     )
-    if not results:
-        raise RuntimeError("Boolean union ended with no result")
-    return rhino_to_brep(results[0])
+    return _results(results, "union")
 
 
-def boolean_intersection(brep_a: Brep, brep_b: Brep) -> Brep:
-    """Boolean intersection: A & B."""
+def boolean_intersection(brep_a: Brep, brep_b: Brep) -> list[Brep]:
+    """Boolean intersection: A & B. One Brep per resulting piece."""
     shape_a = brep_to_rhino(brep_a)
     shape_b = brep_to_rhino(brep_b)
     results = Rhino.Geometry.Brep.CreateBooleanIntersection(
@@ -82,9 +89,7 @@ def boolean_intersection(brep_a: Brep, brep_b: Brep) -> Brep:
         [shape_b],
         max(TOL.absolute, _RHINO_TOL),
     )
-    if not results:
-        raise RuntimeError("Boolean intersection ended with no result")
-    return rhino_to_brep(results[0])
+    return _results(results, "intersection")
 
 
 # =============================================================================

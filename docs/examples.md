@@ -8,6 +8,7 @@ The `examples/` directory in the repository contains runnable scripts grouped by
 - [brep_from_loft.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_from_loft.py)
 - [brep_from_mesh.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_from_mesh.py)
 - [brep_from_booleans.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_from_booleans.py)
+- [brep_boolean_disjoint.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_boolean_disjoint.py)
 - [brep_serialisation.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_serialisation.py)
 - [brep_explorer.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_explorer.py)
 - [brep_fillet.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/breps/brep_fillet.py)
@@ -29,3 +30,9 @@ The `examples/` directory in the repository contains runnable scripts grouped by
 - [surface_from_meshgrid.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/surfaces/surface_from_meshgrid.py)
 - [surface_isocurves.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/surfaces/surface_isocurves.py)
 - [surface_intersections_with_line.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/surfaces/surface_intersections_with_line.py)
+
+## Rhino
+
+Scripts to run inside Rhino rather than the viewer.
+
+- [brep_boolean_disjoint.py](https://github.com/gramaziokohler/compas_brep/blob/main/examples/rhino/brep_boolean_disjoint.py)

@@ -61,7 +61,7 @@ def test_roundtrip_boolean_difference():
     """Round-trip: boolean-subtracted shape → serialize → deserialize → volume within 5%."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
     cyl = Brep.from_cylinder(Cylinder(0.3, 4.0))
-    result = box - cyl
+    result = (box - cyl)[0]
     expected_volume = result.volume
 
     data = result.__data__
@@ -111,7 +111,7 @@ def test_serialize_boolean_result():
     """Boolean result with mixed planar+spherical faces serializes correctly."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
     sph = Brep.from_sphere(Sphere(0.3))
-    result = box - sph
+    result = (box - sph)[0]
 
     data = result.__data__
     assert data["version"] == 6
@@ -145,7 +145,7 @@ def _downgrade_document(data, version):
 
 def _box_with_hole():
     """A box with a cylinder cut clean through it, so two faces carry an inner loop."""
-    return Brep.from_box(Box(2.0, 2.0, 2.0)) - Brep.from_cylinder(Cylinder(0.3, 4.0))
+    return (Brep.from_box(Box(2.0, 2.0, 2.0)) - Brep.from_cylinder(Cylinder(0.3, 4.0)))[0]
 
 
 def test_v6_loops_are_tagged_with_a_role():
@@ -268,7 +268,7 @@ def test_deserialize_v4_document():
     """A v4-version-tagged document (plane + sphere faces) still deserializes correctly."""
     box = Brep.from_box(Box(2.0, 2.0, 2.0))
     sph = Brep.from_sphere(Sphere(0.3))
-    result = box - sph
+    result = (box - sph)[0]
 
     # The codec handles all surface types regardless of version number; this
     # verifies the reader doesn't gate on it.

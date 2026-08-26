@@ -18,7 +18,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _bench import die, emit, load_backend, parse_args, record  # noqa: E402
+from _bench import die, emit, load_backend, one, parse_args, record  # noqa: E402
 from compas.datastructures import Mesh  # noqa: E402
 from compas.geometry import Box, Cylinder  # noqa: E402
 
@@ -70,7 +70,7 @@ def main():
     def _step_roundtrip_volume(B=Brep):
         box = B.from_box(Box(2.0, 2.0, 2.0))
         cyl = B.from_cylinder(Cylinder(0.3, 4.0))
-        original = box - cyl
+        original = one(box - cyl)
         with tempfile.NamedTemporaryFile(suffix=".step", delete=False) as f:
             path = f.name
         with _suppress_c_stdout():
@@ -81,7 +81,7 @@ def main():
     def _step_roundtrip_original_volume(B=Brep):
         box = B.from_box(Box(2.0, 2.0, 2.0))
         cyl = B.from_cylinder(Cylinder(0.3, 4.0))
-        original = box - cyl
+        original = one(box - cyl)
         return original.volume
 
     record(results, "STEP roundtrip volume", "bool_volume", _step_roundtrip_volume)

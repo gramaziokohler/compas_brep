@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Fixed cross-backend exchange producing kernel-invalid Breps: a reversed face's orientation was composed into its trims by the writer and applied again by the reader, and a u-mirrored face's wire winding was left uncorrected.
 * Fixed pcurves being written over a parameter interval their edge no longer had, after the receiving kernel silently reparameterized it. An edge's forward-increasing interval is now a rule of the exchange format.
 * Changed `brep_to_occ` to raise `BrepInvalidError` when the kernel calls a rebuilt shape invalid, instead of letting it surface at a later operation.
+* Changed the boolean operations (`Brep.from_boolean_difference`, `from_boolean_union`, `from_boolean_intersection`, `from_boolean_union_multi`) to return `list[Brep]`, one Brep per resulting piece. A subtraction can cut a shape into disconnected pieces, and both backends now report all of them: the Rhino backend kept only `results[0]` and silently dropped the rest, and the OCC backend returned the pieces still wrapped in the `TopAbs_COMPOUND` that `BRepAlgoAPI` always produces. The `-`, `+` and `&` operators return `list[Brep]` too, for consistency, so they no longer chain — `a + b + c` is now `Brep.from_boolean_union_multi(a, b, c)`.
 
 ### Removed
 
