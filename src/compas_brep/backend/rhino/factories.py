@@ -16,13 +16,13 @@ from compas_rhino.conversions import box_to_rhino
 from compas_rhino.conversions import cone_to_rhino
 from compas_rhino.conversions import curve_to_rhino
 from compas_rhino.conversions import cylinder_to_rhino
-from compas_rhino.conversions import mesh_to_rhino
 from compas_rhino.conversions import polyline_to_rhino_curve
 from compas_rhino.conversions import sphere_to_rhino
 from compas_rhino.conversions import torus_to_rhino
 from compas_rhino.conversions import vector_to_rhino
 
 from compas_brep.curves import NurbsCurve
+from compas_brep.errors import BrepError
 
 from .conversion import brep_to_rhino
 from .conversion import nurbs_curve_to_rhino
@@ -74,9 +74,55 @@ def make_torus(torus: Torus) -> Brep:
 
 
 def make_from_mesh(mesh: Mesh) -> Brep:
-    """Create a Brep from a COMPAS Mesh using Rhino."""
-    rhino_mesh = mesh_to_rhino(mesh)
-    return rhino_to_brep(Rhino.Geometry.Brep.CreateFromMesh(rhino_mesh, True))
+    """Create a Brep from a COMPAS Mesh using Rhino.
+
+    Builds one Brep face per mesh face and joins them, mirroring what the OCC
+    backend does. ``Brep.CreateFromMesh`` is deliberately not used: it builds a
+    face per *Rhino mesh* face, and a Rhino mesh cannot hold an n-gon except as
+    a group of triangles, so every face with more than four vertices came back
+    fanned into triangles.
+    """
+    patches = []
+
+    for face in mesh.faces():
+        points = [rg.Point3d(*mesh.vertex_coordinates(vertex)) for vertex in mesh.face_vertices(face)]
+
+        if len(points) == 3:
+            patch = rg.Brep.CreateFromCornerPoints(points[0], points[1], points[2], TOL.absolute)
+        elif len(points) == 4:
+            patch = rg.Brep.CreateFromCornerPoints(points[0], points[1], points[2], points[3], TOL.absolute)
+        else:
+            patch = _make_ngon_face(points, face)
+
+        if patch is None:
+            raise BrepError(f"Failed to build a Brep face from face {face} of the mesh")
+
+        patches.append(patch)
+
+    joined = rg.Brep.JoinBreps(patches, TOL.absolute)
+    if not joined:
+        raise BrepError("Failed to join the faces built from the mesh into a Brep")
+    if len(joined) == 1:
+        return rhino_to_brep(joined[0])
+
+    # a mesh with disconnected components joins into one shell per component
+    merged = rg.Brep.MergeBreps(list(joined), TOL.absolute)
+    if merged is None:
+        raise BrepError(f"Failed to merge the {len(joined)} shells built from the mesh into a single Brep")
+    return rhino_to_brep(merged)
+
+
+def _make_ngon_face(points: list[Any], face: int) -> Any:
+    """Build a single planar Rhino Brep face from the corners of an n-gon."""
+    polyline = rg.Polyline(points + points[:1])
+    planar = rg.Brep.CreatePlanarBreps(polyline.ToNurbsCurve(), TOL.absolute)
+
+    if not planar:
+        raise BrepError(f"Face {face} of the mesh has {len(points)} vertices and is not planar, so it cannot become a single Brep face")
+    if len(planar) > 1:
+        raise BrepError(f"Face {face} of the mesh is self-intersecting: it produced {len(planar)} Brep faces")
+
+    return planar[0]
 
 
 def _to_rhino_curve(curve_or_profile: Polyline | Polygon | Curve) -> Any:
