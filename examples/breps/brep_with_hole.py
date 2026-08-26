@@ -27,12 +27,14 @@ hole = Brep.from_cylinder(
     )
 )
 
-brep = Brep.from_boolean_difference(surface_brep, hole)
+# A subtraction returns one Brep per resulting solid.
+breps = Brep.from_boolean_difference(surface_brep, hole)
 
 # =============================================================================
 # Visualization
 # =============================================================================
 
 viewer = Viewer()
-viewer.scene.add(brep, linewidth=2, show_points=False)
+for brep in breps:
+    viewer.scene.add(brep, linewidth=2, show_points=False)
 viewer.show()

@@ -16,7 +16,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from _bench import die, emit, load_backend, parse_args, record
+from _bench import die, emit, load_backend, one, parse_args, record
 from compas.geometry import Box, Cylinder, Frame, Point, Sphere, Vector
 
 
@@ -67,7 +67,7 @@ def main():
     def _difference(B=Brep):
         box = B.from_box(Box(2.0, 2.0, 2.0))
         cyl = B.from_cylinder(Cylinder(0.3, 4.0))
-        return box - cyl
+        return one(box - cyl)
 
     _bool_records(results, "Difference Box-Cylinder", _difference)
 
@@ -76,7 +76,7 @@ def main():
         box_a = B.from_box(Box(2.0, 2.0, 2.0))
         frame_b = Frame(Point(1.5, 0.0, 0.0), Vector(1, 0, 0), Vector(0, 1, 0))
         box_b = B.from_box(Box(1.0, 1.0, 1.0, frame_b))
-        return box_a + box_b
+        return one(box_a + box_b)
 
     _bool_records(results, "Union Box+Box", _union)
 
@@ -84,7 +84,7 @@ def main():
     def _intersection(B=Brep):
         box = B.from_box(Box(2.0, 2.0, 2.0))
         sph = B.from_sphere(Sphere(1.5))
-        return box & sph
+        return one(box & sph)
 
     _bool_records(results, "Intersection Box&Sphere", _intersection)
 

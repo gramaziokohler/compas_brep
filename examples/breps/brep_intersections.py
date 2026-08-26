@@ -13,12 +13,13 @@ points = [
 surface = Brep.from_surface(NurbsSurface.from_points(points=points))
 sphere = Brep.from_sphere(Sphere(radius=1))
 
-# Boolean intersection gives the overlapping volume
-x = Brep.from_boolean_intersection(surface, sphere)
+# Boolean intersection gives the overlapping volume, one Brep per resulting solid.
+results = Brep.from_boolean_intersection(surface, sphere)
 
 curves = []
-for edge in x.edges:
-    curves.append(edge.curve)
+for result in results:
+    for edge in result.edges:
+        curves.append(edge.curve)
 
 # =============================================================================
 # Visualization

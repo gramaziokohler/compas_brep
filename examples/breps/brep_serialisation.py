@@ -14,8 +14,11 @@ def brep_from_booleans():
     cyly = Brep.from_cylinder(Cylinder(radius=0.7 * R, height=3 * R, frame=Frame.worldZX()))
     cylz = Brep.from_cylinder(Cylinder(radius=0.7 * R, height=3 * R, frame=Frame.worldXY()))
 
-    brep = box - (cylx + cyly + cylz)
-    return brep
+    # A subtraction returns one Brep per resulting solid; these three cylinders
+    # bore through the box without cutting it into pieces, so there is just one.
+    tool = Brep.from_boolean_union_multi(cylx, cyly, cylz)[0]
+    results = Brep.from_boolean_difference(box, tool)
+    return results[0]
 
 
 # =============================================================================

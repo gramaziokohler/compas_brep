@@ -15,7 +15,10 @@ brep = Brep.from_polygons([polygon])
 extrusion = Brep.from_extrusion(brep.faces[0], Vector(0, 0, 5))
 
 box = Brep.from_box(Box(10, 1, 3))
-extrusion = Brep.from_boolean_difference(extrusion, box)
+
+# A subtraction returns one Brep per resulting solid. The box notches this
+# extrusion without severing it, so a single piece comes back.
+extrusion = Brep.from_boolean_difference(extrusion, box)[0]
 
 plane = Plane([3, 5, 7.5], [1, 0, 0])
 cutter = Brep.from_plane(plane, domain_u=(-10, 10), domain_v=(-10, 10))
