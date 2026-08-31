@@ -20,6 +20,12 @@ from compas_brep.errors import BrepError
 
 pytestmark = pytest.mark.rhino
 
+# Must match ``PLANARITY_TOLERANCE`` in the Rhino backend, which in turn matches the
+# limit OCC hardcodes. Pinned as a literal on purpose: a test that read the constant
+# back out of the source could not catch a change to it, and a change to it is a change
+# to what both backends accept.
+PLANARITY_TOLERANCE = 2e-6
+
 
 def _ngon_plate_polygons(n, radius=2.0, thickness=0.5):
     """The polygons of a plate with two n-gon caps, as compas_timber builds them."""
@@ -63,15 +69,30 @@ def test_from_mesh_triangles():
     assert brep.is_solid
 
 
-def test_from_mesh_non_planar_quad():
-    """A warped quad is still a single face - only n-gons need a plane."""
+def _warped_quad_mesh(warp):
+    """A unit quad with one corner lifted out of the plane of the other three."""
     mesh = Mesh()
-    vertices = [mesh.add_vertex(x=x, y=y, z=z) for x, y, z in [(0, 0, 0), (1, 0, 0), (1, 1, 0.5), (0, 1, 0)]]
-    mesh.add_face(vertices)
+    corners = [(0, 0, 0), (1, 0, 0), (1, 1, warp), (0, 1, 0)]
+    mesh.add_face([mesh.add_vertex(x=x, y=y, z=z) for x, y, z in corners])
+    return mesh
 
-    brep = Brep.from_mesh(mesh)
+
+def test_from_mesh_non_planar_quad_raises():
+    """A quad OCC would refuse must be refused here too, not built as a warped patch."""
+    with pytest.raises(BrepError):
+        Brep.from_mesh(_warped_quad_mesh(0.5))
+
+
+def test_from_mesh_quad_within_planarity_tolerance():
+    """Rounding noise in a nominally flat quad must not be mistaken for a bend."""
+    brep = Brep.from_mesh(_warped_quad_mesh(PLANARITY_TOLERANCE / 2))
     assert len(brep.faces) == 1
     assert brep.is_valid
+
+
+def test_from_mesh_quad_beyond_planarity_tolerance_raises():
+    with pytest.raises(BrepError):
+        Brep.from_mesh(_warped_quad_mesh(PLANARITY_TOLERANCE * 2))
 
 
 def test_from_mesh_non_planar_ngon_raises():

@@ -153,6 +153,26 @@ def test_constructors_non_planar_error_names_the_face():
         Brep.from_polygons([_non_planar_quad()])
 
 
+def _warped_quad_mesh(warp):
+    """A unit quad with one corner lifted out of the plane of the other three."""
+    mesh = Mesh()
+    corners = [(0, 0, 0), (1, 0, 0), (1, 1, warp), (0, 1, 0)]
+    mesh.add_face([mesh.add_vertex(x=x, y=y, z=z) for x, y, z in corners])
+    return mesh
+
+
+def test_constructors_from_mesh_quad_within_planarity_tolerance():
+    """Both backends draw the line at 2e-6 - see the same pair of tests for Rhino."""
+    brep = Brep.from_mesh(_warped_quad_mesh(1e-6))
+    assert len(brep.faces) == 1
+    assert brep.is_valid
+
+
+def test_constructors_from_mesh_quad_beyond_planarity_tolerance_raises():
+    with pytest.raises(BrepError):
+        Brep.from_mesh(_warped_quad_mesh(4e-6))
+
+
 def test_constructors_from_cone_delegates_to_backend():
     """from_cone requires a backend; verify it exists as a class method."""
     assert hasattr(Brep, "from_cone")
