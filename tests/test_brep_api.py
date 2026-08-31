@@ -32,6 +32,19 @@ def _offset_box_brep(dx=2.0, dy=0.0, dz=0.0, size=1.0):
     return Brep.from_box(Box(size, size, size, frame))
 
 
+def _ngon_plate_polygons(n, radius=2.0, thickness=0.5):
+    """The polygons of a plate with two n-gon caps, as compas_timber builds them."""
+    bottom = [Point(radius * math.cos(2 * math.pi * i / n), radius * math.sin(2 * math.pi * i / n), 0.0) for i in range(n)]
+    top = [Point(point.x, point.y, thickness) for point in bottom]
+
+    polygons = [Polygon(bottom[::-1]), Polygon(top)]
+    for i in range(n):
+        j = (i + 1) % n
+        polygons.append(Polygon([bottom[i], top[i], top[j], bottom[j]]))
+
+    return polygons
+
+
 # =============================================================================
 # 1. Constructors
 # =============================================================================
@@ -93,6 +106,14 @@ def test_constructors_from_polygons():
     brep = Brep.from_polygons(polygons)
     assert isinstance(brep, Brep)
     assert len(brep.faces) == 2
+
+
+def test_constructors_from_polygons_keeps_ngon_faces():
+    """A polygon with more than four points must stay one face, not a fan of triangles."""
+    brep = Brep.from_polygons(_ngon_plate_polygons(6))
+    assert len(brep.faces) == 8
+    assert sorted(len(face.vertices) for face in brep.faces) == [4, 4, 4, 4, 4, 4, 6, 6]
+    assert brep.is_solid
 
 
 def test_constructors_from_mesh():
