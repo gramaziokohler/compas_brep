@@ -42,6 +42,7 @@ if TYPE_CHECKING:
     from compas_brep.brep import Brep
     from compas_brep.surfaces import NurbsSurface
 
+from .conversion import _face_from_builder
 from .conversion import _frame_to_ax2
 from .conversion import _nurbs_curve_to_occ
 from .conversion import _nurbs_surface_to_occ
@@ -120,7 +121,7 @@ def make_from_mesh(mesh: Mesh) -> Brep:
         vertices = mesh.face_vertices(fkey)
         raw = [mesh.vertex_coordinates(v) for v in vertices]
         wire = _points_to_occ_wire([Point(*p) for p in raw if p is not None])
-        face = BRepBuilderAPI_MakeFace(wire, True).Face()
+        face = _face_from_builder(BRepBuilderAPI_MakeFace(wire, True), f"from face {fkey} of the mesh, which has {len(vertices)} vertices and may not be planar")
         sewing.Add(face)
 
     sewing.Perform()
@@ -146,7 +147,7 @@ def make_extrusion(curve_or_profile: Any, vector: Vector, cap_ends: bool = True)
     if hasattr(curve_or_profile, "points"):
         # Polygon or curve with .points
         wire = _points_to_occ_wire(list(curve_or_profile.points))
-        face = BRepBuilderAPI_MakeFace(wire, True).Face()
+        face = _face_from_builder(BRepBuilderAPI_MakeFace(wire, True), "from the extrusion profile, which may not be planar")
     elif hasattr(curve_or_profile, "outer_loop"):
         # BrepFace — build an OCC face from its loop and extrude
         from compas_brep.brep import Brep as _Brep
@@ -263,9 +264,9 @@ def occ_pipe(path: Brep, radius: float) -> Brep:
     ax2 = gp_Ax2(start_pt, direction)
     circle_edge = BRepBuilderAPI_MakeEdge(GC_MakeCircle(ax2, radius).Value())
     circle_wire = BRepBuilderAPI_MakeWire(circle_edge.Edge()).Wire()
-    circle_face = BRepBuilderAPI_MakeFace(circle_wire)
+    circle_face = _face_from_builder(BRepBuilderAPI_MakeFace(circle_wire), "for the pipe profile")
 
-    pipe = BRepOffsetAPI_MakePipe(wire, circle_face.Face())
+    pipe = BRepOffsetAPI_MakePipe(wire, circle_face)
     pipe.Build()
     return occ_to_brep(pipe.Shape())
 
@@ -285,8 +286,8 @@ def occ_from_curves(curves: list[Any]) -> Brep:
         wire_builder.Add(edge)
 
     wire = wire_builder.Wire()
-    face = BRepBuilderAPI_MakeFace(wire)
-    return occ_to_brep(face.Shape())
+    face = _face_from_builder(BRepBuilderAPI_MakeFace(wire), "from the given boundary curves, which may not be planar")
+    return occ_to_brep(face)
 
 
 def occ_from_breps(breps: list[Brep]) -> Brep:
@@ -306,7 +307,7 @@ def occ_from_surface(
     """Create a Brep from a NurbsSurface."""
     occ_surface = _nurbs_surface_to_occ(surface)
     if domain_u and domain_v:
-        face = BRepBuilderAPI_MakeFace(occ_surface, domain_u[0], domain_u[1], domain_v[0], domain_v[1], 1e-6)
+        builder = BRepBuilderAPI_MakeFace(occ_surface, domain_u[0], domain_u[1], domain_v[0], domain_v[1], 1e-6)
     else:
-        face = BRepBuilderAPI_MakeFace(occ_surface, 1e-6)
-    return occ_to_brep(face.Shape())
+        builder = BRepBuilderAPI_MakeFace(occ_surface, 1e-6)
+    return occ_to_brep(_face_from_builder(builder, "from the given surface"))

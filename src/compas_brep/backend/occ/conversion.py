@@ -891,7 +891,7 @@ def brep_to_occ(brep: Brep) -> Any:
     vertex_cache: dict[int, Any] = {}
     edge_cache: dict[int, Any] = {}
 
-    for face in brep._faces:
+    for index, face in enumerate(brep._faces):
         surface = face.surface
 
         if isinstance(surface, Plane):
@@ -906,14 +906,14 @@ def brep_to_occ(brep: Brep) -> Any:
                 # Fallback to vertex-based wire for simple polygons
                 points = [v.point for v in face.outer_loop.vertices]
                 outer_wire = _points_to_occ_wire(points)
-            occ_face = BRepBuilderAPI_MakeFace(pln, outer_wire).Face()
+            occ_face = _face_from_builder(BRepBuilderAPI_MakeFace(pln, outer_wire), f"for the outer loop of face {index}")
 
             for inner_loop in face._inner_loops:
                 inner_wire = _loop_to_occ_wire(inner_loop, vertex_cache, edge_cache)
                 if inner_wire is None:
                     inner_points = [v.point for v in inner_loop.vertices]
                     inner_wire = _points_to_occ_wire(inner_points)
-                occ_face = BRepBuilderAPI_MakeFace(occ_face, inner_wire).Face()
+                occ_face = _face_from_builder(BRepBuilderAPI_MakeFace(occ_face, inner_wire), f"for an inner loop of face {index}")
 
             if face._inner_loops:
                 # A planar face is built from its 3D wires, whose winding carries no
@@ -959,6 +959,17 @@ def brep_to_occ(brep: Brep) -> Any:
 
     brep._native_brep = shape
     return shape
+
+
+def _face_from_builder(builder: Any, context: str) -> Any:
+    """Return the face a ``BRepBuilderAPI_MakeFace`` built, raising if it built none.
+
+    Calling ``.Face()`` on a builder that is not done does not raise - it segfaults
+    the interpreter. Every ``MakeFace`` result has to come through here.
+    """
+    if not builder.IsDone():
+        raise BrepError(f"OCC could not build a face {context}: {builder.Error()}")
+    return builder.Face()
 
 
 def _points_to_occ_wire(points: list[Point]) -> Any:

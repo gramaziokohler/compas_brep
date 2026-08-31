@@ -13,6 +13,7 @@ from compas.geometry import Translation
 from compas.geometry import Vector
 
 from compas_brep import Brep
+from compas_brep.errors import BrepError
 
 pytestmark = pytest.mark.occ
 
@@ -121,6 +122,35 @@ def test_constructors_from_mesh():
     brep = Brep.from_mesh(mesh)
     assert isinstance(brep, Brep)
     assert brep.is_valid
+
+
+def _non_planar_quad():
+    """Four points that are not coplanar."""
+    return Polygon([Point(0, 0, 0), Point(1, 0, 0), Point(1, 1, 0.5), Point(0, 1, 0)])
+
+
+def test_constructors_from_polygons_non_planar_raises():
+    """A face OCC cannot build must raise, not take the interpreter down with it."""
+    with pytest.raises(BrepError):
+        Brep.from_polygons([_non_planar_quad()])
+
+
+def test_constructors_from_mesh_non_planar_raises():
+    mesh = Mesh()
+    mesh.add_face([mesh.add_vertex(x=p.x, y=p.y, z=p.z) for p in _non_planar_quad().points])
+    with pytest.raises(BrepError):
+        Brep.from_mesh(mesh)
+
+
+def test_constructors_from_extrusion_non_planar_raises():
+    with pytest.raises(BrepError):
+        Brep.from_extrusion(_non_planar_quad(), Vector(0, 0, 1))
+
+
+def test_constructors_non_planar_error_names_the_face():
+    """The message has to say which face failed - a bare 'not done' is not actionable."""
+    with pytest.raises(BrepError, match="face 0"):
+        Brep.from_polygons([_non_planar_quad()])
 
 
 def test_constructors_from_cone_delegates_to_backend():
