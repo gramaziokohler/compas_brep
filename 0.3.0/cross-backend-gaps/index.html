@@ -1,0 +1,1995 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://gramaziokohler.github.io/compas_brep/0.3.0/cross-backend-gaps/">
+      
+      
+        <link rel="prev" href="../architecture/">
+      
+      
+        <link rel="next" href="../contributing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/compas_favicon.png">
+      <meta name="generator" content="mkdocs-ProperDocs 1.6.7, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Cross-backend exchange gaps - COMPAS Brep</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+        
+        <link rel="stylesheet" href="../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../assets/css/custom.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cross-backend-exchange-gaps" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+      <div data-md-color-scheme="default" data-md-component="outdated" hidden>
+        
+      </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="https://gramaziokohler.github.io/compas_brep/" title="COMPAS Brep" class="md-header__button md-logo" aria-label="COMPAS Brep" data-md-component="logo">
+      
+  <img src="../assets/images/compas_logo_white_transparent.png" alt="logo">
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            COMPAS Brep
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Cross-backend exchange gaps
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+        <div class="md-search__suggest" data-md-component="search-suggest"></div>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/gramaziokohler/compas_brep/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gramaziokohler/compas_brep
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="https://gramaziokohler.github.io/compas_brep/" title="COMPAS Brep" class="md-nav__button md-logo" aria-label="COMPAS Brep" data-md-component="logo">
+      
+  <img src="../assets/images/compas_logo_white_transparent.png" alt="logo">
+
+    </a>
+    COMPAS Brep
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/gramaziokohler/compas_brep/" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    gramaziokohler/compas_brep
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Get Started
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Get Started
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../introduction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Introduction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../examples/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Examples
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Concepts
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Concepts
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../brep-basics/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    What is a Brep?
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../motivation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Motivation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-backend exchange gaps
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Cross-backend exchange gaps
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#orientation-is-applied-once-in-the-trims-own-space" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Orientation is applied once, in the trim's own space
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-mirrored-surface-reverses-the-wire-not-just-the-normal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A mirrored surface reverses the wire, not just the normal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-pcurve-is-only-valid-on-its-edges-own-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A pcurve is only valid on its edge's own interval
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rhino-tolerates-pcurve-drift-occ-does-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rhino tolerates pcurve drift, OCC does not
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-handled-3d-wire-closure-vs-2d-loop-closure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not handled: 3D wire closure vs. 2D loop closure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-not-just-use-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why not just use STEP?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why not just use STEP?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-the-json-document-is-still-the-exchange-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the JSON document is still the exchange path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Contributing
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Adding a new operation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    compas_brep
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_2" id="__nav_5_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Topology
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Topology
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.brep/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Brep
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.vertex/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BrepVertex
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.edge/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BrepEdge
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.loop/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BrepLoop
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.face/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BrepFace
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.trim/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    BrepTrim
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_3" id="__nav_5_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Geometry
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Geometry
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.curves.nurbs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NurbsCurve
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.surfaces.nurbs/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    NurbsSurface
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.operations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operations
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.scene/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Scene
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+          
+        
+        <input class="md-nav__toggle md-toggle md-toggle--indeterminate" type="checkbox" id="__nav_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Backends
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Backends
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.backend.occ/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    OCC
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../reference/compas_brep.backend.rhino/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Rhino
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#orientation-is-applied-once-in-the-trims-own-space" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Orientation is applied once, in the trim's own space
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-mirrored-surface-reverses-the-wire-not-just-the-normal" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A mirrored surface reverses the wire, not just the normal
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-pcurve-is-only-valid-on-its-edges-own-interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        A pcurve is only valid on its edge's own interval
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rhino-tolerates-pcurve-drift-occ-does-not" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rhino tolerates pcurve drift, OCC does not
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#not-handled-3d-wire-closure-vs-2d-loop-closure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Not handled: 3D wire closure vs. 2D loop closure
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#why-not-just-use-step" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why not just use STEP?
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Why not just use STEP?">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#why-the-json-document-is-still-the-exchange-path" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Why the JSON document is still the exchange path
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="cross-backend-exchange-gaps">Cross-backend exchange gaps<a class="headerlink" href="#cross-backend-exchange-gaps" title="Permanent link">¤</a></h1>
+<p>Rhino and OCC agree on Brep <em>topology</em> (vertices, edges, faces, loops, trims) but
+disagree on the low-level rules each kernel enforces when rebuilding one from the
+<a href="https://github.com/gramaziokohler/compas_brep/blob/main/.agents/adr/0001-native-json-brep-exchange.md">exchange document</a>.
+This page catalogs the gaps found so far, one per kernel disagreement, with what
+compas_brep does about each.</p>
+<p>In every case the document leaves some detail unstated, the two kernels default
+to different answers, and a document written by one and read by the other lands
+on the wrong side of that default.</p>
+<h2 id="orientation-is-applied-once-in-the-trims-own-space">Orientation is applied once, in the trim's own space<a class="headerlink" href="#orientation-is-applied-once-in-the-trims-own-space" title="Permanent link">¤</a></h2>
+<p>A face's <code>is_reversed</code> flag says its stored surface faces the wrong way. A trim's
+<code>is_reversed</code> flag says it runs against its edge. The document defines both <strong>in
+the face's own, unflipped parameter space</strong>. A reader applies <code>is_reversed</code> to
+the <em>face</em> and reads every trim as-is, once.</p>
+<pre class="mermaid"><code>flowchart LR
+    subgraph correct["one flip, applied once"]
+        direction LR
+        A1["trim.is_reversed&lt;br/&gt;(as written)"] --&gt; B1["reader"]
+        C1["face.is_reversed"] --&gt; B1
+        B1 --&gt; D1["correctly oriented face"]
+    end</code></pre>
+<p>Both backends had a writer or a reader that composed the two flags together,
+applying the same orientation twice:</p>
+<ul>
+<li><strong>OCC writer.</strong> Explored a face's wires <em>through</em> the face itself. A <code>REVERSED</code>
+  face composes its flag into every trim OCC hands back, so the writer recorded
+  already-composed values. Fixed by exploring a <code>FORWARD</code>-oriented copy of the
+  face instead: <a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/occ/conversion.py#L804"><code>conversion.py:804</code></a>.</li>
+<li><strong>Rhino reader.</strong> Reversed the trim loop <em>and</em> XOR'd every trim against
+  <code>face.is_reversed</code> before calling <code>Trims.Add</code>, on top of <code>add_face</code> already
+  setting <code>OrientationIsReversed</code>. Fixed by reading trims exactly as the document
+  gives them: <a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/rhino/conversion.py#L1217"><code>conversion.py:1217</code></a>.</li>
+</ul>
+<p><strong>Symptom:</strong> a blind hole round-tripped into a bump. Volume went <em>up</em> instead of
+down (981.9 → 1018.1), because a reversed cylinder wall came back inside out. The
+number looks plausible, so a tolerance check on volume passes. Only <code>is_valid</code>
+(Rhino) or <code>BRepCheck_Analyzer</code> (OCC) catches it.</p>
+<p><strong>Status:</strong> fixed on both backends.</p>
+<h2 id="a-mirrored-surface-reverses-the-wire-not-just-the-normal">A mirrored surface reverses the wire, not just the normal<a class="headerlink" href="#a-mirrored-surface-reverses-the-wire-not-just-the-normal" title="Permanent link">¤</a></h2>
+<p>OCC gives some rebuilt analytic surfaces (cylinder, sphere, cone, torus) a
+left-handed placement. Straightening it mirrors the surface's <code>u</code>, which reverses
+the <em>winding</em> of every loop on it, not just the surface normal.</p>
+<pre class="mermaid"><code>flowchart LR
+    M["mirror u&lt;br/&gt;(straighten placement)"] --&gt; N["surface normal flips&lt;br/&gt;(is_reversed handles this)"]
+    M --&gt; W["wire winding flips&lt;br/&gt;(nothing handled this)"]</code></pre>
+<p>The code absorbed the normal flip into <code>is_reversed</code> but never turned the wire
+around to match. The loop then wound clockwise in the mirrored space, bounding
+the <em>outside</em> of the patch.</p>
+<p><strong>Symptom:</strong> every corner patch of a filleted box rebuilt inside out, reported as
+a negative face area and <code>BRepCheck_BadOrientationOfSubshape</code>. The volume still
+integrated to the right number, since integration over the wrong-signed side of a
+<em>closed</em> patch still converges. It sat in the suite as a
+<a href="https://github.com/gramaziokohler/compas_brep/blob/main/tests/test_exchange_fixtures.py">known <code>xfail</code></a>
+rather than a bug.</p>
+<p><strong>Status:</strong> fixed. The wire is reversed and every trim's <code>is_reversed</code> flipped
+alongside the normal correction:
+<a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/occ/conversion.py#L850"><code>conversion.py:850</code></a>.</p>
+<h2 id="a-pcurve-is-only-valid-on-its-edges-own-interval">A pcurve is only valid on its edge's own interval<a class="headerlink" href="#a-pcurve-is-only-valid-on-its-edges-own-interval" title="Permanent link">¤</a></h2>
+<p>The document writes a trim's 2D pcurve over its <strong>edge curve's</strong> parameter
+interval. If a rebuild reparameterizes that curve, by moving where <code>t=0</code> sits or
+how far it runs, the pcurve is then evaluated at parameters the curve no longer
+answers to.</p>
+<pre class="mermaid"><code>flowchart LR
+    D["document: pcurve over edge's interval [t0, t1]"] --&gt; R["rebuild"]
+    R --&gt; E2["edge curve rebuilt on a DIFFERENT interval"]
+    E2 -.-&gt;|"pcurve still evaluated on old [t0, t1]"| G["pcurve lands off its own edge"]</code></pre>
+<p>Three kernel behaviors reparameterize an edge without telling the caller:</p>
+<table>
+<thead>
+<tr>
+<th>Curve</th>
+<th>Rebuild moves it to</th>
+<th>Reference</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>line</code></td>
+<td><code>[0, length]</code>, since a line stores only its endpoints</td>
+<td><a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/exchange.py"><code>exchange.py</code></a></td>
+</tr>
+<tr>
+<td>periodic conic (<code>circle</code>, <code>ellipse</code>)</td>
+<td><code>[0, 2π)</code>. <a href="https://dev.opencascade.org/doc/refman/html/class_b_rep_builder_a_p_i___make_edge.html"><code>BRepBuilderAPI_MakeEdge</code></a> discards whole turns without reporting it</td>
+<td><a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/exchange.py#L254"><code>conic_parameter_shift</code></a></td>
+</tr>
+<tr>
+<td>conic with a <strong>decreasing</strong> interval</td>
+<td>rejected outright, since a NURBS knot vector cannot decrease</td>
+<td><a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/exchange.py#L216"><code>canonical_conic_interval</code></a></td>
+</tr>
+</tbody>
+</table>
+<p><strong>Symptoms, by row:</strong></p>
+<ol>
+<li>A boolean leaves a cylinder's seam on e.g. <code>[5, 15]</code>; the reader rebuilds the
+   line over <code>[0, 10]</code>. The seam's pcurve sits <code>t0</code> away from its own edge, which
+   gives <code>BRepCheck_InvalidRange</code>, an unorientable face, and a broken wire on
+   every full-turn cylindrical face surviving a boolean.</li>
+<li>An OCC ellipse handed over on <code>[6.96, 11.00]</code> (past one turn) comes back on
+   <code>[0.67, 4.71]</code>. The old pcurve is evaluated by extrapolation. Worst observed
+   gap was over <strong>1.7</strong> units on a curve of radius ~1.</li>
+<li>Rhino reports a scaled cylinder's elliptical rim running <em>clockwise</em>:
+   <code>[π/2, −3π/2]</code>. Written straight out that produces a <strong>decreasing</strong> NURBS knot
+   vector, which is not a backwards curve but an unbuildable one. OCC rejects the
+   whole document: <code>BSpline curve: Knots interval values too close</code>.</li>
+</ol>
+<p><strong>Status:</strong> fixed for all three. The rule is stated once: an edge's interval
+always <strong>increases</strong>, and a writer or reader that reparameterizes an edge shifts
+every pcurve on it by the same amount.</p>
+<pre class="mermaid"><code>flowchart TD
+    subgraph write["writing"]
+        WC["conic traversed clockwise?"] --&gt;|yes| WM["re-express in mirrored frame&lt;br/&gt;same curve, forwards interval&lt;br/&gt;canonical_conic_interval()"]
+        WC --&gt;|no| WOK["write as-is"]
+    end
+    subgraph read["reading"]
+        RC["edge rebuild moves t0?"] --&gt;|yes| RS["shift every pcurve on this edge&lt;br/&gt;by the same amount&lt;br/&gt;conic_parameter_shift() / shift_pcurve_parameters()"]
+        RC --&gt;|no| ROK["read as-is"]
+    end</code></pre>
+<p>Row 3 is fixed by re-expressing the conic in a mirrored frame rather than
+reversing the edge, which would strand every trim's <code>is_reversed</code>:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>centre + a·cos(−t)·x + b·sin(−t)·(−y)  ==  centre + a·cos(t)·x + b·sin(t)·y
+</span></code></pre></div>
+<p>Same points, same direction of travel; only the frame and the interval turn
+around. Verified to <code>0.000</code> deviation over the edge in
+<a href="https://github.com/gramaziokohler/compas_brep/blob/main/tests/test_exchange_reversed_faces.py"><code>test_exchange_reversed_faces.py</code></a>.</p>
+<h2 id="rhino-tolerates-pcurve-drift-occ-does-not">Rhino tolerates pcurve drift, OCC does not<a class="headerlink" href="#rhino-tolerates-pcurve-drift-occ-does-not" title="Permanent link">¤</a></h2>
+<p>To Rhino a pcurve is an <em>approximation</em>, accurate to the trim's own stated
+tolerance, with the 3D edge curve as ground truth. OCC requires the two to agree
+within the edge's tolerance and asserts it explicitly
+(<a href="https://dev.opencascade.org/doc/refman/html/class_b_rep_lib.html"><code>SameParameter</code></a>).
+A document that does not hold that agreement produces a shape OCC itself calls
+invalid.</p>
+<p>A straight (degree-1) pcurve for a <code>circle</code> or <code>arc</code> edge is exact only when the
+surface's own <code>u</code> is linear in angle, which holds for OCC's analytic cylinder.
+Rotate that cylinder in Rhino and the wall degrades to a rational NURBS whose <code>u</code>
+is not linear in angle. The straight pcurve then misses its own circular edge by
+~2×10⁻² against a tolerance of 10⁻⁶, four orders of magnitude out. It still
+agrees at span endpoints and midpoints, which is why sampling at regular
+intervals misses it.</p>
+<p><strong>Symptom:</strong> the cutter Brep was invalid the moment OCC read it. The boolean ran
+against it anyway and returned a result whose damage surfaced two process-hops
+later, in Rhino, as an unrelated-looking <code>Brep reconstruction failed</code>.</p>
+<p><strong>Status:</strong> fixed. Every OCC rebuild now calls
+<a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/occ/conversion.py#L995"><code>BRepLib.SameParameter_s</code></a>,
+the reconciliation every OCC importer runs on foreign geometry, then checks
+<code>BRepCheck_Analyzer</code> and <strong>raises <code>BrepInvalidError</code> if the kernel still calls
+its own rebuild invalid</strong>:
+<a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/occ/conversion.py#L1004"><code>conversion.py:1004</code></a>.</p>
+<p>compas_brep performs no geometry of its own; it asks a kernel to build one. When
+the kernel hands back something it will not call valid, that is where to stop,
+not at the next operation that trips over it. Before this check, a boolean that
+consumed a broken operand and returned a broken result was indistinguishable
+from one that worked.</p>
+<h2 id="not-handled-3d-wire-closure-vs-2d-loop-closure">Not handled: 3D wire closure vs. 2D loop closure<a class="headerlink" href="#not-handled-3d-wire-closure-vs-2d-loop-closure" title="Permanent link">¤</a></h2>
+<p>OCC's own boolean operations can produce a face whose wire closes correctly in
+<strong>3D</strong> but whose trims leave a small gap in <strong>2D</strong> parameter space (observed:
+~5×10⁻⁷, itself within OCC's own tolerance). OCC calls this valid. Rhino's
+<code>ON_BrepLoop::IsValid</code> requires trims to close in 2D and rejects it.</p>
+<pre class="mermaid"><code>flowchart LR
+    subgraph occ["OCC: valid"]
+        direction LR
+        A["wire closes in 3D"] -.-&gt;|"tiny 2D gap, within OCC's own tolerance"| B["pcurve doesn't quite\nclose in 2D"]
+    end
+    occ --&gt;|"exchanged as-is"| rhino
+    subgraph rhino["Rhino: rejected"]
+        C["ON_BrepLoop.IsValid()\nrequires 2D closure"]
+    end</code></pre>
+<p>The two kernels disagree about what counts as valid. Neither writer is at fault.
+Tried and rejected:</p>
+<ul>
+<li><code>Brep.Repair()</code> in the Rhino builder closes the gap, but <strong>masks real
+  corruption</strong> too. A cylinder whose axis was deliberately displaced by 3 units
+  still "successfully" rebuilds under <code>Repair</code>. compas_brep raises on an invalid
+  rebuild everywhere else, so repairing silently here would be inconsistent.</li>
+<li>Rhino's declared trim and edge tolerances make no difference. The 2D check in
+  <code>ON_Brep::IsValid</code> is not tolerance-driven.</li>
+<li>OCC's own <a href="https://dev.opencascade.org/doc/refman/html/class_shape_fix___wire.html"><code>ShapeFix_Wire::FixGaps2d</code></a>
+  reports touching the wire but does not close a gap that small, since OCC
+  considers it within tolerance already.</li>
+</ul>
+<p><strong>Status:</strong> unresolved. The Rhino rebuild fails with <code>Brep reconstruction
+failed!</code> naming the bad loop, so it is visible rather than silent. Closing the
+gap would mean compas_brep doing geometry work neither kernel considers
+necessary.</p>
+<h2 id="why-not-just-use-step">Why not just use STEP?<a class="headerlink" href="#why-not-just-use-step" title="Permanent link">¤</a></h2>
+<p>STEP already round-trips Breps between both kernels (<code>Brep.to_step</code> /
+<code>Brep.from_step</code>), and most of the gaps above cannot occur in it.</p>
+<p>Measured against the entities OCC writes for a box with a cylindrical channel:</p>
+<table>
+<thead>
+<tr>
+<th>Gap above</th>
+<th>In STEP?</th>
+<th>Why</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Orientation applied twice</td>
+<td>possible</td>
+<td>Same layered flags: <a href="http://www.steptools.com/stds/step/IR_final/part42/"><code>advanced_face</code></a><code>.same_sense</code>, <code>oriented_edge.orientation</code>, <code>edge_curve.same_sense</code>. Same ambiguity, but ISO 10303 pins how they compose, and you inherit a mature translator's reading instead of writing one.</td>
+</tr>
+<tr>
+<td>Mirrored <code>u</code></td>
+<td><strong>impossible</strong></td>
+<td><code>axis2_placement_3d</code> stores only <code>axis</code> and <code>ref_direction</code>; y is derived as their cross product, so a placement is right-handed by construction. The kernel does the mirror when writing.</td>
+</tr>
+<tr>
+<td>Pcurve interval reparameterized</td>
+<td><strong>impossible</strong></td>
+<td>STEP writes <strong>no parameter intervals on edges</strong>. See below.</td>
+</tr>
+<tr>
+<td>Pcurve drift (<code>SameParameter</code>)</td>
+<td>same problem, but named</td>
+<td>STEP carries pcurves and declares which representation wins: <code>surface_curve('',#27,(#31,#43),.PCURVE_S1.)</code>. A reader knows what to trust and what to recompute.</td>
+</tr>
+<tr>
+<td>3D vs 2D loop closure</td>
+<td>not addressed</td>
+<td>A kernel-validity question, not a format one. STEP declares a global tolerance (<code>uncertainty_measure_with_unit(1.E-07)</code>) but does not mandate 2D closure.</td>
+</tr>
+</tbody>
+</table>
+<p>STEP delimits an edge by its <strong>vertices</strong>, never by a parameter range. A STEP
+file for the shape above contains zero <code>trimmed_curve</code> entities:</p>
+<pre class="mermaid"><code>flowchart TD
+    subgraph step["STEP: edge = two vertices"]
+        S1["edge_curve('', v_start, v_end, geometry, same_sense)"] --&gt; S2["reader recomputes&lt;br/&gt;parameters by projecting&lt;br/&gt;the vertices onto the curve"]
+    end
+    subgraph json["exchange document: edge = curve + interval"]
+        J1["curve + domain [t0, t1]"] --&gt; J2["reader must rebuild the curve&lt;br/&gt;on that same interval&lt;br/&gt;-- or every pcurve on it moves"]
+    end</code></pre>
+<p>The family of bugs in the previous section cannot be expressed in STEP at all.
+Two more measurements, both in STEP's favour:</p>
+<ul>
+<li><strong>Analytic surfaces survive.</strong> The channel came back as
+  <code>{Plane: 6, CylindricalSurface: 1}</code>, not a NURBS approximation.</li>
+<li><strong>Tolerances survive better than ours.</strong> Source <code>1e-7 .. 1e-7</code>, after STEP
+  <code>1e-7 .. 1e-7</code>, after a compas_brep JSON round-trip <code>1e-7 .. 1e-6</code>. Our rebuild
+  loosens one edge tenfold; STEP's did not.</li>
+</ul>
+<h3 id="why-the-json-document-is-still-the-exchange-path">Why the JSON document is still the exchange path<a class="headerlink" href="#why-the-json-document-is-still-the-exchange-path" title="Permanent link">¤</a></h3>
+<ol>
+<li><strong>Rhino's STEP import needs the UI thread and opens a modal dialog.</strong> It goes
+   through <code>RhinoDoc.ActiveDoc.ReadFile</code>
+   (<a href="https://github.com/gramaziokohler/compas_brep/blob/main/src/compas_brep/backend/rhino/io.py"><code>backend/rhino/io.py</code></a>).
+   Anything headless, such as a worker, a solver loop, or a Grasshopper component
+   ticking on a timer, blocks on a dialog nobody is there to dismiss.</li>
+<li><strong>Translators heal on import, which hides problems.</strong> STEP readers run repair
+   pipelines, and <a href="https://dev.opencascade.org/doc/overview/html/occt_user_guides__step.html">OCC's STEP translator</a>
+   is explicit about this. Errors become silent geometry changes, the opposite of
+   failing where the problem was caused. The <code>BrepInvalidError</code> this package
+   raises on an invalid rebuild would never fire.</li>
+<li><strong>You control neither the fidelity nor the failure modes.</strong> You would be
+   debugging two translators you do not own instead of one format you do. This is
+   <a href="https://github.com/gramaziokohler/compas_brep/blob/main/.agents/adr/0001-native-json-brep-exchange.md">ADR-0001</a>'s
+   original argument and it still holds.</li>
+</ol>
+<div class="admonition note">
+<p class="admonition-title">Scope of these measurements</p>
+<p>The OCC→STEP→OCC figures above are measured. The claims about Rhino's STEP
+<em>import</em> come from reading that code path and from the dialog it opens, not
+from measured geometry. That dialog is what makes the round trip hard to
+automate in the first place.</p>
+</div>
+<p><code>to_step</code> and <code>from_step</code> stay as they are: for exchanging geometry with
+third-party CAD, interactively, where a dialog is fine and a translator's healing
+is welcome.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 20h-2V8l-5.5 5.5-1.42-1.42L12 4.16l7.92 7.92-1.42 1.42L13 8z"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../architecture/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Architecture">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Architecture
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../contributing/" class="md-footer__link md-footer__link--next" aria-label="Next: Adding a new operation">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                Adding a new operation
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Copyright &copy; 2024 - 2026, ETH Zurich - Gramazio Kohler Research
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": ["content.code.copy", "content.footnote.tooltips", "navigation.expand", "navigation.footer", "navigation.indexes", "navigation.sections", "navigation.top", "search.highlight", "search.suggest", "toc.follow"], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": {"provider": "mike"}}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
