@@ -56,6 +56,7 @@ from compas_brep.surfaces import surface_from_data
 from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
+from .conversion import _face_from_builder
 from .conversion import brep_to_occ
 from .conversion import occ_to_brep
 
@@ -126,7 +127,7 @@ def occ_trimmed(brep: Brep, plane: Plane) -> Brep:
         gp_Pnt(plane.point.x, plane.point.y, plane.point.z),
         gp_Dir(plane.normal.x, plane.normal.y, plane.normal.z),
     )
-    face = BRepBuilderAPI_MakeFace(occ_pln).Face()
+    face = _face_from_builder(BRepBuilderAPI_MakeFace(occ_pln), "for the trimming plane")
     ref_pt = gp_Pnt(
         plane.point.x + plane.normal.x * 1000,
         plane.point.y + plane.normal.y * 1000,
@@ -159,7 +160,7 @@ def occ_split(brep: Brep, cutter: Brep) -> list[Brep]:
             gp_Pnt(plane.point.x, plane.point.y, plane.point.z),
             gp_Dir(plane.normal.x, plane.normal.y, plane.normal.z),
         )
-        plane_face = BRepBuilderAPI_MakeFace(occ_pln).Face()
+        plane_face = _face_from_builder(BRepBuilderAPI_MakeFace(occ_pln), "for the splitting plane")
 
         # Half-space on the normal side (positive side)
         ref_pt_pos = gp_Pnt(
@@ -205,7 +206,7 @@ def occ_slice(brep: Brep, plane: Plane) -> list[Polyline]:
         gp_Pnt(plane.point.x, plane.point.y, plane.point.z),
         gp_Dir(plane.normal.x, plane.normal.y, plane.normal.z),
     )
-    plane_face = BRepBuilderAPI_MakeFace(pln).Face()
+    plane_face = _face_from_builder(BRepBuilderAPI_MakeFace(pln), "for the slicing plane")
     section = BRepAlgoAPI_Section(shape, plane_face)
     section.Build()
     result_shape = section.Shape()

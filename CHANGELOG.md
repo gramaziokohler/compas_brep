@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Changed the Rhino backend to refuse a mesh face that is not planar to within `2e-6` - the limit OCC hardcodes and does not let us pass in. It previously used `1e-9` for n-gons (2000x stricter than OCC, rejecting flat faces carrying ordinary rounding noise) and no planarity check at all for quads (silently building a warped patch). Both backends now accept and refuse the same faces.
+* Fixed `Brep.from_polygons`, `Brep.from_mesh` and `Brep.from_extrusion` segfaulting the interpreter on a non-planar face - OCC's `BRepBuilderAPI_MakeFace` result was used without checking `IsDone()`, and `.Face()` on a builder that failed does not raise. Every `MakeFace` call site in the OCC backend now goes through a guard that raises `BrepError` naming the offending face.
 * Fixed `Brep.from_polygons` and `Brep.from_mesh` triangulating any face with more than four vertices on the Rhino backend, and returning a shell Rhino would not call a solid: a hexagonal plate came back with 18 faces instead of 8. The backend now builds one Brep face per mesh face and joins them, as OCC already did; a non-planar face with more than four vertices raises `BrepError`.
 * Fixed cross-backend exchange producing kernel-invalid Breps: a reversed face's orientation was composed into its trims by the writer and applied again by the reader, and a u-mirrored face's wire winding was left uncorrected.
 * Fixed pcurves being written over a parameter interval their edge no longer had, after the receiving kernel silently reparameterized it. An edge's forward-increasing interval is now a rule of the exchange format.

@@ -28,6 +28,14 @@ from .conversion import brep_to_rhino
 from .conversion import nurbs_curve_to_rhino
 from .conversion import rhino_to_brep
 
+# How far a mesh face may deviate from its own plane and still become one Brep face.
+# OCC hardcodes this limit inside ``BRepBuilderAPI_MakeFace(wire, OnlyPlane=True)`` and
+# gives us no way to pass one in; Rhino's ``CreatePlanarBreps`` takes the tolerance as an
+# argument and honours it exactly. Passing OCC's number is what makes the two backends
+# accept and refuse the same faces. Not ``TOL.absolute`` (1e-9): a genuinely flat quad
+# carries more rounding noise than that once it has been transformed a few times.
+PLANARITY_TOLERANCE = 2e-6
+
 if TYPE_CHECKING:
     from compas.datastructures import Mesh
     from compas.geometry import Box
@@ -81,23 +89,15 @@ def make_from_mesh(mesh: Mesh) -> Brep:
     face per *Rhino mesh* face, and a Rhino mesh cannot hold an n-gon except as
     a group of triangles, so every face with more than four vertices came back
     fanned into triangles.
+
+    A face that is not planar to within :data:`PLANARITY_TOLERANCE` raises, matching
+    what OCC does with the same mesh.
     """
     patches = []
 
     for face in mesh.faces():
         points = [rg.Point3d(*mesh.vertex_coordinates(vertex)) for vertex in mesh.face_vertices(face)]
-
-        if len(points) == 3:
-            patch = rg.Brep.CreateFromCornerPoints(points[0], points[1], points[2], TOL.absolute)
-        elif len(points) == 4:
-            patch = rg.Brep.CreateFromCornerPoints(points[0], points[1], points[2], points[3], TOL.absolute)
-        else:
-            patch = _make_ngon_face(points, face)
-
-        if patch is None:
-            raise BrepError(f"Failed to build a Brep face from face {face} of the mesh")
-
-        patches.append(patch)
+        patches.append(_make_planar_face(points, face))
 
     joined = rg.Brep.JoinBreps(patches, TOL.absolute)
     if not joined:
@@ -112,13 +112,13 @@ def make_from_mesh(mesh: Mesh) -> Brep:
     return rhino_to_brep(merged)
 
 
-def _make_ngon_face(points: list[Any], face: int) -> Any:
-    """Build a single planar Rhino Brep face from the corners of an n-gon."""
+def _make_planar_face(points: list[Any], face: int) -> Any:
+    """Build a single planar Rhino Brep face from the corners of a mesh face."""
     polyline = rg.Polyline(points + points[:1])
-    planar = rg.Brep.CreatePlanarBreps(polyline.ToNurbsCurve(), TOL.absolute)
+    planar = rg.Brep.CreatePlanarBreps(polyline.ToNurbsCurve(), PLANARITY_TOLERANCE)
 
     if not planar:
-        raise BrepError(f"Face {face} of the mesh has {len(points)} vertices and is not planar, so it cannot become a single Brep face")
+        raise BrepError(f"Face {face} of the mesh has {len(points)} vertices and is not planar to within {PLANARITY_TOLERANCE}, so it cannot become a single Brep face")
     if len(planar) > 1:
         raise BrepError(f"Face {face} of the mesh is self-intersecting: it produced {len(planar)} Brep faces")
 
