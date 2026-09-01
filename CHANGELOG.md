@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Removed
+
+
+## [0.3.0] 2026-09-01
+
+### Added
+
 * Added a [cross-backend exchange gaps](docs/cross-backend-gaps.md) page, including why STEP is not used as the exchange path and one gap still open.
 
 ### Changed
