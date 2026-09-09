@@ -487,7 +487,7 @@ wheels = [
 
 [[package]]
 name = "compas-brep"
-version = "0.1.0"
+version = "0.3.0"
 source = { editable = "." }
 dependencies = [
     { name = "compas" },
@@ -528,7 +528,7 @@ viz = [
 requires-dist = [
     { name = "build", marker = "extra == 'dev'" },
     { name = "bump-my-version", marker = "extra == 'dev'" },
-    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and extra == 'occ'", specifier = ">=7.8" },
+    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and extra == 'occ'", specifier = ">=7.8,<8" },
     { name = "compas", specifier = ">=2.0" },
     { name = "compas-invocations2", extras = ["mkdocs"], marker = "extra == 'dev'" },
     { name = "compas-viewer", marker = "extra == 'dev'", specifier = ">=1.0" },

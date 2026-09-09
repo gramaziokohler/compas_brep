@@ -26,7 +26,7 @@ dependencies = [
 Repository = "https://github.com/gramaziokohler/compas_brep"
 
 [project.optional-dependencies]
-occ = ["cadquery-ocp-novtk>=7.8; python_version >= '3.10'"]
+occ = ["cadquery-ocp-novtk>=7.8,<8; python_version >= '3.10'"]
 dev = [
     "invoke",
     "ruff",
