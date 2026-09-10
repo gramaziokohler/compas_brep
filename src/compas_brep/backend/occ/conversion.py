@@ -70,12 +70,6 @@ from OCP.gp import gp_Pnt2d  # noqa: F401
 from OCP.gp import gp_Vec  # noqa: F401
 from OCP.ShapeConstruct import ShapeConstruct_Curve
 from OCP.ShapeFix import ShapeFix_Face
-from OCP.TColgp import TColgp_Array1OfPnt
-from OCP.TColgp import TColgp_Array1OfPnt2d
-from OCP.TColgp import TColgp_Array2OfPnt
-from OCP.TColStd import TColStd_Array1OfInteger
-from OCP.TColStd import TColStd_Array1OfReal
-from OCP.TColStd import TColStd_Array2OfReal
 from OCP.TopAbs import TopAbs_FACE
 from OCP.TopAbs import TopAbs_FORWARD
 from OCP.TopAbs import TopAbs_REVERSED
@@ -83,7 +77,6 @@ from OCP.TopAbs import TopAbs_VERTEX
 from OCP.TopAbs import TopAbs_WIRE
 from OCP.TopExp import TopExp
 from OCP.TopExp import TopExp_Explorer
-from OCP.TopoDS import TopoDS
 from OCP.TopoDS import TopoDS_Edge as _TopoDS_Edge
 from OCP.TopoDS import TopoDS_Face as _TopoDS_Face
 from OCP.TopoDS import TopoDS_Wire as _TopoDS_Wire
@@ -100,6 +93,13 @@ from compas_brep.exchange import loop_to_data
 from compas_brep.surfaces import NurbsSurface
 from compas_brep.surfaces import surface_to_data
 
+from ._compat import TColgp_Array1OfPnt
+from ._compat import TColgp_Array1OfPnt2d
+from ._compat import TColgp_Array2OfPnt
+from ._compat import TColStd_Array1OfInteger
+from ._compat import TColStd_Array1OfReal
+from ._compat import TColStd_Array2OfReal
+from ._compat import TopoDS
 from .topology import OccBrepEdge
 from .topology import OccBrepFace
 from .topology import OccBrepLoop
@@ -161,14 +161,14 @@ def occ_extract_topology(brep: Brep) -> None:
     # Iterate faces
     face_exp = TopExp_Explorer(shape, TopAbs_FACE)
     while face_exp.More():
-        occ_face = TopoDS.Face_s(face_exp.Current())
+        occ_face = TopoDS.Face(face_exp.Current())
         face_reversed = occ_face.Orientation() == TopAbs_REVERSED
 
         # Extract wire loops
         face_loops = []
         wire_exp = TopExp_Explorer(occ_face, TopAbs_WIRE)
         while wire_exp.More():
-            occ_wire = TopoDS.Wire_s(wire_exp.Current())
+            occ_wire = TopoDS.Wire(wire_exp.Current())
 
             loop_trims = []
             wire_explorer = BRepTools_WireExplorer(occ_wire, occ_face)
@@ -191,7 +191,7 @@ def occ_extract_topology(brep: Brep) -> None:
                     v_exp = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
                     edge_verts = []
                     while v_exp.More():
-                        edge_verts.append(_get_vertex(TopoDS.Vertex_s(v_exp.Current())))
+                        edge_verts.append(_get_vertex(TopoDS.Vertex(v_exp.Current())))
                         v_exp.Next()
                     if len(edge_verts) < 1:
                         wire_explorer.Next()
@@ -730,7 +730,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
     # Pre-populate all vertices so isolated ones are also captured
     v_exp = TopExp_Explorer(shape, TopAbs_VERTEX)
     while v_exp.More():
-        _vertex_id(TopoDS.Vertex_s(v_exp.Current()))
+        _vertex_id(TopoDS.Vertex(v_exp.Current()))
         v_exp.Next()
 
     # --- Edges ---
@@ -752,7 +752,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
             exp = TopExp_Explorer(occ_edge, TopAbs_VERTEX)
             verts = []
             while exp.More():
-                verts.append(TopoDS.Vertex_s(exp.Current()))
+                verts.append(TopoDS.Vertex(exp.Current()))
                 exp.Next()
             if not verts:
                 start_id = end_id = 0
@@ -775,7 +775,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
 
     face_exp = TopExp_Explorer(shape, TopAbs_FACE)
     while face_exp.More():
-        occ_face = TopoDS.Face_s(face_exp.Current())
+        occ_face = TopoDS.Face(face_exp.Current())
 
         surface = _extract_surface(occ_face)
         surface_data = surface_to_data(surface)
@@ -796,7 +796,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
         # reversal would land twice and the wire would come back running backwards.
         # (Invisible on planar faces, which the reader rebuilds from 3D wires and
         # re-winds itself; on a pcurve-built cylinder it inverts the face.)
-        forward_face = TopoDS.Face_s(occ_face.Oriented(TopAbs_FORWARD))
+        forward_face = TopoDS.Face(occ_face.Oriented(TopAbs_FORWARD))
 
         occ_outer_wire = BRepTools.OuterWire_s(forward_face)
 
@@ -804,7 +804,7 @@ def occ_brep_to_data(brep: Brep) -> dict:
         has_outer = False
         wire_exp = TopExp_Explorer(forward_face, TopAbs_WIRE)
         while wire_exp.More():
-            occ_wire = TopoDS.Wire_s(wire_exp.Current())
+            occ_wire = TopoDS.Wire(wire_exp.Current())
             trims = []
             wire_explorer = BRepTools_WireExplorer(occ_wire, forward_face)
             while wire_explorer.More():
@@ -940,7 +940,7 @@ def brep_to_occ(brep: Brep) -> Any:
         # pick either global sense and can invert the whole shell (flipping the
         # sign of the reported volume) for shapes with mixed face orientations.
         if face.is_reversed:
-            occ_face = TopoDS.Face_s(occ_face.Reversed())
+            occ_face = TopoDS.Face(occ_face.Reversed())
 
         sewing.Add(occ_face)
 
@@ -1104,7 +1104,7 @@ def _degenerate_occ_edge(v_start: Any, v_end: Any) -> Any:
     occ_edge = _TopoDS_Edge()
     builder.MakeEdge(occ_edge)
     builder.Add(occ_edge, v_start)
-    builder.Add(occ_edge, TopoDS.Vertex_s(v_end.Reversed()))
+    builder.Add(occ_edge, TopoDS.Vertex(v_end.Reversed()))
     builder.Degenerated(occ_edge, True)
     return occ_edge
 
@@ -1131,7 +1131,7 @@ def _reversed_edge(occ_edge: Any) -> Any:
     ``Reverse()`` (an in-place mutation) -- the edge may be cached and shared by
     another face, and mutating it in place would flip it there too.
     """
-    return TopoDS.Edge_s(occ_edge.Reversed())
+    return TopoDS.Edge(occ_edge.Reversed())
 
 
 def _build_trimmed_face(occ_surface: Any, face: BrepFace, vertex_cache: dict[int, Any], edge_cache: dict[int, Any]) -> Any:

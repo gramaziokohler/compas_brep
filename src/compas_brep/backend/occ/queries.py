@@ -27,8 +27,8 @@ from OCP.TopAbs import TopAbs_REVERSED
 from OCP.TopAbs import TopAbs_SOLID
 from OCP.TopExp import TopExp_Explorer
 from OCP.TopLoc import TopLoc_Location
-from OCP.TopoDS import TopoDS
 
+from ._compat import TopoDS
 from .conversion import brep_to_occ
 
 if TYPE_CHECKING:
@@ -75,7 +75,12 @@ def occ_aabb(brep: Brep) -> Box:
     shape = brep_to_occ(brep)
     bbox = Bnd_Box()
     BRepBndLib.Add_s(shape, bbox)
-    xmin, ymin, zmin, xmax, ymax, zmax = bbox.Get()
+    # CornerMin/CornerMax rather than Get(): OCP 8 returns a Bnd_Box::Limits
+    # struct from Get() that the bindings cannot convert to a Python tuple.
+    corner_min = bbox.CornerMin()
+    corner_max = bbox.CornerMax()
+    xmin, ymin, zmin = corner_min.X(), corner_min.Y(), corner_min.Z()
+    xmax, ymax, zmax = corner_max.X(), corner_max.Y(), corner_max.Z()
     cx = (xmin + xmax) / 2
     cy = (ymin + ymax) / 2
     cz = (zmin + zmax) / 2
@@ -125,7 +130,7 @@ def occ_tessellate(brep: Brep, linear_deflection: float = 0.1, n: int = 16, n_cu
 
     face_exp = TopExp_Explorer(shape, TopAbs_FACE)
     while face_exp.More():
-        occ_face = TopoDS.Face_s(face_exp.Current())
+        occ_face = TopoDS.Face(face_exp.Current())
         is_rev = occ_face.Orientation() == TopAbs_REVERSED
         loc = TopLoc_Location()
         tri = BRep_Tool.Triangulation_s(occ_face, loc)
@@ -153,7 +158,7 @@ def occ_tessellate(brep: Brep, linear_deflection: float = 0.1, n: int = 16, n_cu
     boundaries = []
     edge_exp = TopExp_Explorer(shape, TopAbs_EDGE)
     while edge_exp.More():
-        occ_edge = TopoDS.Edge_s(edge_exp.Current())
+        occ_edge = TopoDS.Edge(edge_exp.Current())
         try:
             adaptor = BRepAdaptor_Curve(occ_edge)
             t0 = adaptor.FirstParameter()

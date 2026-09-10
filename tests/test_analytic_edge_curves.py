@@ -58,7 +58,8 @@ def _native_curve_types(brep: Brep) -> list[str]:
     from OCP.GeomAbs import GeomAbs_Line
     from OCP.TopAbs import TopAbs_EDGE
     from OCP.TopExp import TopExp_Explorer
-    from OCP.TopoDS import TopoDS
+
+    from compas_brep.backend.occ._compat import TopoDS
 
     names = {GeomAbs_Line: "line", GeomAbs_Circle: "circle", GeomAbs_Ellipse: "ellipse"}
 
@@ -66,7 +67,7 @@ def _native_curve_types(brep: Brep) -> list[str]:
     seen = []
     explorer = TopExp_Explorer(brep._native_brep, TopAbs_EDGE)
     while explorer.More():
-        edge = TopoDS.Edge_s(explorer.Current())
+        edge = TopoDS.Edge(explorer.Current())
         if not any(edge.IsSame(other) for other in seen):
             seen.append(edge)
             types.append(names.get(BRepAdaptor_Curve(edge).GetType(), "other"))
@@ -282,14 +283,15 @@ def test_a_rebuilt_circular_seam_matches_the_analytic_circle_exactly():
     from OCP.GeomAbs import GeomAbs_Circle
     from OCP.TopAbs import TopAbs_EDGE
     from OCP.TopExp import TopExp_Explorer
-    from OCP.TopoDS import TopoDS
+
+    from compas_brep.backend.occ._compat import TopoDS
 
     restored = _roundtrip(Brep.from_cylinder(Cylinder(0.5, 2.0)))
 
     radii = []
     explorer = TopExp_Explorer(restored._native_brep, TopAbs_EDGE)
     while explorer.More():
-        adaptor = BRepAdaptor_Curve(TopoDS.Edge_s(explorer.Current()))
+        adaptor = BRepAdaptor_Curve(TopoDS.Edge(explorer.Current()))
         if adaptor.GetType() == GeomAbs_Circle:
             circle = adaptor.Circle()
             radii.append(circle.Radius())
