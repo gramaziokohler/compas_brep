@@ -28,9 +28,10 @@ from OCP.TopAbs import TopAbs_EDGE
 from OCP.TopAbs import TopAbs_FACE
 from OCP.TopAbs import TopAbs_WIRE
 from OCP.TopExp import TopExp_Explorer
-from OCP.TopoDS import TopoDS
 
 from compas_brep.curves import NurbsCurve
+
+from ._compat import TopoDS
 
 if TYPE_CHECKING:
     from compas.geometry import Box
@@ -127,7 +128,7 @@ def make_from_mesh(mesh: Mesh) -> Brep:
     sewing.Perform()
     sewn = sewing.SewedShape()
     try:
-        solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewn))
+        solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell(sewn))
         if solid.IsDone():
             return occ_to_brep(solid.Shape())
     except Exception:
@@ -161,7 +162,7 @@ def make_extrusion(curve_or_profile: Any, vector: Vector, cap_ends: bool = True)
         face_exp = TopExp_Explorer(occ_shape, TopAbs_FACE)
         if not face_exp.More():
             raise ValueError("Could not extract face from BrepFace for extrusion")
-        face = TopoDS.Face_s(face_exp.Current())
+        face = TopoDS.Face(face_exp.Current())
     else:
         raise NotImplementedError(f"Unsupported extrusion profile type: {type(curve_or_profile)}")
 
@@ -210,23 +211,23 @@ def occ_sweep(profile: Brep, path: Brep) -> Brep:
     # Extract the wire from the path
     wire_exp = TopExp_Explorer(path_shape, TopAbs_WIRE)
     if wire_exp.More():
-        wire = TopoDS.Wire_s(wire_exp.Current())
+        wire = TopoDS.Wire(wire_exp.Current())
     else:
         # Build wire from edges
         builder = BRepBuilderAPI_MakeWire()
         edge_exp = TopExp_Explorer(path_shape, TopAbs_EDGE)
         while edge_exp.More():
-            builder.Add(TopoDS.Edge_s(edge_exp.Current()))
+            builder.Add(TopoDS.Edge(edge_exp.Current()))
             edge_exp.Next()
         wire = builder.Wire()
 
     # Get profile shape (first face or first wire)
     face_exp = TopExp_Explorer(profile_shape, TopAbs_FACE)
     if face_exp.More():
-        profile_topo = TopoDS.Face_s(face_exp.Current())
+        profile_topo = TopoDS.Face(face_exp.Current())
     else:
         wire_exp2 = TopExp_Explorer(profile_shape, TopAbs_WIRE)
-        profile_topo = TopoDS.Wire_s(wire_exp2.Current())
+        profile_topo = TopoDS.Wire(wire_exp2.Current())
 
     pipe = BRepOffsetAPI_MakePipe(wire, profile_topo)
     pipe.Build()
@@ -242,18 +243,18 @@ def occ_pipe(path: Brep, radius: float) -> Brep:
     # Extract wire from path
     wire_exp = TopExp_Explorer(path_shape, TopAbs_WIRE)
     if wire_exp.More():
-        wire = TopoDS.Wire_s(wire_exp.Current())
+        wire = TopoDS.Wire(wire_exp.Current())
     else:
         builder = BRepBuilderAPI_MakeWire()
         edge_exp = TopExp_Explorer(path_shape, TopAbs_EDGE)
         while edge_exp.More():
-            builder.Add(TopoDS.Edge_s(edge_exp.Current()))
+            builder.Add(TopoDS.Edge(edge_exp.Current()))
             edge_exp.Next()
         wire = builder.Wire()
 
     # Get starting point and tangent of path
     edge_exp = TopExp_Explorer(wire, TopAbs_EDGE)
-    first_edge = TopoDS.Edge_s(edge_exp.Current())
+    first_edge = TopoDS.Edge(edge_exp.Current())
     adaptor = BRepAdaptor_Curve(first_edge)
     start_pt = adaptor.Value(adaptor.FirstParameter())
     d1 = gp_Vec()

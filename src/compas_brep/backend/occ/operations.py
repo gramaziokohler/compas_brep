@@ -36,7 +36,6 @@ from OCP.TopAbs import TopAbs_IN
 from OCP.TopAbs import TopAbs_ON
 from OCP.TopAbs import TopAbs_SHELL
 from OCP.TopExp import TopExp_Explorer
-from OCP.TopoDS import TopoDS
 from OCP.TopoDS import TopoDS_Iterator
 
 from compas_brep.curves import edge_curve_from_data
@@ -56,6 +55,7 @@ from compas_brep.surfaces import surface_from_data
 from compas_brep.trim import BrepTrim
 from compas_brep.vertex import BrepVertex
 
+from ._compat import TopoDS
 from .conversion import _face_from_builder
 from .conversion import brep_to_occ
 from .conversion import occ_to_brep
@@ -214,7 +214,7 @@ def occ_slice(brep: Brep, plane: Plane) -> list[Polyline]:
     polylines = []
     edge_exp = TopExp_Explorer(result_shape, TopAbs_EDGE)
     while edge_exp.More():
-        edge = TopoDS.Edge_s(edge_exp.Current())
+        edge = TopoDS.Edge(edge_exp.Current())
         adaptor = BRepAdaptor_Curve(edge)
         t0, t1 = adaptor.FirstParameter(), adaptor.LastParameter()
         n_pts = 32
@@ -239,7 +239,7 @@ def occ_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Bre
         all_edges = []
         exp = TopExp_Explorer(shape, TopAbs_EDGE)
         while exp.More():
-            all_edges.append(TopoDS.Edge_s(exp.Current()))
+            all_edges.append(TopoDS.Edge(exp.Current()))
             exp.Next()
         for edge_idx in edges:
             if 0 <= edge_idx < len(all_edges):
@@ -248,7 +248,7 @@ def occ_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Bre
         # Fillet all edges
         exp = TopExp_Explorer(shape, TopAbs_EDGE)
         while exp.More():
-            fillet.Add(radius, TopoDS.Edge_s(exp.Current()))
+            fillet.Add(radius, TopoDS.Edge(exp.Current()))
             exp.Next()
 
     fillet.Build()
@@ -282,7 +282,7 @@ def occ_cap_planar_holes(brep: Brep) -> Brep:
     sewing.Perform()
     sewn = sewing.SewedShape()
     try:
-        solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(sewn))
+        solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell(sewn))
         return occ_to_brep(solid.Shape())
     except Exception:
         return occ_to_brep(sewn)
@@ -333,7 +333,7 @@ def occ_make_solid(brep: Brep) -> Brep:
     """Convert a shell Brep to a solid."""
 
     shape = brep_to_occ(brep)
-    solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(shape))
+    solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell(shape))
     return occ_to_brep(solid.Shape())
 
 
@@ -484,7 +484,7 @@ def occ_rebuild(brep: Brep, data: dict) -> None:
     shape = brep._native_brep
     if shape.ShapeType() == TopAbs_SHELL:
         try:
-            solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell_s(shape))
+            solid = BRepBuilderAPI_MakeSolid(TopoDS.Shell(shape))
             if solid.IsDone():
                 brep._native_brep = solid.Shape()
         except Exception:

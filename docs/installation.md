@@ -12,6 +12,9 @@ pip install compas-brep
 
 The OCC backend requires `cadquery-ocp-novtk`, which in turn requires Python ≥ 3.10.
 
+Both the 7.x and 8.x series are supported. Which one you get is decided by your Python
+version: 8.x requires Python ≥ 3.11, so Python 3.10 resolves to the latest 7.9.x instead.
+
 ```bash
 pip install "compas-brep[occ]"
 ```

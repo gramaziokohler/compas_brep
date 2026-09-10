@@ -16,12 +16,20 @@ jobs:
     if: "!contains(github.event.pull_request.labels.*.name, 'docs-only')"
     runs-on: ubuntu-latest
 
+    strategy:
+      fail-fast: false
+      matrix:
+        # 3.9 isn't supported by the OCP backened, that's kept for Rhino.
+        # <3.13 is supported by OCP>7.8, <9
+        # >3.13 is supported by OCP>9.0, <10
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+
     steps:
       - name: install viewer dependency (libegl1)
         run: sudo apt-get install -y libegl1
 
       - uses: compas-dev/compas-actions/ci@v1
         with:
-          python-version: "3.13"
+          python-version: "${{ matrix.python-version }}"
           extras: "occ,dev"
           invoke-tasks: lint test

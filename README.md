@@ -3,6 +3,7 @@
 [![Github Actions Build Status](https://github.com/gramaziokohler/compas_brep/actions/workflows/build.yml/badge.svg)](https://github.com/gramaziokohler/compas_brep/actions)
 [![License](https://img.shields.io/github/license/gramaziokohler/compas_brep)](https://pypi.python.org/pypi/compas-brep)
 [![PyPI Package latest release](https://img.shields.io/pypi/v/compas-brep)](https://pypi.python.org/pypi/compas-brep)
+[![OCP versions](https://img.shields.io/badge/OCP-7.8%20%7C%207.9%20%7C%208.x-blue)](https://github.com/CadQuery/OCP)
 [![Made with COMPAS](https://compas.dev/badge.svg)](https://compas.dev/#/)
 
 A unified Brep wrapper for the [COMPAS](https://github.com/compas-dev/compas) framework with pluggable OCC and Rhino backends. See [Motivation](https://gramaziokohler.github.io/compas_brep/motivation/) for why.
@@ -34,6 +35,10 @@ pip install compas_brep
 ```bash
 pip install "compas_brep[occ]"
 ```
+
+Both the 7.x and 8.x series of `cadquery-ocp-novtk` are supported, and pip picks the
+right one for your interpreter: 8.x requires Python >= 3.11, so Python 3.10 resolves
+to the latest 7.9.x instead.
 
 The Rhino backend is available automatically when running inside Rhino.
 
