@@ -20,8 +20,8 @@ jobs:
       fail-fast: false
       matrix:
         # 3.9 isn't supported by the OCP backened, that's kept for Rhino.
-        # <3.13 is supported by OCP>7.8, <9
-        # >3.13 is supported by OCP>9.0, <10
+        # 3.10 gets OCP==7.x
+        # 3.11-3.14 get OCP>=8
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
