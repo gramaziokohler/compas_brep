@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Removed
+
+
+## [0.4.0] 2026-09-10
+
+### Added
+
+### Changed
+
 * Added support for OCP 8.x using a compatibility layer.
 
 ### Removed
