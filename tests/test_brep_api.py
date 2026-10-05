@@ -654,3 +654,29 @@ def test_string_representations_repr_is_string():
 def test_string_representations_str_is_string():
     brep = _unit_box_brep()
     assert isinstance(str(brep), str)
+
+
+@pytest.mark.parametrize("index", range(12))
+def test_fillet_rounds_the_edge_its_index_names(index):
+    # An index means ``brep.edges[index]``. The explorer the fillet used to number
+    # edges with visits each edge once per face, so on anything but a plain box the
+    # index named some other edge. A trimmed box is the smallest shape that tells
+    # them apart: filleting one edge replaces exactly its two end vertices.
+    brep = Brep.from_box(Box(4.0, 4.0, 4.0))
+    brep.trim(Plane(Point(1.0, 0.0, 0.0), Vector(1.0, 0.0, 0.5).unitized()))
+    edge = brep.edges[index]
+    ends = (edge.start_vertex.point, edge.end_vertex.point)
+    filleted = brep.filleted(0.3, [index])
+
+    def key(point):
+        return tuple(round(c, 6) for c in point)
+
+    before = {key(vertex.point) for vertex in brep.vertices}
+    after = {key(vertex.point) for vertex in filleted.vertices}
+    assert before - after == {key(point) for point in ends}
+
+
+def test_fillet_rejects_an_edge_index_out_of_range():
+    brep = _unit_box_brep()
+    with pytest.raises(IndexError):
+        brep.filleted(0.1, [len(brep.edges)])

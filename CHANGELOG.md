@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* Fixed `Brep.fillet` / `Brep.filleted` (OCC) rounding the wrong edges. An index is an index into `brep.edges`, but the fillet numbered edges with `TopExp_Explorer`, which visits each edge once per face it bounds; on anything but a plain box the index named a different edge, and the result was a valid solid with the wrong corner rounded. Indices now resolve through `brep.edges`, and one out of range raises `IndexError` instead of being skipped.
+
 ### Removed
 
 

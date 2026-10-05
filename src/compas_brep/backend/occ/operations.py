@@ -229,21 +229,23 @@ def occ_slice(brep: Brep, plane: Plane) -> list[Polyline]:
 
 
 def occ_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Brep:
-    """Fillet edges of a Brep. If edges is None, fillet all edges."""
+    """Fillet edges of a Brep. If edges is None, fillet all edges.
+
+    ``edges`` are indices into ``brep.edges``. They are resolved through that list,
+    not by exploring the shape: ``TopExp_Explorer`` visits each edge once per face
+    it bounds, so its numbering is not the one ``brep.edges`` exposes, and an index
+    would fillet some other edge.
+    """
 
     shape = brep_to_occ(brep)
     fillet = BRepFilletAPI_MakeFillet(shape)
 
     if edges is not None:
-        # Fillet specific edges by index
-        all_edges = []
-        exp = TopExp_Explorer(shape, TopAbs_EDGE)
-        while exp.More():
-            all_edges.append(TopoDS.Edge(exp.Current()))
-            exp.Next()
+        topology = brep if all(hasattr(edge, "native_edge") for edge in brep.edges) else occ_to_brep(shape)
         for edge_idx in edges:
-            if 0 <= edge_idx < len(all_edges):
-                fillet.Add(radius, all_edges[edge_idx])
+            if not 0 <= edge_idx < len(topology.edges):
+                raise IndexError(f"edge index {edge_idx} out of range for a brep with {len(topology.edges)} edges")
+            fillet.Add(radius, TopoDS.Edge(topology.edges[edge_idx].native_edge))
     else:
         # Fillet all edges
         exp = TopExp_Explorer(shape, TopAbs_EDGE)
