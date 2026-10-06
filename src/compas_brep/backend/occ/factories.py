@@ -145,7 +145,13 @@ def make_extrusion(curve_or_profile: Any, vector: Vector, cap_ends: bool = True)
 
     vec = gp_Vec(vector.x, vector.y, vector.z)
 
-    if hasattr(curve_or_profile, "points"):
+    if isinstance(curve_or_profile, (list, tuple)) or isinstance(curve_or_profile, NurbsCurve):
+        # A closed chain of curves and lines, or one closed curve: extruded as the curves themselves.
+        # Checked before ``.points``, which a NurbsCurve also has: there it means its control points,
+        # and extruding those would silently extrude the control polygon instead of the curve.
+        curves = list(curve_or_profile) if isinstance(curve_or_profile, (list, tuple)) else [curve_or_profile]
+        face = _face_from_builder(BRepBuilderAPI_MakeFace(_wire_from_curves(curves)), "from the extrusion profile, which may not be planar or closed")
+    elif hasattr(curve_or_profile, "points"):
         # Polygon or curve with .points
         wire = _points_to_occ_wire(list(curve_or_profile.points))
         face = _face_from_builder(BRepBuilderAPI_MakeFace(wire, True), "from the extrusion profile, which may not be planar")
@@ -274,21 +280,32 @@ def occ_pipe(path: Brep, radius: float) -> Brep:
 
 def occ_from_curves(curves: list[Any]) -> Brep:
     """Create a Brep from planar boundary curves."""
+    face = _face_from_builder(BRepBuilderAPI_MakeFace(_wire_from_curves(curves)), "from the given boundary curves, which may not be planar")
+    return occ_to_brep(face)
+
+
+def _wire_from_curves(curves: list[Any]) -> Any:
+    """Chain NurbsCurves and Lines, in order, into one OCC wire.
+
+    Raises
+    ------
+    ValueError
+        If they do not join end to end.
+
+    """
     wire_builder = BRepBuilderAPI_MakeWire()
     for curve in curves:
         if isinstance(curve, NurbsCurve):
-            occ_curve = _nurbs_curve_to_occ(curve)
-            edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
+            edge = BRepBuilderAPI_MakeEdge(_nurbs_curve_to_occ(curve)).Edge()
         else:
             # Line
             p0 = gp_Pnt(curve.start.x, curve.start.y, curve.start.z)
             p1 = gp_Pnt(curve.end.x, curve.end.y, curve.end.z)
             edge = BRepBuilderAPI_MakeEdge(p0, p1).Edge()
         wire_builder.Add(edge)
-
-    wire = wire_builder.Wire()
-    face = _face_from_builder(BRepBuilderAPI_MakeFace(wire), "from the given boundary curves, which may not be planar")
-    return occ_to_brep(face)
+    if not wire_builder.IsDone():
+        raise ValueError(f"the curves do not join into a wire: {wire_builder.Error()}")
+    return wire_builder.Wire()
 
 
 def occ_from_breps(breps: list[Brep]) -> Brep:

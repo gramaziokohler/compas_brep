@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from typing import TYPE_CHECKING
+from typing import Any
 
 from compas.datastructures import Mesh
 from compas.geometry import Box
@@ -14,11 +15,17 @@ from compas.tolerance import TOL
 from OCP.Bnd import Bnd_Box
 from OCP.BRep import BRep_Tool
 from OCP.BRepAdaptor import BRepAdaptor_Curve
+from OCP.BRepAdaptor import BRepAdaptor_Surface
 from OCP.BRepBndLib import BRepBndLib
+from OCP.BRepBuilderAPI import BRepBuilderAPI_NurbsConvert
 from OCP.BRepCheck import BRepCheck_Analyzer
 from OCP.BRepGProp import BRepGProp
 from OCP.BRepMesh import BRepMesh_IncrementalMesh
 from OCP.gp import gp_Pnt
+from OCP.GeomAbs import GeomAbs_BSplineCurve
+from OCP.GeomAbs import GeomAbs_BezierCurve
+from OCP.GeomAbs import GeomAbs_SurfaceOfExtrusion
+from OCP.GeomAbs import GeomAbs_SurfaceOfRevolution
 from OCP.GProp import GProp_GProps
 from OCP.TopAbs import TopAbs_COMPSOLID
 from OCP.TopAbs import TopAbs_EDGE
@@ -45,9 +52,32 @@ if TYPE_CHECKING:
 _GPROP_TOL = TOL.absolute
 
 
+def _measurable(shape: Any) -> Any:
+    """Return a shape whose mass properties OCC integrates correctly: the shape itself, or a NURBS copy.
+
+    ``BRepGProp`` gets the volume of a solid wrong when one of its faces is a surface of
+    linear extrusion (or of revolution) swept from a B-spline or Bezier curve -- which is
+    what extruding a curve makes, and what any boolean with such a solid inherits. The
+    error is not small and does not shrink with the tolerance: a prism of a closed cubic
+    came out 2.7% light at 1e-9, an exact rational circle 3.6% heavy, and other
+    tolerances move it around rather than converge it. The same solid with those faces
+    converted to B-spline surfaces measures to ~5e-9. The geometry was right all along;
+    only the measurement was not. So convert a copy, and only when such a face exists,
+    because converting costs time on the many shapes that do not need it.
+    """
+    explorer = TopExp_Explorer(shape, TopAbs_FACE)
+    while explorer.More():
+        surface = BRepAdaptor_Surface(TopoDS.Face(explorer.Current()))
+        if surface.GetType() in (GeomAbs_SurfaceOfExtrusion, GeomAbs_SurfaceOfRevolution):
+            if surface.BasisCurve().GetType() in (GeomAbs_BSplineCurve, GeomAbs_BezierCurve):
+                return BRepBuilderAPI_NurbsConvert(shape, True).Shape()
+        explorer.Next()
+    return shape
+
+
 def occ_area(brep: Brep) -> float:
     """Compute the surface area of a Brep."""
-    shape = brep_to_occ(brep)
+    shape = _measurable(brep_to_occ(brep))
     props = GProp_GProps()
     BRepGProp.SurfaceProperties_s(shape, props, _GPROP_TOL)
     return props.Mass()
@@ -55,7 +85,7 @@ def occ_area(brep: Brep) -> float:
 
 def occ_volume(brep: Brep) -> float:
     """Compute the volume of a Brep."""
-    shape = brep_to_occ(brep)
+    shape = _measurable(brep_to_occ(brep))
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, props, _GPROP_TOL)
     return props.Mass()
@@ -63,7 +93,7 @@ def occ_volume(brep: Brep) -> float:
 
 def occ_centroid(brep: Brep) -> Point:
     """Compute the centroid of a Brep."""
-    shape = brep_to_occ(brep)
+    shape = _measurable(brep_to_occ(brep))
     props = GProp_GProps()
     BRepGProp.VolumeProperties_s(shape, props, _GPROP_TOL)
     c = props.CentreOfMass()

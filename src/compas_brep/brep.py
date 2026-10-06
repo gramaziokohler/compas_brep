@@ -359,7 +359,9 @@ class Brep(Geometry):
         Parameters
         ----------
         profile
-            The profile to extrude (BrepFace, Polygon, or curve).
+            The profile to extrude: a BrepFace, a Polygon, a closed planar NurbsCurve, or a list of
+            NurbsCurves and Lines joining end to end into a closed planar loop. Curves are extruded
+            as the curves they are, not as their control polygons.
         vector
             The extrusion direction and magnitude.
         cap_ends
