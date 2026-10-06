@@ -140,8 +140,9 @@ def make_extrusion(curve_or_profile: Any, vector: Vector, cap_ends: bool = True)
     """Create a Brep by extruding a curve/profile along a vector."""
     from OCP.BRepPrimAPI import BRepPrimAPI_MakePrism
 
-    if cap_ends:
-        warn("cap_ends parameter is not implemented in OCC backend")
+    if not cap_ends:
+        # a prism of a closed profile is always capped here; say so only when asked otherwise
+        warn("cap_ends=False is not implemented in the OCC backend: the extrusion is capped")
 
     vec = gp_Vec(vector.x, vector.y, vector.z)
 
