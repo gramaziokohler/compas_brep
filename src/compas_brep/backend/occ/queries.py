@@ -104,7 +104,10 @@ def occ_aabb(brep: Brep) -> Box:
     """Compute the axis-aligned bounding box of a Brep."""
     shape = brep_to_occ(brep)
     bbox = Bnd_Box()
-    BRepBndLib.Add_s(shape, bbox)
+    # AddOptimal, from the geometry itself. Add encloses a B-spline face's control net and
+    # pads by the shape's tolerances, which on a curved outline put the box 0.35 mm wide of
+    # a guitar headstock and 0.05 mm below a neck that sat exactly on its pocket floor.
+    BRepBndLib.AddOptimal_s(shape, bbox, False, False)
     # CornerMin/CornerMax rather than Get(): OCP 8 returns a Bnd_Box::Limits
     # struct from Get() that the bindings cannot convert to a Python tuple.
     corner_min = bbox.CornerMin()

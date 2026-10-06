@@ -79,3 +79,10 @@ def test_a_chain_of_curves_and_lines_extrudes_as_one_profile():
 def test_curves_that_do_not_join_are_refused():
     with pytest.raises(Exception):
         Brep.from_extrusion([Line(Point(0, 0, 0), Point(1, 0, 0)), Line(Point(2, 0, 0), Point(2, 1, 0))], Vector(0, 0, -1))
+
+
+def test_the_bounding_box_is_the_curve_s_not_its_control_net_s():
+    # a circle's control points form the square around it, padded by tolerances besides
+    box = Brep.from_extrusion(_circle(), Vector(0, 0, -DEPTH)).aabb
+    assert (box.xmin, box.ymin, box.zmin) == pytest.approx((50.0, 50.0, -DEPTH), abs=1e-6)
+    assert (box.xmax, box.ymax, box.zmax) == pytest.approx((250.0, 250.0, 0.0), abs=1e-6)
