@@ -156,7 +156,7 @@ def make_extrusion(curve_or_profile: Polyline | Polygon | Curve, vector: Vector,
     return rhino_to_brep(rhino_brep)
 
 
-def make_loft(profiles: list[Any]) -> Brep:
+def make_loft(profiles: list[Any], max_degree=None) -> Brep:
     """Create a Brep by lofting through curves."""
     rhino_curves = []
     for profile in profiles:

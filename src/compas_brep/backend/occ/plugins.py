@@ -55,10 +55,10 @@ def make_extrusion(face_or_curve, vector):
 
 
 @plugin(category="brep-factories", requires=["OCP"])
-def make_loft(profiles):
+def make_loft(profiles, max_degree=None):
     from .factories import make_loft as _impl
 
-    return _impl(profiles)
+    return _impl(profiles, max_degree=max_degree)
 
 
 @plugin(category="brep-factories", requires=["OCP"])

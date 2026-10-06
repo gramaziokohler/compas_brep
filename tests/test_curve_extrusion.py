@@ -86,3 +86,25 @@ def test_the_bounding_box_is_the_curve_s_not_its_control_net_s():
     box = Brep.from_extrusion(_circle(), Vector(0, 0, -DEPTH)).aabb
     assert (box.xmin, box.ymin, box.zmin) == pytest.approx((50.0, 50.0, -DEPTH), abs=1e-6)
     assert (box.xmax, box.ymax, box.zmax) == pytest.approx((250.0, 250.0, 0.0), abs=1e-6)
+
+
+def test_a_loft_through_many_differing_sections_can_cap_its_degree():
+    # Eight crowned sections whose radius changes along the loft, like a compound fretboard radius.
+    # At OCC's default degree the boolean below comes back empty; capped at three it does not.
+    from compas.geometry import Box
+
+    sections = []
+    for i in range(8):
+        x, radius, w = 60.0 * i, 254.0 + 20.0 * i, 31.0
+        half = math.asin(w / radius)
+        edge = -(radius - math.sqrt(radius * radius - w * w))
+        apex = -radius + radius / math.cos(half)
+        points = [(x, w, edge), (x, 0, apex), (x, -w, edge), (x, -w, -4.0), (x, -w, -8.0), (x, 0, -8.0), (x, w, -8.0), (x, w, -4.0), (x, w, edge)]
+        weights = [1, math.cos(half), 1, 1, 1, 1, 1, 1, 1]
+        sections.append(NurbsCurve.from_parameters([Point(*p) for p in points], weights, [0.0, 1.0, 2.0, 3.0, 4.0], [3, 2, 2, 2, 3], 2))
+    zone = Brep.from_box(Box.from_corner_corner_height(Point(0, -w, -7.5), Point(420, w, -7.5), 8.5))
+    loft = Brep.from_loft(sections, max_degree=3)
+    inside = sum(piece.volume for piece in Brep.from_boolean_intersection(zone, loft))
+    outside = sum(piece.volume for piece in Brep.from_boolean_difference(zone, loft))
+    assert inside > 0.5 * zone.volume
+    assert inside + outside == pytest.approx(zone.volume, rel=1e-6)

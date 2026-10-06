@@ -416,7 +416,7 @@ class Brep(Geometry):
         return cls.from_polygons([Polygon(corners)])
 
     @classmethod
-    def from_loft(cls, curves: list[Any]) -> Brep:
+    def from_loft(cls, curves: list[Any], max_degree: int | None = None) -> Brep:
         """Create a Brep by lofting between profile curves.
 
         Delegates to the active backend (OCC or Rhino) for exact NURBS lofting.
@@ -425,8 +425,14 @@ class Brep(Geometry):
         ----------
         curves
             List of NurbsCurve profiles.
+        max_degree
+            Cap on the surface's degree across the profiles. OCC allows up to 8 by
+            default, and through eight differing sections that surface can be one
+            its own booleans then fail on, silently: a difference that comes back
+            as the intersection. Three is smooth and safe. Ignored where the
+            backend has no such setting. Defaults to the backend's own.
         """
-        return make_loft(curves)
+        return make_loft(curves, max_degree=max_degree)
 
     @classmethod
     def from_cone(cls, cone: Any) -> Brep:
