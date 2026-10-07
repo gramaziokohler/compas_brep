@@ -416,7 +416,7 @@ class Brep(Geometry):
         return cls.from_polygons([Polygon(corners)])
 
     @classmethod
-    def from_loft(cls, curves: list[Any], max_degree: int | None = None) -> Brep:
+    def from_loft(cls, curves: list[Any], max_degree: int | None = None, ruled: bool = False) -> Brep:
         """Create a Brep by lofting between profile curves.
 
         Delegates to the active backend (OCC or Rhino) for exact NURBS lofting.
@@ -424,15 +424,25 @@ class Brep(Geometry):
         Parameters
         ----------
         curves
-            List of NurbsCurve profiles.
+            The profiles, in order: each a NurbsCurve, a Polyline, or a list of
+            Lines and NurbsCurves joined end to end into one closed profile.
+            A profile of several segments lofts into one face per segment, so
+            every profile must have as many, in the same order.
         max_degree
             Cap on the surface's degree across the profiles. OCC allows up to 8 by
             default, and through eight differing sections that surface can be one
             its own booleans then fail on, silently: a difference that comes back
             as the intersection. Three is smooth and safe. Ignored where the
             backend has no such setting. Defaults to the backend's own.
+        ruled
+            Straight between consecutive profiles, segment to segment. Between
+            two lines that is a plane, and between two arcs about one axis a
+            cone. A single closed curve with corners in it lofts into one face
+            with creases inside it, which OCC's booleans can come back wrong on
+            where a crease crosses another face; segments keep each corner an
+            edge.
         """
-        return make_loft(curves, max_degree=max_degree)
+        return make_loft(curves, max_degree=max_degree, ruled=ruled)
 
     @classmethod
     def from_cone(cls, cone: Any) -> Brep:

@@ -55,10 +55,10 @@ def make_extrusion(face_or_curve, vector, cap_planar_holes=True):
 
 
 @plugin(category="brep-factories", requires=["Rhino"])
-def make_loft(profiles, max_degree=None):
+def make_loft(profiles, max_degree=None, ruled=False):
     from .factories import make_loft as _impl
 
-    return _impl(profiles, max_degree=max_degree)
+    return _impl(profiles, max_degree=max_degree, ruled=ruled)
 
 
 @plugin(category="brep-factories", requires=["Rhino"])

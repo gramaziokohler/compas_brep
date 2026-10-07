@@ -177,16 +177,18 @@ def make_extrusion(curve_or_profile: Any, vector: Vector, cap_ends: bool = True)
     return occ_to_brep(shape)
 
 
-def make_loft(curves: list[Any], max_degree: int | None = None) -> Brep:
+def make_loft(curves: list[Any], max_degree: int | None = None, ruled: bool = False) -> Brep:
     """Create a Brep by lofting through curves, capping the surface's degree across them if asked."""
     from OCP.BRepOffsetAPI import BRepOffsetAPI_ThruSections
 
-    loft = BRepOffsetAPI_ThruSections(True)  # isSolid=True
+    loft = BRepOffsetAPI_ThruSections(True, ruled)  # isSolid=True
     if max_degree is not None:
         loft.SetMaxDegree(max_degree)
 
     for curve in curves:
-        if hasattr(curve, "points") and hasattr(curve, "_knots"):
+        if isinstance(curve, (list, tuple)):
+            wire = _wire_from_curves(list(curve))
+        elif hasattr(curve, "points") and hasattr(curve, "_knots"):
             occ_curve = _nurbs_curve_to_occ(curve)
             edge = BRepBuilderAPI_MakeEdge(occ_curve).Edge()
             wire = BRepBuilderAPI_MakeWire(edge).Wire()

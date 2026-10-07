@@ -156,8 +156,8 @@ def make_extrusion(curve_or_profile: Polyline | Polygon | Curve, vector: Vector,
     return rhino_to_brep(rhino_brep)
 
 
-def make_loft(profiles: list[Any], max_degree=None) -> Brep:
-    """Create a Brep by lofting through curves."""
+def make_loft(profiles: list[Any], max_degree=None, ruled=False) -> Brep:
+    """Create a Brep by lofting through curves. A profile given as several segments is not supported here."""
     rhino_curves = []
     for profile in profiles:
         if hasattr(profile, "_knots"):
@@ -167,7 +167,7 @@ def make_loft(profiles: list[Any], max_degree=None) -> Brep:
 
     start = Rhino.Geometry.Point3d.Unset
     end = Rhino.Geometry.Point3d.Unset
-    loft_type = Rhino.Geometry.LoftType.Normal
+    loft_type = Rhino.Geometry.LoftType.Straight if ruled else Rhino.Geometry.LoftType.Normal
 
     results = Rhino.Geometry.Brep.CreateFromLoft(
         rhino_curves,

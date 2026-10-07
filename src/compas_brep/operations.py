@@ -56,7 +56,7 @@ def make_extrusion(face_or_curve: Any, vector: Vector) -> Brep:
 
 
 @pluggable(category="brep-factories")
-def make_loft(profiles: list[Any], max_degree: int | None = None) -> Brep:
+def make_loft(profiles: list[Any], max_degree: int | None = None, ruled: bool = False) -> Brep:
     raise NotImplementedError
 
 

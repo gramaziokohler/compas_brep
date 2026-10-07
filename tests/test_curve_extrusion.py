@@ -108,3 +108,29 @@ def test_a_loft_through_many_differing_sections_can_cap_its_degree():
     outside = sum(piece.volume for piece in Brep.from_boolean_difference(zone, loft))
     assert inside > 0.5 * zone.volume
     assert inside + outside == pytest.approx(zone.volume, rel=1e-6)
+
+
+def _square(half, z):
+    corners = [Point(-half, -half, z), Point(half, -half, z), Point(half, half, z), Point(-half, half, z)]
+    return [Line(a, b) for a, b in zip(corners, corners[1:] + corners[:1])]
+
+
+def test_a_ruled_loft_between_squares_of_segments_is_a_frustum_and_cuts_cleanly():
+    # A tapered wall: a square of side 40 at the top, 30 at the bottom, 10 down. As one closed curve with
+    # its corners as creases, the block below came back from the difference in two pieces, one of them
+    # standing above the block. As four segments, four plane faces and one piece.
+    from compas.geometry import Box
+
+    loft = Brep.from_loft([_square(15.0, -10.0), _square(20.0, 0.0)], ruled=True)
+    assert loft.volume == pytest.approx(10.0 / 3.0 * (40.0**2 + 40.0 * 30.0 + 30.0**2), rel=1e-9)
+    assert len(loft.faces) == 6
+    block = Brep.from_box(Box.from_corner_corner_height(Point(-50, -50, -20), Point(50, 50, -20), 15.0))
+    pieces = Brep.from_boolean_difference(block, loft)
+    assert len(pieces) == 1
+    assert pieces[0].volume == pytest.approx(100.0 * 100.0 * 15.0 - 5.0 / 3.0 * (35.0**2 + 35.0 * 30.0 + 30.0**2), rel=1e-9)
+
+
+def test_a_ruled_loft_between_two_circles_on_one_axis_is_a_cone():
+    # OCC integrates a curved face's volume to a few parts in 1e9
+    loft = Brep.from_loft([_circle(80.0), _circle(100.0).translated(Vector(0, 0, DEPTH))], ruled=True)
+    assert loft.volume == pytest.approx(math.pi * DEPTH / 3.0 * (80.0**2 + 80.0 * 100.0 + 100.0**2), rel=1e-8)
