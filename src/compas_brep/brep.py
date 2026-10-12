@@ -28,6 +28,7 @@ from compas.geometry import Vector
 from compas_brep.curves import NurbsCurve
 from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepError
+from compas_brep.errors import BrepFilletError
 from compas_brep.face import BrepFace
 from compas_brep.loop import BrepLoop
 from compas_brep.operations import boolean_difference
@@ -607,7 +608,16 @@ class Brep(Geometry):
             The fillet radius.
         edges
             Indices of edges to fillet. If None, fillets all edges.
+
+        Raises
+        ------
+        BrepFilletError
+            If an index in ``edges`` is out of range, or the fillet fails.
         """
+        if edges is not None:
+            invalid = [i for i in edges if not 0 <= i < len(self.edges)]
+            if invalid:
+                raise BrepFilletError(f"Edge indices out of range for a Brep with {len(self.edges)} edges: {invalid}")
         return brep_fillet(self, radius, edges)
 
     def offset(self, distance: float) -> Brep:
