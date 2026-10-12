@@ -30,6 +30,7 @@ from OCP.gp import gp_Pln
 from OCP.gp import gp_Pnt
 from OCP.gp import gp_Trsf
 from OCP.ShapeFix import ShapeFix_Shape
+from OCP.Standard import Standard_Failure
 from OCP.TopAbs import TopAbs_COMPOUND
 from OCP.TopAbs import TopAbs_EDGE
 from OCP.TopAbs import TopAbs_IN
@@ -41,6 +42,7 @@ from OCP.TopoDS import TopoDS_Iterator
 from compas_brep.curves import edge_curve_from_data
 from compas_brep.edge import BrepEdge
 from compas_brep.errors import BrepError
+from compas_brep.errors import BrepFilletError
 from compas_brep.exchange import LOOP_OUTER
 from compas_brep.exchange import SINGULAR_TRIM_EDGE
 from compas_brep.exchange import conic_parameter_shift
@@ -235,15 +237,9 @@ def occ_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Bre
     fillet = BRepFilletAPI_MakeFillet(shape)
 
     if edges is not None:
-        # Fillet specific edges by index
-        all_edges = []
-        exp = TopExp_Explorer(shape, TopAbs_EDGE)
-        while exp.More():
-            all_edges.append(TopoDS.Edge(exp.Current()))
-            exp.Next()
+        # Indices refer to ``brep.edges``; an explorer over the shape visits shared edges once per face
         for edge_idx in edges:
-            if 0 <= edge_idx < len(all_edges):
-                fillet.Add(radius, all_edges[edge_idx])
+            fillet.Add(radius, TopoDS.Edge(brep.edges[edge_idx].native_edge))
     else:
         # Fillet all edges
         exp = TopExp_Explorer(shape, TopAbs_EDGE)
@@ -251,7 +247,13 @@ def occ_fillet(brep: Brep, radius: float, edges: list[int] | None = None) -> Bre
             fillet.Add(radius, TopoDS.Edge(exp.Current()))
             exp.Next()
 
-    fillet.Build()
+    try:
+        fillet.Build()
+    except Standard_Failure as e:
+        # some inputs (e.g. no edges) throw instead of leaving the builder not done
+        raise BrepFilletError("Fillet operation failed") from e
+    if not fillet.IsDone():
+        raise BrepFilletError("Fillet operation failed")
     return occ_to_brep(fillet.Shape())
 
 

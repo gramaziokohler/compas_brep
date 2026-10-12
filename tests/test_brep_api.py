@@ -14,6 +14,7 @@ from compas.geometry import Vector
 
 from compas_brep import Brep
 from compas_brep.errors import BrepError
+from compas_brep.errors import BrepFilletError
 
 pytestmark = pytest.mark.occ
 
@@ -505,6 +506,35 @@ def test_operations_flip_twice_restores():
     brep.flip()
     for face, orig in zip(brep.faces, original_reversed):
         assert face._is_reversed is orig
+
+
+@pytest.mark.parametrize("index", range(12))
+def test_operations_filleted_rounds_the_indexed_edge(index):
+    def key(edge):
+        return sorted(tuple(round(c, 6) for c in v.point) for v in edge.vertices)
+
+    brep = Brep.from_box(Box(10, 10, 10))
+    result = brep.filleted(1.0, edges=[index])
+    assert key(brep.edges[index]) not in [key(e) for e in result.edges]
+
+
+@pytest.mark.parametrize("index", [12, -1])
+def test_operations_fillet_rejects_out_of_range_index_and_leaves_brep_untouched(index):
+    brep = Brep.from_box(Box(10, 10, 10))
+    with pytest.raises(BrepFilletError, match=str(index)):
+        brep.fillet(1.0, edges=[0, index])
+    assert len(brep.edges) == 12
+    assert len(brep.faces) == 6
+
+
+@pytest.mark.parametrize(
+    "radius, edges",
+    [(20.0, [0]), (0.0, [0]), (-1.0, [0]), (1.0, []), (5.0, None)],
+)
+def test_operations_filleted_raises_fillet_error_when_kernel_fails(radius, edges):
+    brep = Brep.from_box(Box(10, 10, 10))
+    with pytest.raises(BrepFilletError):
+        brep.filleted(radius, edges=edges)
 
 
 def test_operations_to_polygons_count():
