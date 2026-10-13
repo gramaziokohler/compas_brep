@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+### Removed
+
+
+## [0.4.1] 2026-10-13
+
+### Added
+
+### Changed
+
 - Fixed an issue where `Brep.fillet` with the OCC backend filleted the wrong edge because it indexed the wrong list.
 - Fixed an issue where invalid indices passed to `Brep.fillet` failed silently. It now raises `BrepFilletError`.
 
