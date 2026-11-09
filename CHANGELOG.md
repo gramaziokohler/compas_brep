@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+* Added `OCP.wasm` dependency to the `occ` extra so the OCC backend can be installed in the browser (Pyodide/emscripten).
+
 ### Changed
 
 ### Removed

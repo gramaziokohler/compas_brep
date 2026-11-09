@@ -236,6 +236,14 @@ wheels = [
 ]
 
 [[package]]
+name = "cadquery-ocp-novtk-ocp-wasm"
+version = "8.0.1.1.post202609241841"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/84/74f748a3232155a19f09c74cdf7f19cb07623542c48c01a8d06b4f98c836/cadquery_ocp_novtk_ocp_wasm-8.0.1.1.post202609241841-cp314-cp314-pyemscripten_2026_0_wasm32.whl", hash = "sha256:1bc957b6574c8a62a5fb33f03d054af41febbeb809a89bd08b045b17ec3e90d5", size = 22714552, upload-time = "2026-09-24T20:53:14.143Z" },
+]
+
+[[package]]
 name = "cadquery-ocp-proxy"
 version = "7.9.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -487,7 +495,7 @@ wheels = [
 
 [[package]]
 name = "compas-brep"
-version = "0.3.0"
+version = "0.4.1"
 source = { editable = "." }
 dependencies = [
     { name = "compas" },
@@ -518,7 +526,8 @@ docs = [
     { name = "mkdocstrings", version = "1.0.4", source = { registry = "https://pypi.org/simple" }, extra = ["python"], marker = "python_full_version >= '3.10'" },
 ]
 occ = [
-    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10'" },
+    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and sys_platform != 'emscripten'" },
+    { name = "cadquery-ocp-novtk-ocp-wasm", marker = "sys_platform == 'emscripten'" },
 ]
 viz = [
     { name = "compas-viewer" },
@@ -528,7 +537,8 @@ viz = [
 requires-dist = [
     { name = "build", marker = "extra == 'dev'" },
     { name = "bump-my-version", marker = "extra == 'dev'" },
-    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and extra == 'occ'", specifier = ">=7.8,<8" },
+    { name = "cadquery-ocp-novtk", marker = "python_full_version >= '3.10' and sys_platform != 'emscripten' and extra == 'occ'", specifier = ">=7.8,<9" },
+    { name = "cadquery-ocp-novtk-ocp-wasm", marker = "sys_platform == 'emscripten' and extra == 'occ'", specifier = ">=7.8,<9" },
     { name = "compas", specifier = ">=2.0" },
     { name = "compas-invocations2", extras = ["mkdocs"], marker = "extra == 'dev'" },
     { name = "compas-viewer", marker = "extra == 'dev'", specifier = ">=1.0" },
