@@ -8,7 +8,7 @@ build-backend = "uv_build"
 
 [project]
 name = "compas-brep"
-version = "0.4.1"
+version = "0.4.2"
 description = "Canonical Brep wrapper based on COMPAS framework with pluggable OCC/Rhino backends"
 readme = "README.md"
 authors = [
@@ -79,7 +79,7 @@ addopts = "-m 'not rhino'"
 # ============================================================================
 
 [tool.bumpversion]
-current_version = "0.4.1"
+current_version = "0.4.2"
 message = "Bump version to {new_version}"
 commit = true
 tag = true

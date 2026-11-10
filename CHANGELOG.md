@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+### Changed
+
+### Removed
+
+
+## [0.4.2] 2026-11-10
+
+### Added
+
 * Added `OCP.wasm` dependency to the `occ` extra so the OCC backend can be installed in the browser (Pyodide/emscripten).
 * Added `Brep.__deepcopy__`, which delegates to `Brep.copy`, so `copy.deepcopy` works on Breps with a native backend shape.
 

@@ -1,6 +1,6 @@
 """compas_brep: Pure Python Brep implementation based on the COMPAS framework."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
 
 import os
 
