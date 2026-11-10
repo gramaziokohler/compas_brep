@@ -1,0 +1,23 @@
+/* COMPAS blue — applied across all selectors that Material/Zensical may query */
+:root,
+:root > *,
+[data-md-color-primary="custom"],
+[data-md-color-accent="custom"] {
+  --md-primary-fg-color:        #0092d2;
+  --md-primary-fg-color--light: #33a9db;
+  --md-primary-fg-color--dark:  #0078aa;
+  --md-primary-bg-color:        #ffffff;
+  --md-primary-bg-color--light: #ffffffb3;
+  --md-accent-fg-color:         #0092d2;
+  --md-accent-fg-color--transparent: #0092d21a;
+  --md-accent-bg-color:         #ffffff;
+}
+
+/* Direct fallback in case variables are not picked up */
+.md-header {
+  background-color: #0092d2;
+}
+
+.md-tabs {
+  background-color: #0092d2;
+}
