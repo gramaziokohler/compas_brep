@@ -156,6 +156,9 @@ class Brep(Geometry):
             f"Volume: {self.volume}"
         )
 
+    def __deepcopy__(self, memo: dict) -> Brep:
+        return self.copy()
+
     def __sub__(self, other: Brep) -> list[Brep]:
         """A - B. Same as :meth:`from_boolean_difference`, so it returns a list."""
         return Brep.from_boolean_difference(self, other)

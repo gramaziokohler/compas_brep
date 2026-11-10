@@ -1,6 +1,7 @@
 """Comprehensive tests for the Brep API methods."""
 
 import math
+from copy import deepcopy
 
 import pytest
 from compas.datastructures import Mesh
@@ -386,6 +387,14 @@ def test_operations_copy_is_independent():
     assert abs(c.x) < 1e-6
     assert abs(c.y) < 1e-6
     assert abs(c.z) < 1e-6
+
+
+def test_deepcopy_uses_native_copy():
+    brep = _unit_box_brep()
+    copy = deepcopy(brep)
+    assert isinstance(copy, Brep)
+    brep.transform(Translation.from_vector(Vector(10, 10, 10)))
+    assert abs(copy.centroid.x) < 1e-6
 
 
 def test_operations_transform_moves_centroid():
